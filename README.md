@@ -2,7 +2,7 @@
 
 An unofficial client for the App Store Connect **review centre** — the Resolution Center
 threads, rejections and review submissions that Apple's public App Store Connect API does
-not expose.
+not expose. Use this project to bring automation to your Apple App Store submissions.
 
 It talks to the same private `https://appstoreconnect.apple.com/iris/v1` service the web UI
 uses, reusing a session you capture from your browser.
