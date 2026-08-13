@@ -35,6 +35,7 @@ const INCLUDES = {
     'subscriptionGroupVersion',
   ],
   messages: ['fromActor', 'rejections', 'resolutionCenterMessageAttachments'],
+  reviewDetails: ['appStoreReviewAttachments', 'appStoreVersion'],
   draftMessage: ['resolutionCenterMessageAttachments', 'fromActor'],
   rejections: [
     'appCustomProductPageVersion',
@@ -220,6 +221,72 @@ export function getVersion(session: Session, versionId: string): Promise<Documen
     'fields[appStoreReviewDetails]': '',
     'fields[gameCenterConfigurations]': '',
     'fields[appClipDefaultExperiences]': '',
+  });
+}
+
+/**
+ * The App Review Information panel: who Apple contacts, the demo account the reviewer
+ * signs in with, and the notes explaining how to reach the feature under test.
+ *
+ * Worth reading on any rejection — "we were unable to sign in" or "we couldn't locate
+ * the feature" are complaints about this record rather than about the build.
+ */
+export function getReviewDetails(session: Session, reviewDetailId: string): Promise<Document<Resource>> {
+  return get(session, `appStoreReviewDetails/${reviewDetailId}`, {
+    include: [...INCLUDES.reviewDetails],
+    // The version is wanted as an identifier only, not expanded — as the browser asks.
+    'fields[appStoreVersions]': '',
+  });
+}
+
+/**
+ * Reaches the review details from a version, which is the only route to them: the id
+ * exists solely as a relationship on the version.
+ */
+export async function findReviewDetails(
+  session: Session,
+  versionId: string
+): Promise<Document<Resource> | undefined> {
+  const version = await getVersion(session, versionId);
+  const related = version.data.relationships?.appStoreReviewDetail?.data as
+    | ResourceIdentifier
+    | undefined;
+  if (!related?.id) return undefined;
+  return getReviewDetails(session, related.id);
+}
+
+/** What `redactReviewDetails` blanks, and what `--reveal` keeps. */
+export const REVIEW_DETAIL_SECRETS = ['demoAccountPassword'] as const;
+
+/**
+ * Blanks the demo account password. Every command here prints to stdout, and a live
+ * credential sitting in terminal scrollback is a worse problem than having to ask for it.
+ * The account name is left alone — it's the pair that's the credential, and knowing which
+ * account Apple was given is usually the point.
+ */
+export function redactReviewDetails(document: Document<Resource>): Document<Resource> {
+  const attributes = document.data?.attributes;
+  if (!attributes) return document;
+  for (const field of REVIEW_DETAIL_SECRETS) {
+    if (attributes[field]) attributes[field] = '[redacted — pass --reveal to show]';
+  }
+  return document;
+}
+
+/**
+ * Every locale of a version with its screenshot and preview sets already attached — the
+ * form the version page itself uses. One request, where going via the localization list
+ * and then asking for each locale's sets costs one per locale.
+ */
+export function listVersionLocalizationsWithAssets(
+  session: Session,
+  versionId: string
+): Promise<Document<Resource[]>> {
+  return get(session, 'appStoreVersionLocalizations', {
+    'filter[appStoreVersion]': versionId,
+    include: ['appScreenshotSets', 'appPreviewSets'],
+    'limit[appScreenshotSets]': 50,
+    'limit[appPreviewSets]': 50,
   });
 }
 

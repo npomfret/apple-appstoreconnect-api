@@ -23,7 +23,11 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc builds <versionId>      List the builds behind an App Store version
   asc metadata [versionId]    Per-locale name, subtitle, description and keywords (defaults
                               to the version under review)
-  asc screenshots <locId>     Screenshot sets for a localization (id from "asc metadata")
+  asc screenshots [versionId] Every locale of a version with its screenshot and preview
+                              sets, in one request (defaults to the version under review)
+  asc review-details [versionId]
+                              App Review Information: reviewer contact, demo account and
+                              notes. The demo password is hidden unless --reveal
   asc threads [appId]         List Resolution Center threads on an app
   asc thread <submissionId>   Find the thread behind a review submission
   asc messages <threadId>     List Resolution Center messages in a thread
@@ -46,6 +50,7 @@ Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
   --json                      For "report": emit JSON instead of the readable digest
   --force                     For "upload-screenshot": upload despite failed checks
+  --reveal                    For "review-details": print the demo account password
 
 Logging goes to stderr as one JSON object per line, so stdout stays pipeable:
   ASC_LOG=debug|info|warn|error|off   default info
@@ -112,7 +117,9 @@ async function main(argv: string[]): Promise<number> {
   const raw = argv.includes('--raw');
   const json = argv.includes('--json');
   const force = argv.includes('--force');
-  const args = argv.filter((arg) => arg !== '--raw' && arg !== '--json' && arg !== '--force');
+  const reveal = argv.includes('--reveal');
+  const flags = new Set(['--raw', '--json', '--force', '--reveal']);
+  const args = argv.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
 
   // Arguments are ids and file paths — the one secret, a piped-in capture, arrives on
@@ -258,8 +265,22 @@ async function main(argv: string[]): Promise<number> {
 
     case 'screenshots': {
       const session = loadSession();
-      const id = requireArg(rest[0], 'localizationId', 'screenshots <localizationId>');
-      emit(await api.listScreenshotSets(session, id), raw);
+      const appId = requireAppId(session, undefined);
+      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
+      emit(await api.listVersionLocalizationsWithAssets(session, versionId), raw);
+      return 0;
+    }
+
+    case 'review-details': {
+      const session = loadSession();
+      const appId = requireAppId(session, undefined);
+      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
+      const document = await api.findReviewDetails(session, versionId);
+      if (!document) {
+        log.error('reviewDetails.notFound', { versionId });
+        return 1;
+      }
+      emit(reveal ? document : api.redactReviewDetails(document), raw);
       return 0;
     }
 

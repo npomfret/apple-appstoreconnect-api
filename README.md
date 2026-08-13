@@ -93,7 +93,8 @@ document):
 | `version [versionId]` | `appStoreVersions/{id}` |
 | `builds <versionId>` | `builds?filter[appStoreVersion]={id}` |
 | `metadata [versionId]` | `apps/{appId}/appInfos` + `appStoreVersions/{id}/appStoreVersionLocalizations` |
-| `screenshots <locId>` | `appScreenshotSets?filter[appStoreVersionLocalization]={id}` |
+| `screenshots [versionId]` | `appStoreVersionLocalizations?filter[appStoreVersion]={id}&include=appScreenshotSets,appPreviewSets` |
+| `review-details [versionId]` | `appStoreVersions/{id}` → `appStoreReviewDetails/{id}` |
 | `threads [appId]` | `apps/{appId}/resolutionCenterThreads` |
 | `thread <submissionId>` | `resolutionCenterThreads?filter[reviewSubmission]={id}` |
 | `messages <threadId>` | `resolutionCenterThreads/{id}/resolutionCenterMessages` |
@@ -113,8 +114,28 @@ The ids chain together, which is what makes scripting possible:
 ```sh
 node dist/cli.js report --json          # -> submissionId, threadId, versionId
 node dist/cli.js metadata               # -> localizationId per locale
-node dist/cli.js screenshots <locId>
+node dist/cli.js screenshots            # -> every locale with its sets, in one request
 ```
+
+`screenshots` uses the same call the version page does, so one request covers all locales
+and both asset kinds. Giving it a version id explicitly skips the lookup that works out
+which version is under review.
+
+### App Review Information
+
+```sh
+node dist/cli.js review-details          # contact, demo account, notes to the reviewer
+node dist/cli.js review-details --reveal # including the demo account password
+```
+
+Worth reading on any rejection: "we were unable to sign in" and "we couldn't locate the
+feature" are complaints about this record rather than about the build. It also lists the
+`appStoreReviewAttachments` given to the reviewer.
+
+The demo account password is blanked unless you ask for it. Everything here prints to
+stdout, and a live credential left in terminal scrollback is a worse problem than having
+to pass a flag. The account *name* is shown — it's the pair that's the credential, and
+knowing which account Apple was given is usually the point.
 
 For anything not mapped yet, probe it directly:
 
@@ -143,8 +164,7 @@ from the `itctx` cookie's `cp` field; that means a session captured from any ord
 ### Adding a screenshot
 
 ```sh
-node dist/cli.js metadata                            # -> localizationId per locale
-node dist/cli.js screenshots <locId>                 # -> existing sets and display types
+node dist/cli.js screenshots                         # -> localizationIds, sets, display types
 node dist/cli.js upload-screenshot <locId> APP_IPHONE_65 shot.png
 node dist/cli.js delete-screenshot <screenshotId>
 ```
@@ -279,9 +299,20 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
 - A 403 from iris doesn't always mean the session died — it's also how an unsupported
   filter is refused. `src/http.ts` tells them apart by whether the body is a JSON:API
   error document, so a bad query no longer reads as "log in again".
-- `metadata` and `listVersionLocalizations` / `listAppInfoLocalizations` were found by
-  probing, not copied from the browser — they aren't in the captured requests, so they're
-  slightly more likely to shift than the rest.
+- Evidence varies by call, and it's worth knowing which is which. Confirmed against the
+  browser's own requests: `listMessages` and `getDraftMessage` (includes and the
+  `limit[rejections]=2000` / `limit[resolutionCenterMessageAttachments]=1000` pair match
+  exactly), `listAppInfos`, `getReviewDetails`, and the localizations-with-assets call
+  behind `screenshots`. Still probe-only, and so likelier to shift:
+  `listVersionLocalizations` (the path form — the browser uses a filter on the collection
+  instead) and `listAppInfoLocalizations`.
+- `resolutionCenterDraftMessage` returns `{"data": null}` when there's no draft, rather
+  than a 404 — so an empty draft box is a successful response, not an error.
+- A **HAR export** is the best way to capture new endpoints. Record dev tools → Network
+  while doing the thing in the browser, export, and every request *and response* is in
+  there — far more than "Copy as cURL" gives you one at a time. Note that a HAR contains
+  the full session cookie in plain text, so it belongs in `tmp/` with everything else
+  gitignored. `asc login` doesn't parse HAR yet; it wants a curl or a `Cookie:` line.
 - The include lists in `src/api.ts` are copied verbatim from the browser. `iris` rejects
   the whole request with a `400` if you ask for an include it doesn't recognise, so don't
   edit them without testing.
