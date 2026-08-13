@@ -179,8 +179,9 @@ node dist/cli.js get resolutionCenterThreads 'filter[reviewSubmission]=<id>'
 
 ## Writing
 
-Two things are mapped: attaching a build to a version (the version page's **Save**
-button) and adding a screenshot.
+Three things are mapped: attaching a build to a version (the version page's **Save**
+button), adding a screenshot, and writing the reply to App Review into a thread's draft
+box.
 
 ```sh
 node dist/cli.js builds [versionId]                 # the picker — "*" marks the current one
@@ -208,10 +209,10 @@ vanish from its own listing. The marketing version comes from the build's
 
 Writes send a different header set to reads — `Origin` and the `X-Connect-Team-*` pair,
 plus a `Content-Type` that isn't the same for every endpoint: the version PATCH sends
-`application/json`, the asset endpoints `application/vnd.api+json`. Both were copied from
-the browser. The team id is only present on captured write requests, so it's also decoded
-from the `itctx` cookie's `cp` field; that means a session captured from any ordinary
-`GET` can still write.
+`application/json`, while the asset and Resolution Center endpoints send
+`application/vnd.api+json`. Both were copied from the browser. The team id is only present
+on captured write requests, so it's also decoded from the `itctx` cookie's `cp` field;
+that means a session captured from any ordinary `GET` can still write.
 
 ### Adding a screenshot
 
@@ -271,6 +272,47 @@ The PATCH body carries only what changed — omitted fields are left alone:
 {"data":{"type":"appStoreVersions","id":"<versionId>",
   "relationships":{"build":{"data":{"type":"builds","id":"<buildId>"}}}}}
 ```
+
+### Replying to App Review
+
+```sh
+node dist/cli.js draft <threadId>                              # what's in the box now
+node dist/cli.js save-draft <threadId> "We have fixed…" --attach shot.png
+cat reply.txt | node dist/cli.js save-draft <threadId> -       # "-" reads stdin
+node dist/cli.js delete-attachment <attachmentId>
+```
+
+**This does not send anything.** App Store Connect keeps one unsent message per thread and
+autosaves it as you type; `save-draft` writes into that box, and the reply reaches Apple
+only when someone presses **Send** in the browser. Sending is deliberately unmapped: no
+capture of that button exists, and a reply to App Review is the wrong thing to reach by
+guessing at an endpoint — it can't be taken back. Write it here, read it back, send it
+there.
+
+The text replaces the draft's contents rather than appending, and newlines survive the
+round trip, so `-` and a here-doc are the sane way to write anything longer than a
+sentence. Attachments are added to whatever the draft already carries; `delete-attachment`
+takes one back off. Every attachment path is checked for existence *before* the text is
+saved, so a typo can't leave the reply half-written.
+
+Three endpoints, all `application/vnd.api+json`:
+
+```
+POST  resolutionCenterDraftMessages           {messageBody} + relationship to the thread
+PATCH resolutionCenterDraftMessages/{id}      {messageBody} — the autosave
+POST  resolutionCenterMessageAttachments      {fileName, fileSize} + relationship to the draft
+```
+
+`save-draft` reads the thread first and POSTs or PATCHes accordingly, since the draft is
+created on the first keystroke and updated forever after. Attachments are the same
+reserve → PUT the parts → `{"uploaded":true}` dance as screenshots, against
+`resolutionCenterMessageAttachments` instead of `appScreenshots` — the guess in the old
+notes turned out right. Neither the POST nor the PATCH response mentions attachments, so
+the draft is re-read at the end; that GET is what the command prints.
+
+`assetDeliveryState` reads `UPLOAD_COMPLETE` the moment the commit lands and `COMPLETE`
+once Apple has processed the file, at which point `sourceFileChecksum` (an MD5) and a
+`downloadUrl` appear.
 
 ## Logging and the audit trail
 
@@ -335,15 +377,15 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
 
 ## Notes and limits
 
-- **Mostly read-only.** The captured writes are the version PATCH behind `set-build` and
-  the screenshot flow. Replying to Apple, saving a draft and editing metadata are all
-  writes too (`POST`/`PATCH` to `resolutionCenterDraftMessage`, `appInfoLocalizations`,
-  `appStoreVersionLocalizations`) and none have been captured. Do each once in the browser,
-  copy the curl, and they can be added the same way. The Resolution Center's own attachment
-  upload is likely the same reserve/PUT/commit shape as screenshots, but that's a guess.
-- `deleteScreenshot` and `deleteScreenshotSet` were **probed, not captured** — no browser
-  request for either was ever copied. They work, but they're the least evidenced calls
-  here, and they destroy live data.
+- **Mostly read-only.** The captured writes are the version PATCH behind `set-build`, the
+  screenshot flow, and the Resolution Center draft behind `save-draft`. Still uncaptured:
+  **sending** a draft, editing metadata (`appInfoLocalizations`,
+  `appStoreVersionLocalizations`) and submitting for review. Do each once in the browser,
+  export the HAR, and they can be added the same way.
+- `deleteScreenshot`, `deleteScreenshotSet` and `deleteMessageAttachment` were **probed,
+  not captured** — no browser request for any of them was ever copied. They work
+  (`deleteMessageAttachment` returns a 204 and the attachment is gone on the next read),
+  but they're the least evidenced calls here, and they destroy live data.
 - Screenshot sets are readable only through the collection filtered by localization.
   `GET appScreenshotSets/{id}` 404s for a set that demonstrably exists, and
   `appScreenshots?filter[appScreenshotSet]=` is refused with a 403. That's why
@@ -359,7 +401,10 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
   `listBuildCandidates`, `listPreviewSets` and the `set-build` PATCH body. From HARs of
   the History, Trust & Safety and Growth tabs: `listVersionStateChanges` (the browser
   sends no query at all; the `limit` is ours, and tested), `listAppVersions`,
-  `listDataUsages` and `getDataUsagePublishState`. Still probe-only, and so likelier to
+  `listDataUsages` and `getDataUsagePublishState`. From a HAR of one draft reply with an
+  attachment: `createDraftMessage`, `updateDraftMessage`, `reserveMessageAttachment` and
+  `completeMessageAttachment` — all four bodies replayed against the HAR offline and match
+  the browser's byte for byte. Still probe-only, and so likelier to
   shift:
   `listVersionLocalizations` (the path form — the browser uses a filter on the collection
   instead) and `listAppInfoLocalizations`.

@@ -48,7 +48,7 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc threads [appId]         List Resolution Center threads on an app
   asc thread <submissionId>   Find the thread behind a review submission
   asc messages <threadId>     List Resolution Center messages in a thread
-  asc draft <threadId>        Show the thread's unsent draft reply
+  asc draft <threadId>        Show the thread's unsent draft reply, with its attachments
   asc rejections <threadId>   List guideline rejections for a thread
   asc get <path> [k=v ...]    Raw GET against /iris/v1 for probing unmapped endpoints
 
@@ -61,6 +61,11 @@ Writes (these change your live App Store Connect data):
                               Add a screenshot, creating the set if the size has none yet.
                               Checks dimensions and the 10-per-set limit before uploading
   asc delete-screenshot <id>  Remove a screenshot
+  asc save-draft <threadId> <text|-> [--attach file ...]
+                              Write the reply to Apple into the thread's draft box, with
+                              attachments. "-" reads the text from stdin. This does NOT
+                              send it — press Send in the browser once it reads right
+  asc delete-attachment <id>  Remove one attachment from a draft
   asc patch <path> <json>     Raw PATCH against /iris/v1 with a hand-written body
 
 Options:
@@ -69,6 +74,7 @@ Options:
                               instead of the digest
   --force                     For "upload-screenshot": upload despite failed checks
   --reveal                    For "review-details": print the demo account password
+  --attach <file>             For "save-draft": a file to attach. Repeat for several
 
 Logging goes to stderr as one JSON object per line, so stdout stays pipeable:
   ASC_LOG=debug|info|warn|error|off   default info
@@ -147,13 +153,36 @@ function parseQueryArgs(args: string[]): Query {
   return query;
 }
 
+/**
+ * Pulls every `--name value` pair out of the arguments, returning the values and what was
+ * left. Repeatable, unlike the bare flags: --attach one.png --attach two.png.
+ */
+function takeOption(argv: string[], name: string): { values: string[]; rest: string[] } {
+  const values: string[] = [];
+  const rest: string[] = [];
+
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] !== name) {
+      rest.push(argv[i]!);
+      continue;
+    }
+    const value = argv[i + 1];
+    if (value === undefined) throw new Error(`${name} needs a value: ${name} <file>`);
+    values.push(value);
+    i++;
+  }
+
+  return { values, rest };
+}
+
 async function main(argv: string[]): Promise<number> {
-  const raw = argv.includes('--raw');
-  const json = argv.includes('--json');
-  const force = argv.includes('--force');
-  const reveal = argv.includes('--reveal');
+  const { values: attach, rest: positional } = takeOption(argv, '--attach');
+  const raw = positional.includes('--raw');
+  const json = positional.includes('--json');
+  const force = positional.includes('--force');
+  const reveal = positional.includes('--reveal');
   const flags = new Set(['--raw', '--json', '--force', '--reveal']);
-  const args = argv.filter((arg) => !flags.has(arg));
+  const args = positional.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
 
   // Arguments are ids and file paths — the one secret, a piped-in capture, arrives on
@@ -303,6 +332,31 @@ async function main(argv: string[]): Promise<number> {
       const session = loadSession();
       const id = requireArg(rest[0], 'screenshotId', 'delete-screenshot <screenshotId>');
       await api.deleteScreenshot(session, id);
+      return 0;
+    }
+
+    case 'save-draft': {
+      const session = loadSession();
+      const example = 'save-draft <threadId> "We have fixed..." --attach shot.png';
+      const threadId = requireArg(rest[0], 'threadId', example);
+      const text = requireArg(rest[1], 'text', example);
+      // "-" for stdin: a reply to App Review runs to paragraphs, and quoting all of that
+      // into a shell argument is how newlines get lost.
+      const body = text === '-' ? readStdin() : text;
+      if (!body.trim()) {
+        throw new Error('Refusing to save an empty draft — pass the reply text, or "-" to read it from stdin');
+      }
+
+      const document = await api.saveDraftReply(session, { threadId, body, attach });
+      emit(document, raw);
+      console.error('Saved as a draft. Nothing has been sent — press Send in App Store Connect.');
+      return 0;
+    }
+
+    case 'delete-attachment': {
+      const session = loadSession();
+      const id = requireArg(rest[0], 'attachmentId', 'delete-attachment <attachmentId>');
+      await api.deleteMessageAttachment(session, id);
       return 0;
     }
 

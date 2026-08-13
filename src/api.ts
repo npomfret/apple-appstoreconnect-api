@@ -1,5 +1,5 @@
 import { basename } from 'path';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { Session } from './session';
 import { del, get, patch, post, uploadPart, Query, UploadOperation } from './http';
 import { Document, Resource, ResourceIdentifier } from './jsonapi';
@@ -484,10 +484,11 @@ export function listPreviewSets(session: Session, localizationId: string): Promi
 }
 
 /**
- * The asset endpoints send application/vnd.api+json on writes, unlike the version PATCH
- * behind `updateVersion` which sends application/json. Both were copied from the browser.
+ * Most iris writes send application/vnd.api+json — the asset endpoints and the Resolution
+ * Center drafts both do. The version PATCH behind `updateVersion` is the odd one out and
+ * sends plain application/json. Both were copied from the browser rather than reasoned about.
  */
-const ASSET_CONTENT_TYPE = 'application/vnd.api+json';
+const VND_API_CONTENT_TYPE = 'application/vnd.api+json';
 
 /**
  * Creates an empty screenshot set for one device size on one locale. Only needed when
@@ -513,7 +514,7 @@ export function createScreenshotSet(
         },
       },
     },
-    ASSET_CONTENT_TYPE
+    VND_API_CONTENT_TYPE
   );
 }
 
@@ -537,7 +538,7 @@ export function reserveScreenshot(
         relationships: { appScreenshotSet: { data: { type: 'appScreenshotSets', id: setId } } },
       },
     },
-    ASSET_CONTENT_TYPE
+    VND_API_CONTENT_TYPE
   );
 }
 
@@ -550,7 +551,7 @@ export function completeScreenshot(session: Session, screenshotId: string): Prom
     session,
     `appScreenshots/${screenshotId}`,
     { data: { type: 'appScreenshots', id: screenshotId, attributes: { uploaded: true } } },
-    ASSET_CONTENT_TYPE
+    VND_API_CONTENT_TYPE
   );
 }
 
@@ -656,6 +657,187 @@ export async function uploadScreenshot(
 
       const done = await completeScreenshot(session, screenshot.id);
       return done.data;
+    }
+  );
+}
+
+/**
+ * Resolution Center replies live as a *draft* until you send them: Apple keeps one unsent
+ * message per thread and autosaves it as you type, which is what the calls below do.
+ *
+ * Sending is deliberately absent. No capture of the Send button exists yet, and a reply
+ * to App Review is not something to reach by guessing at an endpoint — an accidental send
+ * cannot be taken back. Save the draft here, then press Send in the browser.
+ */
+
+/**
+ * Starts the thread's draft. The web UI POSTs this the moment you type the first
+ * character and PATCHes from then on, so call it only when there is no draft already —
+ * `saveDraftReply` handles that choice.
+ */
+export function createDraftMessage(
+  session: Session,
+  threadId: string,
+  messageBody: string
+): Promise<Document<Resource>> {
+  return post(
+    session,
+    'resolutionCenterDraftMessages',
+    {
+      data: {
+        type: 'resolutionCenterDraftMessages',
+        attributes: { messageBody },
+        relationships: {
+          resolutionCenterThread: { data: { type: 'resolutionCenterThreads', id: threadId } },
+        },
+      },
+    },
+    VND_API_CONTENT_TYPE
+  );
+}
+
+/** Replaces the draft's text — the autosave. Attachments already on it are left alone. */
+export function updateDraftMessage(
+  session: Session,
+  draftId: string,
+  messageBody: string
+): Promise<Document<Resource>> {
+  return patch(
+    session,
+    `resolutionCenterDraftMessages/${draftId}`,
+    { data: { type: 'resolutionCenterDraftMessages', id: draftId, attributes: { messageBody } } },
+    VND_API_CONTENT_TYPE
+  );
+}
+
+/**
+ * Step one of attaching a file: reserve a slot on the draft for a file of this name and
+ * size. The response carries the `uploadOperations` saying where the bytes go — the same
+ * reserve/upload/commit dance as screenshots, against a different resource.
+ */
+export function reserveMessageAttachment(
+  session: Session,
+  draftId: string,
+  fileName: string,
+  fileSize: number
+): Promise<Document<Resource>> {
+  return post(
+    session,
+    'resolutionCenterMessageAttachments',
+    {
+      data: {
+        type: 'resolutionCenterMessageAttachments',
+        attributes: { fileSize, fileName },
+        relationships: {
+          resolutionCenterDraftMessage: {
+            data: { type: 'resolutionCenterDraftMessages', id: draftId },
+          },
+        },
+      },
+    },
+    VND_API_CONTENT_TYPE
+  );
+}
+
+/** Step three: tell iris the bytes have all arrived. Until this lands the slot is empty. */
+export function completeMessageAttachment(
+  session: Session,
+  attachmentId: string
+): Promise<Document<Resource>> {
+  return patch(
+    session,
+    `resolutionCenterMessageAttachments/${attachmentId}`,
+    {
+      data: {
+        type: 'resolutionCenterMessageAttachments',
+        id: attachmentId,
+        attributes: { uploaded: true },
+      },
+    },
+    VND_API_CONTENT_TYPE
+  );
+}
+
+/**
+ * Removes an attachment from a draft. Not in any capture — the shape was probed, like
+ * `deleteScreenshot`, and works on an attachment that has been uploaded.
+ */
+export function deleteMessageAttachment(session: Session, attachmentId: string): Promise<void> {
+  return audited('draft.attachment.delete', { attachmentId }, () =>
+    del<void>(session, `resolutionCenterMessageAttachments/${attachmentId}`)
+  );
+}
+
+/** Puts one file on a draft: reserve, send the parts, commit. */
+export async function attachToDraft(
+  session: Session,
+  draftId: string,
+  filePath: string
+): Promise<Resource> {
+  const file = readFileSync(filePath);
+  const fileName = basename(filePath);
+
+  return audited('draft.attach', { draftId, fileName, fileSize: file.length }, async () => {
+    const reserved = (await reserveMessageAttachment(session, draftId, fileName, file.length)).data;
+    const operations = (reserved.attributes?.uploadOperations ?? []) as UploadOperation[];
+    if (!operations.length) {
+      throw new Error(
+        `Attachment ${reserved.id} came back with no uploadOperations — nowhere to send the file`
+      );
+    }
+
+    log.info('draft.attachment.reserved', { attachmentId: reserved.id, parts: operations.length });
+
+    for (const operation of operations) await uploadPart(operation, file);
+
+    return (await completeMessageAttachment(session, reserved.id)).data;
+  });
+}
+
+export interface DraftReply {
+  threadId: string;
+  /** The whole reply. This replaces the draft's text rather than adding to it. */
+  body: string;
+  /** Files to attach, added to whatever the draft already carries. */
+  attach?: string[];
+}
+
+/**
+ * Writes a reply into the thread's draft box, creating the draft if the thread has none
+ * and attaching any files given. Nothing here reaches Apple: the draft is yours until
+ * someone presses Send in the browser.
+ *
+ * The draft is read back at the end because neither the POST nor the PATCH response
+ * mentions attachments — the relationship only shows up on a fresh GET.
+ */
+export async function saveDraftReply(session: Session, reply: DraftReply): Promise<Document<Resource>> {
+  const { threadId, body, attach = [] } = reply;
+
+  // Checked before anything is written: a mistyped path found halfway through would leave
+  // the text saved and the files not, which is the confusing half-done state to avoid.
+  for (const filePath of attach) {
+    if (!existsSync(filePath)) throw new Error(`No such file to attach: ${filePath}`);
+  }
+
+  return audited(
+    'draft.save',
+    { threadId, bodyLength: body.length, attaching: attach.length || undefined },
+    async () => {
+      const existing = (await getDraftMessage(session, threadId)).data;
+
+      const draft = existing
+        ? (await updateDraftMessage(session, existing.id, body)).data
+        : (await createDraftMessage(session, threadId, body)).data;
+
+      log.info(existing ? 'draft.updated' : 'draft.created', { threadId, draftId: draft.id });
+
+      for (const filePath of attach) await attachToDraft(session, draft.id, filePath);
+
+      const saved = await getDraftMessage(session, threadId);
+      if (!saved.data) {
+        throw new Error(`Saved draft ${draft.id} on thread ${threadId}, but reading it back gave nothing`);
+      }
+      return saved as Document<Resource>;
     }
   );
 }
