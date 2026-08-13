@@ -2,6 +2,7 @@
   "name": "appstoreconnect-bot",
   "version": "1.0.0",
   "description": "Unofficial client for the App Store Connect review centre",
+  "license": "MIT",
   "main": "dist/index.js",
   "bin": {
     "asc": "dist/cli.js"
