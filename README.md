@@ -312,9 +312,14 @@ reserve → PUT the parts → `{"uploaded":true}` dance as screenshots, against
 notes turned out right. Neither the POST nor the PATCH response mentions attachments, so
 the draft is re-read at the end; that GET is what the command prints.
 
-`delete-draft` takes a thread id rather than a draft id, because draft ids are internal and
-a new one is minted every time a draft is started. Attachments go with the draft: after one
-was deleted this way, a GET of the attachment it carried returned 404.
+`delete-draft` takes a thread id rather than a draft id, because the draft id is never shown
+in the UI. Attachments go with the draft: after one was deleted this way, a GET of the
+attachment it carried returned 404.
+
+Draft ids are *derived from the thread*, not random. Deleting a draft and starting another
+on the same thread returned the identical UUID with a fresh `createdDate` — and both it and
+the thread id are version-3 (name-based) UUIDs, so Apple is hashing something stable. Handy
+to know when reading captures across sessions; not something to rely on in code.
 
 Drafts only live on **open** threads. A closed one refuses the POST with 409
 `ENTITY_ERROR.RELATIONSHIP.INVALID` — "Cannot add draft message to closed thread".
@@ -418,8 +423,9 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
   `listDataUsages` and `getDataUsagePublishState`. From a HAR of one draft reply with an
   attachment: `createDraftMessage`, `updateDraftMessage`, `reserveMessageAttachment` and
   `completeMessageAttachment` — all four bodies replayed against the HAR offline and match
-  the browser's byte for byte. Still probe-only, and so likelier to
-  shift:
+  the browser's byte for byte; a second HAR of editing an existing draft replays through
+  `updateDraftMessage` and `getDraftMessage` with nothing new in it. Still probe-only, and
+  so likelier to shift:
   `listVersionLocalizations` (the path form — the browser uses a filter on the collection
   instead) and `listAppInfoLocalizations`.
 - `resolutionCenterDraftMessage` returns `{"data": null}` when there's no draft, rather

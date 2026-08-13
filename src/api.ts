@@ -677,6 +677,10 @@ export async function uploadScreenshot(
  *
  * Only open threads take drafts: a closed one answers 409 ENTITY_ERROR.RELATIONSHIP.INVALID,
  * "Cannot add draft message to closed thread".
+ *
+ * The id that comes back is derived from the thread rather than random — delete a draft,
+ * start another on the same thread, and the same UUID returns with a new `createdDate`.
+ * Don't lean on that: read the draft for its id rather than remembering one.
  */
 export function createDraftMessage(
   session: Session,
@@ -860,8 +864,7 @@ export async function saveDraftReply(session: Session, reply: DraftReply): Promi
 
 /**
  * Deletes the thread's draft, attachments and all, and says which one went. Addressed by
- * thread because that is the id you have — draft ids are internal and change each time a
- * draft is started.
+ * thread because that is the id you have; the draft id is never shown in the UI.
  */
 export async function discardDraftReply(session: Session, threadId: string): Promise<string> {
   const draft = (await getDraftMessage(session, threadId)).data;
