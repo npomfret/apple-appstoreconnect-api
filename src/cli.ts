@@ -3,7 +3,7 @@ import { sessionFromCapture } from './curl';
 import { describeSession, loadSession, saveSession, SESSION_PATH, Session } from './session';
 import { denormalizeAll, Document } from './jsonapi';
 import { Query } from './http';
-import { buildReport, fetchMetadata, formatReport } from './report';
+import { buildReport, fetchBuilds, fetchMetadata, formatBuilds, formatReport } from './report';
 import { audit, log } from './log';
 import * as api from './api';
 
@@ -20,11 +20,14 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc submission <id>         Show one review submission
   asc items <submissionId>    List the items bundled into a submission
   asc version [versionId]     Show one App Store version and everything hanging off it
-  asc builds <versionId>      List the builds behind an App Store version
+  asc builds [versionId]      Builds you can attach to a version, newest first, with the
+                              current one marked "*" — the version page's build picker
   asc metadata [versionId]    Per-locale name, subtitle, description and keywords (defaults
                               to the version under review)
   asc screenshots [versionId] Every locale of a version with its screenshot and preview
                               sets, in one request (defaults to the version under review)
+  asc previews <locId>        App preview videos in one locale's preview sets. The
+                              localization id comes from "asc screenshots"
   asc review-details [versionId]
                               App Review Information: reviewer contact, demo account and
                               notes. The demo password is hidden unless --reveal
@@ -48,7 +51,7 @@ Writes (these change your live App Store Connect data):
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
-  --json                      For "report": emit JSON instead of the readable digest
+  --json                      For "report" and "builds": emit JSON instead of the digest
   --force                     For "upload-screenshot": upload despite failed checks
   --reveal                    For "review-details": print the demo account password
 
@@ -205,7 +208,10 @@ async function main(argv: string[]): Promise<number> {
 
     case 'builds': {
       const session = loadSession();
-      emit(await api.listBuilds(session, requireArg(rest[0], 'versionId', 'builds <versionId>')), raw);
+      const appId = requireAppId(session, undefined);
+      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
+      const builds = await fetchBuilds(session, versionId);
+      console.log(json ? JSON.stringify(builds, null, 2) : formatBuilds(builds));
       return 0;
     }
 
@@ -268,6 +274,13 @@ async function main(argv: string[]): Promise<number> {
       const appId = requireAppId(session, undefined);
       const versionId = rest[0] ?? (await versionUnderReview(session, appId));
       emit(await api.listVersionLocalizationsWithAssets(session, versionId), raw);
+      return 0;
+    }
+
+    case 'previews': {
+      const session = loadSession();
+      const id = requireArg(rest[0], 'localizationId', 'previews <localizationId>');
+      emit(await api.listPreviewSets(session, id), raw);
       return 0;
     }
 

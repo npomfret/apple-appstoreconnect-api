@@ -163,6 +163,108 @@ async function reportForSubmission(session: Session, submission: Denormalized): 
   return report;
 }
 
+export interface BuildChoice {
+  /** Feed it to `setVersionBuild`. */
+  buildId: string;
+  /** The build number — the part in brackets of "1.1.1 (5)". */
+  buildNumber?: string;
+  /** Marketing version the build was uploaded against. */
+  version?: string;
+  platform?: string;
+  uploadedDate?: string;
+  processingState?: string;
+  expired?: boolean;
+  /** True for the one the version currently points at. */
+  attached: boolean;
+}
+
+function toBuildChoice(build: Denormalized, attachedId: string | undefined): BuildChoice {
+  const preRelease = build['preReleaseVersion'] as Record<string, unknown> | undefined;
+
+  return {
+    buildId: build.id,
+    // The build's own `version` is the build number; the marketing version it belongs
+    // to lives on the preReleaseVersion, which is why the picker asks for both.
+    buildNumber: asString(build['version']),
+    version: preRelease && asString(preRelease['version']),
+    platform: preRelease && asString(preRelease['platform']),
+    uploadedDate: asString(build['uploadedDate']),
+    processingState: asString(build['processingState']),
+    expired: build['expired'] === true,
+    attached: build.id === attachedId,
+  };
+}
+
+/**
+ * Every build that could be attached to a version, with the current one marked — the
+ * list you need before `setVersionBuild`, which otherwise wants an id from nowhere.
+ *
+ * Three requests, as the version page itself makes: the version supplies the app and
+ * platform to filter candidates by, and the attached build is read separately because
+ * it need not still be among them.
+ */
+export async function fetchBuilds(
+  session: Session,
+  versionId: string,
+  options: { limit?: number } = {}
+): Promise<BuildChoice[]> {
+  const version = await api.getVersion(session, versionId);
+  const appId = (version.data.relationships?.app?.data as { id?: string } | undefined)?.id;
+  if (!appId) {
+    throw new Error(`Version ${versionId} came back without an app — cannot list its builds`);
+  }
+
+  const [attachedDoc, candidateDoc] = await Promise.all([
+    api.listBuilds(session, versionId),
+    api.listBuildCandidates(session, appId, {
+      platform: asString(version.data.attributes?.['platform']),
+      limit: options.limit,
+    }),
+  ]);
+
+  const attachedId = attachedDoc.data[0]?.id;
+  const choices = denormalizeAll(candidateDoc).map((build) => toBuildChoice(build, attachedId));
+
+  if (attachedId && !choices.some((choice) => choice.buildId === attachedId)) {
+    choices.unshift(...denormalizeAll(attachedDoc).map((build) => toBuildChoice(build, attachedId)));
+  }
+
+  return choices;
+}
+
+/** Renders the build picker for a terminal. */
+export function formatBuilds(builds: BuildChoice[]): string {
+  if (builds.length === 0) {
+    return 'No builds to choose from — none have finished processing for this platform.';
+  }
+
+  const lines = builds.map((build) => {
+    const name = `${build.version ?? '?'} (${build.buildNumber ?? '?'})`;
+    const notes = [
+      build.processingState !== 'VALID' ? build.processingState : undefined,
+      build.expired ? 'expired' : undefined,
+    ].filter(Boolean);
+
+    const row = [
+      build.attached ? '*' : ' ',
+      name.padEnd(16),
+      build.buildId,
+      `uploaded ${build.uploadedDate ?? 'unknown'}`,
+    ].join(' ');
+
+    return notes.length ? `${row}  [${notes.join(', ')}]` : row;
+  });
+
+  lines.push('');
+  lines.push(
+    builds.some((build) => build.attached)
+      ? '* attached. Change it with: asc set-build <versionId> <buildId>'
+      : 'None attached. Attach one with: asc set-build <versionId> <buildId>'
+  );
+
+  return lines.join('\n');
+}
+
 export interface LocaleMetadata {
   locale: string;
   /** Id of the appStoreVersionLocalization — feed it to `listScreenshotSets`. */

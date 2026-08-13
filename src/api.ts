@@ -55,6 +55,7 @@ const INCLUDES = {
     'appBundleVersion',
     'rejectionAttachments',
   ],
+  builds: ['icons', 'preReleaseVersion', 'buildBundles'],
   version: [
     'app',
     'routingAppCoverage',
@@ -291,13 +292,37 @@ export function listVersionLocalizationsWithAssets(
 }
 
 /**
- * Builds behind an App Store version — both the one attached and the others that could
- * be. Re-read it after `setVersionBuild` to confirm which one is selected.
+ * The build a version currently points at — one, or none at all. This filter does not
+ * offer the alternatives; `listBuildCandidates` is the one that lists those. Re-read it
+ * after `setVersionBuild` to confirm the change landed.
  */
 export function listBuilds(session: Session, versionId: string): Promise<Document<Resource[]>> {
   return get(session, 'builds', {
     'filter[appStoreVersion]': versionId,
-    include: ['icons', 'preReleaseVersion', 'buildBundles'],
+    include: [...INCLUDES.builds],
+  });
+}
+
+/**
+ * What the version page's build picker offers: App Store eligible, finished processing,
+ * on the given platform, newest first. The build already attached normally appears here
+ * too, but isn't guaranteed to — a build can stay attached after ageing out of the list,
+ * which is why `fetchBuilds` reads both.
+ *
+ * The limit of 10 is the picker's own; raise it to see further back.
+ */
+export function listBuildCandidates(
+  session: Session,
+  appId: string,
+  options: { platform?: string; limit?: number } = {}
+): Promise<Document<Resource[]>> {
+  return get(session, 'builds', {
+    include: [...INCLUDES.builds],
+    limit: options.limit ?? 10,
+    'filter[app]': appId,
+    'filter[preReleaseVersion.platform]': options.platform,
+    'filter[isAppStoreCandidate]': true,
+    'filter[processingState]': 'VALID',
   });
 }
 
@@ -359,6 +384,19 @@ export function listVersionLocalizations(session: Session, versionId: string): P
 export function listScreenshotSets(session: Session, localizationId: string): Promise<Document<Resource[]>> {
   return get(session, 'appScreenshotSets', {
     include: ['appScreenshots'],
+    'filter[appStoreVersionLocalization]': localizationId,
+  });
+}
+
+/**
+ * App preview videos for one localization — the moving counterpart to the screenshot
+ * sets, and subject to the same 4.1/2.3 objections. Worth asking for separately:
+ * `listVersionLocalizationsWithAssets` names a locale's preview sets but not what is
+ * inside them.
+ */
+export function listPreviewSets(session: Session, localizationId: string): Promise<Document<Resource[]>> {
+  return get(session, 'appPreviewSets', {
+    include: ['appPreviews'],
     'filter[appStoreVersionLocalization]': localizationId,
   });
 }

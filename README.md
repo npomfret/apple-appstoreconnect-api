@@ -91,9 +91,9 @@ document):
 | `submission <id>` | `reviewSubmissions/{id}` |
 | `items <submissionId>` | `reviewSubmissions/{id}/items` |
 | `version [versionId]` | `appStoreVersions/{id}` |
-| `builds <versionId>` | `builds?filter[appStoreVersion]={id}` |
 | `metadata [versionId]` | `apps/{appId}/appInfos` + `appStoreVersions/{id}/appStoreVersionLocalizations` |
 | `screenshots [versionId]` | `appStoreVersionLocalizations?filter[appStoreVersion]={id}&include=appScreenshotSets,appPreviewSets` |
+| `previews <localizationId>` | `appPreviewSets?filter[appStoreVersionLocalization]={id}&include=appPreviews` |
 | `review-details [versionId]` | `appStoreVersions/{id}` → `appStoreReviewDetails/{id}` |
 | `threads [appId]` | `apps/{appId}/resolutionCenterThreads` |
 | `thread <submissionId>` | `resolutionCenterThreads?filter[reviewSubmission]={id}` |
@@ -149,10 +149,28 @@ Two things are mapped: attaching a build to a version (the version page's **Save
 button) and adding a screenshot.
 
 ```sh
-node dist/cli.js builds <versionId>                 # pick an id
+node dist/cli.js builds [versionId]                 # the picker — "*" marks the current one
 node dist/cli.js set-build <versionId> <buildId>    # or "none" to detach
 node dist/cli.js patch appStoreVersions/<id> '{"data":{...}}'   # anything else
 ```
+
+`builds` is the version page's build picker, and reads like it (`--json` for the same
+thing as data):
+
+```
+  1.1.1 (6)        9ba2bc88-4458-4a75-9e29-612ddfb89a0a uploaded 2026-08-13T03:36:06-07:00
+* 1.1.1 (5)        046e610d-0579-4ecf-88b2-10102a9a798c uploaded 2026-08-13T03:23:39-07:00
+  1.1.0 (1)        375b687a-85a9-4546-a924-7abea47baabf uploaded 2026-08-12T07:30:27-07:00
+```
+
+Two filters, because they answer different questions.
+`builds?filter[appStoreVersion]={id}` returns only the build already attached — it will
+not show you the alternatives. The picker's list is
+`builds?filter[app]={appId}&filter[preReleaseVersion.platform]={platform}&filter[isAppStoreCandidate]=true&filter[processingState]=VALID`,
+newest first, capped at 10 as the page itself caps it. `builds` runs both and merges
+them, because an attached build can age out of the candidate list and would otherwise
+vanish from its own listing. The marketing version comes from the build's
+`preReleaseVersion`; the number in brackets is the build's own `version`.
 
 Writes send a different header set to reads — `Origin` and the `X-Connect-Team-*` pair,
 plus a `Content-Type` that isn't the same for every endpoint: the version PATCH sends
@@ -302,8 +320,10 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
 - Evidence varies by call, and it's worth knowing which is which. Confirmed against the
   browser's own requests: `listMessages` and `getDraftMessage` (includes and the
   `limit[rejections]=2000` / `limit[resolutionCenterMessageAttachments]=1000` pair match
-  exactly), `listAppInfos`, `getReviewDetails`, and the localizations-with-assets call
-  behind `screenshots`. Still probe-only, and so likelier to shift:
+  exactly), `listAppInfos`, `getReviewDetails`, the localizations-with-assets call behind
+  `screenshots`, and — from a HAR of one attach-a-build-and-save — `listBuilds`,
+  `listBuildCandidates`, `listPreviewSets` and the `set-build` PATCH body. Still
+  probe-only, and so likelier to shift:
   `listVersionLocalizations` (the path form — the browser uses a filter on the collection
   instead) and `listAppInfoLocalizations`.
 - `resolutionCenterDraftMessage` returns `{"data": null}` when there's no draft, rather
