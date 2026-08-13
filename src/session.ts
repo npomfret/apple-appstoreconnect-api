@@ -29,7 +29,7 @@ export function saveSession(session: Session, path = SESSION_PATH): void {
 
 export function loadSession(path = SESSION_PATH): Session {
   if (!existsSync(path)) {
-    throw new Error(`No session at ${path}. Run "asc login" and paste a fresh curl from your browser.`);
+    throw new Error(`No session at ${path}. Run "asc login" with a fresh curl or Cookie header from your browser.`);
   }
   const session = JSON.parse(readFileSync(path, 'utf8')) as Session;
   if (!session.cookie) throw new Error(`Session at ${path} has no cookie — capture a new one.`);

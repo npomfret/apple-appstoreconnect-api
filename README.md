@@ -33,6 +33,25 @@ Any request will do, `GET` or otherwise — the team id writes need is decoded f
 cookie rather than taken from the headers, so a read request still yields a session that
 can write.
 
+### Or plain text
+
+If a curl is awkward to get, `login` takes an ordinary text file instead. One item per
+line, in any order — headers, the page URL, `#` comments, blank lines:
+
+```
+# grabbed 13 Aug
+Cookie: myacinfo=...; itctx=...; dqsid=...
+https://appstoreconnect.apple.com/apps/6761343835/distribution/ios/version/inflight
+```
+
+The cookie is the only part that's required, and it can be pasted bare without the
+`Cookie:` prefix. Account id, team id and expiry are all decoded from it. The URL line is
+optional and only supplies the default app id, which you can otherwise pass per command
+(`asc report <appId>`).
+
+Anything else in the file is ignored, so an HTTP/2 header block copied straight out of
+dev tools (`:authority:`, `:path:`, `sec-fetch-*` and all) works unedited.
+
 ## Usage
 
 ```sh

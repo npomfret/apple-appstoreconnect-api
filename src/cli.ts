@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs';
-import { sessionFromCurl } from './curl';
+import { sessionFromCapture } from './curl';
 import { describeSession, loadSession, saveSession, SESSION_PATH, Session } from './session';
 import { denormalizeAll, Document } from './jsonapi';
 import { Query } from './http';
@@ -8,7 +8,8 @@ import * as api from './api';
 
 const USAGE = `App Store Connect review-centre client (unofficial, session-scraped).
 
-  asc login [file]            Read a "Copy as cURL" command from file (or stdin) and store the session
+  asc login [file]            Store a session from file (or stdin): either a "Copy as cURL"
+                              command, or plain text with a "Cookie: ..." line in it
   asc status                  Show the stored session and how long it has left
   asc report [appId]          Digest of every open submission: state, guidelines, Apple's latest message
   asc apps                    List every app on the account
@@ -40,7 +41,8 @@ Options:
 
 The session lives at ${SESSION_PATH} (override with ASC_SESSION_PATH).
 Capture a new one whenever Apple expires it — log in with your passkey, open dev tools,
-right-click any /iris/v1 request and "Copy as cURL".`;
+right-click any /iris/v1 request and "Copy as cURL". Or copy just its Cookie header into
+a text file; everything else is derived from it.`;
 
 function readStdin(): string {
   try {
@@ -112,7 +114,7 @@ async function main(argv: string[]): Promise<number> {
       if (!source.trim()) {
         throw new Error('Nothing to read. Pass a file: asc login curl.txt — or pipe it: pbpaste | asc login');
       }
-      const session = sessionFromCurl(source);
+      const session = sessionFromCapture(source);
       saveSession(session);
       console.log(`Saved session to ${SESSION_PATH}\n${describeSession(session)}`);
       return 0;

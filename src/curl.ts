@@ -181,30 +181,26 @@ function readAppId(referer: string | undefined): string | undefined {
 }
 
 /**
- * Turns a curl command copied from Safari/Chrome dev tools into a Session.
- * Any of the five App Store Connect review-centre requests will do — they all
- * carry the same cookie jar and CSRF header.
+ * Everything a session needs comes from the cookie jar plus a few headers, however they
+ * were captured. The account id, team id and expiry are decoded from the cookie itself,
+ * so the headers are close to optional.
  */
-export function sessionFromCurl(command: string): Session {
-  const parsed = parseCurl(command);
-
-  if (!parsed.cookie) {
-    throw new Error('The curl command has no Cookie header — copy it as "Copy as cURL" while logged in');
-  }
-  if (!/(?:^|;\s*)myacinfo=/.test(parsed.cookie)) {
+function buildSession(cookie: string, rawHeaders: Record<string, string>, url?: string): Session {
+  if (!/(?:^|;\s*)myacinfo=/.test(cookie)) {
     throw new Error('Cookie is missing myacinfo — this does not look like a logged-in App Store Connect request');
   }
 
   const headers: Record<string, string> = {};
-  for (const [name, value] of Object.entries(parsed.headers)) {
+  for (const [name, value] of Object.entries(rawHeaders)) {
     if (KEEP_HEADERS.has(name)) headers[name] = value;
   }
   if (!headers['x-csrf-itc']) headers['x-csrf-itc'] = '[asc-ui]';
+  if (!headers['referer'] && url) headers['referer'] = url;
 
-  const { dsId, teamId, expiresAt } = readItctx(parsed.cookie);
+  const { dsId, teamId, expiresAt } = readItctx(cookie);
 
   return {
-    cookie: parsed.cookie,
+    cookie,
     headers,
     dsId,
     teamId: headers['x-connect-team-id'] ?? teamId,
@@ -212,4 +208,79 @@ export function sessionFromCurl(command: string): Session {
     appId: readAppId(headers['referer']),
     capturedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Turns a curl command copied from Safari/Chrome dev tools into a Session.
+ * Any of the App Store Connect review-centre requests will do — they all carry the
+ * same cookie jar and CSRF header.
+ */
+export function sessionFromCurl(command: string): Session {
+  const parsed = parseCurl(command);
+
+  if (!parsed.cookie) {
+    throw new Error('The curl command has no Cookie header — copy it as "Copy as cURL" while logged in');
+  }
+
+  // parsed.url is the API endpoint, not the page — no use as a Referer.
+  return buildSession(parsed.cookie, parsed.headers);
+}
+
+/** Request lines from "Copy request headers" — nothing in them we need. */
+const REQUEST_LINE = /^(GET|POST|PATCH|PUT|DELETE|HEAD|OPTIONS)\s+\S+/;
+
+/**
+ * Reads a session out of plain text instead of a curl command. One item per line, in any
+ * order: `Name: value` headers, a bare cookie jar, or the page URL. Blank lines and `#`
+ * comments are ignored, and so is anything not worth keeping — which means an HTTP/2
+ * header block pasted straight out of dev tools works as-is.
+ *
+ * The cookie is the only required part:
+ *
+ *   Cookie: myacinfo=...; itctx=...
+ *   https://appstoreconnect.apple.com/apps/6761343835/distribution/ios/version/inflight
+ */
+export function sessionFromText(text: string): Session {
+  let cookie = '';
+  let url: string | undefined;
+  const headers: Record<string, string> = {};
+
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) continue;
+    if (REQUEST_LINE.test(trimmed)) continue;
+
+    // Checked before the header pattern, which would otherwise read "https" as a name.
+    if (/^https?:\/\//.test(trimmed)) {
+      url = trimmed;
+      continue;
+    }
+
+    // The leading colon covers HTTP/2 pseudo-headers (:authority, :path); they fall out
+    // at the KEEP_HEADERS filter like any other header we don't want.
+    const header = /^:?([A-Za-z0-9-]+):\s*(.*)$/.exec(trimmed);
+    if (header) {
+      const name = header[1].toLowerCase();
+      if (name === 'cookie') cookie = header[2].trim();
+      else headers[name] = header[2].trim();
+      continue;
+    }
+
+    // A cookie jar pasted on its own, without its header name.
+    if (/(?:^|;\s*)myacinfo=/.test(trimmed)) cookie = trimmed;
+  }
+
+  if (!cookie) {
+    throw new Error(
+      'No cookie found. The file needs the Cookie header from a logged-in App Store ' +
+        'Connect request, e.g. "Cookie: myacinfo=...; itctx=..."'
+    );
+  }
+
+  return buildSession(cookie, headers, url);
+}
+
+/** Accepts either form: a copied curl command, or a plain-text cookie/header list. */
+export function sessionFromCapture(text: string): Session {
+  return /^\s*curl\s/m.test(text) ? sessionFromCurl(text) : sessionFromText(text);
 }
