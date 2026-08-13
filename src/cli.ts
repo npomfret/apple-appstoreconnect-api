@@ -12,9 +12,12 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc status                  Show the stored session and how long it has left
   asc report [appId]          Digest of every open submission: state, guidelines, Apple's latest message
   asc apps                    List every app on the account
+  asc inbox                   Unread message counts per app — where to look first
   asc app [appId]             Show one app
   asc submissions [appId]     List review submissions for an app
+  asc submission <id>         Show one review submission
   asc items <submissionId>    List the items bundled into a submission
+  asc version [versionId]     Show one App Store version and everything hanging off it
   asc builds <versionId>      List the builds behind an App Store version
   asc metadata [versionId]    Per-locale name, subtitle, description and keywords (defaults
                               to the version under review)
@@ -25,6 +28,11 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc draft <threadId>        Show the thread's unsent draft reply
   asc rejections <threadId>   List guideline rejections for a thread
   asc get <path> [k=v ...]    Raw GET against /iris/v1 for probing unmapped endpoints
+
+Writes (these change your live App Store Connect data):
+  asc set-build <versionId> <buildId|none>
+                              Attach a build to a version — the version page's Save button
+  asc patch <path> <json>     Raw PATCH against /iris/v1 with a hand-written body
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
@@ -127,6 +135,12 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
+    case 'inbox': {
+      const session = loadSession();
+      emit(await api.listAppMetrics(session), raw);
+      return 0;
+    }
+
     case 'app': {
       const session = loadSession();
       emit(await api.getApp(session, requireAppId(session, rest[0])) as Document, raw);
@@ -139,9 +153,42 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
+    case 'submission': {
+      const session = loadSession();
+      const id = requireArg(rest[0], 'submissionId', 'submission <submissionId>');
+      emit(await api.getReviewSubmission(session, id) as Document, raw);
+      return 0;
+    }
+
+    case 'version': {
+      const session = loadSession();
+      const appId = requireAppId(session, undefined);
+      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
+      emit(await api.getVersion(session, versionId) as Document, raw);
+      return 0;
+    }
+
     case 'builds': {
       const session = loadSession();
       emit(await api.listBuilds(session, requireArg(rest[0], 'versionId', 'builds <versionId>')), raw);
+      return 0;
+    }
+
+    case 'set-build': {
+      const session = loadSession();
+      const versionId = requireArg(rest[0], 'versionId', 'set-build <versionId> <buildId>');
+      const buildId = requireArg(rest[1], 'buildId', 'set-build <versionId> <buildId>');
+      const document = await api.setVersionBuild(session, versionId, buildId === 'none' ? null : buildId);
+      console.error(`Saved version ${versionId}: build ${buildId}`);
+      emit(document as Document, raw);
+      return 0;
+    }
+
+    case 'patch': {
+      const session = loadSession();
+      const path = requireArg(rest[0], 'path', 'patch appStoreVersions/<id> \'{"data":...}\'');
+      const body = requireArg(rest[1], 'json', 'patch appStoreVersions/<id> \'{"data":...}\'');
+      console.log(JSON.stringify(await api.rawPatch(session, path, JSON.parse(body)), null, 2));
       return 0;
     }
 

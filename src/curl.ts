@@ -13,6 +13,10 @@ const KEEP_HEADERS = new Set([
   'referer',
   'x-csrf-itc',
   'x-apple-app-id',
+  // Only writes carry these. A session captured from a GET won't have them, so the
+  // team id is also recovered from the itctx cookie — see readItctx.
+  'x-connect-team-id',
+  'x-connect-team-type',
 ]);
 
 interface ParsedCurl {
@@ -136,8 +140,8 @@ function parseCurl(text: string): ParsedCurl {
   return { url, method: method ?? 'GET', headers, cookie };
 }
 
-/** The itctx cookie carries the account id and a session expiry. */
-function readItctx(cookie: string): { dsId?: string; expiresAt?: string } {
+/** The itctx cookie carries the account id, the team id and a session expiry. */
+function readItctx(cookie: string): { dsId?: string; teamId?: string; expiresAt?: string } {
   const match = /(?:^|;\s*)itctx=([^;]+)/.exec(cookie);
   if (!match) return {};
 
@@ -145,10 +149,13 @@ function readItctx(cookie: string): { dsId?: string; expiresAt?: string } {
   try {
     const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf8')) as {
       ds?: number | string;
+      cp?: string;
       ex?: string;
     };
     return {
       dsId: decoded.ds === undefined ? undefined : String(decoded.ds),
+      // `cp` is the same uuid the browser sends as X-Connect-Team-ID on writes.
+      teamId: decoded.cp,
       // Apple writes "2026-8-13 16:17:27" — not ISO, and with no zone. Normalise
       // enough for Date to accept it and treat the result as a hint, not a guarantee.
       expiresAt: decoded.ex ? normaliseExpiry(decoded.ex) : undefined,
@@ -194,12 +201,13 @@ export function sessionFromCurl(command: string): Session {
   }
   if (!headers['x-csrf-itc']) headers['x-csrf-itc'] = '[asc-ui]';
 
-  const { dsId, expiresAt } = readItctx(parsed.cookie);
+  const { dsId, teamId, expiresAt } = readItctx(parsed.cookie);
 
   return {
     cookie: parsed.cookie,
     headers,
     dsId,
+    teamId: headers['x-connect-team-id'] ?? teamId,
     expiresAt,
     appId: readAppId(headers['referer']),
     capturedAt: new Date().toISOString(),

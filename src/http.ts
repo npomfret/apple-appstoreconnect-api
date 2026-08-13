@@ -45,6 +45,35 @@ export interface RequestOptions {
   body?: unknown;
 }
 
+const WRITE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
+
+/** Default team type for a normal App Store developer team, as the web UI sends it. */
+export const TEAM_TYPE = 'PURPLESOFTWARE';
+
+/**
+ * Reads and writes don't send the same headers. The browser adds an Origin and the
+ * X-Connect-Team-* pair only when mutating, and switches Content-Type to plain
+ * application/json. Mirror that rather than sending one header set for everything.
+ */
+function headersFor(session: Session, method: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    accept: 'application/vnd.api+json, application/json, text/csv',
+    'content-type': 'application/vnd.api+json',
+    ...session.headers,
+    cookie: session.cookie,
+  };
+
+  if (WRITE_METHODS.has(method)) {
+    headers['content-type'] = 'application/json';
+    headers['origin'] = 'https://appstoreconnect.apple.com';
+    const teamId = session.headers['x-connect-team-id'] ?? session.teamId;
+    if (teamId) headers['x-connect-team-id'] = teamId;
+    headers['x-connect-team-type'] = session.headers['x-connect-team-type'] ?? TEAM_TYPE;
+  }
+
+  return headers;
+}
+
 /** Issues a single authenticated request against the iris API. */
 export async function request<T = unknown>(
   session: Session,
@@ -58,17 +87,11 @@ export async function request<T = unknown>(
 
   const url = path.startsWith('http') ? path : `${BASE_URL}/${path.replace(/^\//, '')}`;
   const target = `${url}${buildQuery(options.query ?? {})}`;
-
-  const headers: Record<string, string> = {
-    accept: 'application/vnd.api+json, application/json, text/csv',
-    'content-type': 'application/vnd.api+json',
-    ...session.headers,
-    cookie: session.cookie,
-  };
+  const method = options.method ?? 'GET';
 
   const response = await fetch(target, {
-    method: options.method ?? 'GET',
-    headers,
+    method,
+    headers: headersFor(session, method),
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
 
@@ -87,4 +110,16 @@ export async function request<T = unknown>(
 
 export function get<T extends Document>(session: Session, path: string, query?: Query): Promise<T> {
   return request<T>(session, path, { query });
+}
+
+export function patch<T = unknown>(session: Session, path: string, body: unknown): Promise<T> {
+  return request<T>(session, path, { method: 'PATCH', body });
+}
+
+export function post<T = unknown>(session: Session, path: string, body: unknown): Promise<T> {
+  return request<T>(session, path, { method: 'POST', body });
+}
+
+export function del<T = unknown>(session: Session, path: string): Promise<T> {
+  return request<T>(session, path, { method: 'DELETE' });
 }

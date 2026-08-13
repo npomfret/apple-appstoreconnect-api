@@ -29,6 +29,10 @@ a few hours — and `asc status` shows how long is left. When it lapses, repeat 
 The input can be a whole file of several curl commands with notes around them; the first
 one found is used. Only the cookie and a handful of headers are kept.
 
+Any request will do, `GET` or otherwise — the team id writes need is decoded from the
+cookie rather than taken from the headers, so a read request still yields a session that
+can write.
+
 ## Usage
 
 ```sh
@@ -62,9 +66,12 @@ document):
 | Command | Endpoint |
 | --- | --- |
 | `apps` | `apps` |
+| `inbox` | `apps?fields[appStoreVersionMetrics]=messageCount` |
 | `app [appId]` | `apps/{appId}` |
 | `submissions [appId]` | `apps/{appId}/reviewSubmissions` |
+| `submission <id>` | `reviewSubmissions/{id}` |
 | `items <submissionId>` | `reviewSubmissions/{id}/items` |
+| `version [versionId]` | `appStoreVersions/{id}` |
 | `builds <versionId>` | `builds?filter[appStoreVersion]={id}` |
 | `metadata [versionId]` | `apps/{appId}/appInfos` + `appStoreVersions/{id}/appStoreVersionLocalizations` |
 | `screenshots <locId>` | `appScreenshotSets?filter[appStoreVersionLocalization]={id}` |
@@ -96,6 +103,29 @@ For anything not mapped yet, probe it directly:
 node dist/cli.js get resolutionCenterThreads 'filter[reviewSubmission]=<id>'
 ```
 
+## Writing
+
+One write is mapped: attaching a build to a version, which is what the version page's
+**Save** button does.
+
+```sh
+node dist/cli.js builds <versionId>                 # pick an id
+node dist/cli.js set-build <versionId> <buildId>    # or "none" to detach
+node dist/cli.js patch appStoreVersions/<id> '{"data":{...}}'   # anything else
+```
+
+Writes send a different header set to reads — `Content-Type: application/json` instead of
+`application/vnd.api+json`, plus `Origin` and the `X-Connect-Team-*` pair. The team id is
+only present on captured write requests, so it's also decoded from the `itctx` cookie's
+`cp` field; that means a session captured from any ordinary `GET` can still write.
+
+The PATCH body carries only what changed — omitted fields are left alone:
+
+```json
+{"data":{"type":"appStoreVersions","id":"<versionId>",
+  "relationships":{"build":{"data":{"type":"builds","id":"<buildId>"}}}}}
+```
+
 ## As a library
 
 ```ts
@@ -111,12 +141,14 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
 
 ## Notes and limits
 
-- **Read-only today.** Every captured request is a `GET`. Replying to Apple, saving a
-  draft, editing metadata and uploading evidence are all writes (`POST`/`PATCH` to
-  `resolutionCenterDraftMessage`, `appInfoLocalizations`, `appStoreVersionLocalizations`
-  and the attachment upload flow) and none have been captured. Do those actions once in the
-  browser, copy the curl, and they can be added — the client already sends the `x-csrf-itc`
-  header writes need, and `request()` takes a method and body.
+- **Mostly read-only.** The only captured write is the version PATCH behind `set-build`.
+  Replying to Apple, saving a draft, editing metadata and uploading evidence are all
+  writes too (`POST`/`PATCH` to `resolutionCenterDraftMessage`, `appInfoLocalizations`,
+  `appStoreVersionLocalizations` and the attachment upload flow) and none have been
+  captured. Do each once in the browser, copy the curl, and they can be added the same way.
+- Deleting a screenshot is **not** the same save. The version page removes it with its own
+  request at the moment you click the X, not when you press Save, so it isn't in the
+  captured `saveReview` PATCH and isn't mapped.
 - `metadata` and `listVersionLocalizations` / `listAppInfoLocalizations` were found by
   probing, not copied from the browser — they aren't in the captured requests, so they're
   slightly more likely to shift than the rest.

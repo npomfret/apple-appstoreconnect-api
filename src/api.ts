@@ -1,6 +1,6 @@
 import { Session } from './session';
-import { get, Query } from './http';
-import { Document, Resource } from './jsonapi';
+import { get, patch, Query } from './http';
+import { Document, Resource, ResourceIdentifier } from './jsonapi';
 
 /**
  * Include lists lifted verbatim from the browser's own requests. The iris API is
@@ -50,6 +50,18 @@ const INCLUDES = {
     'appBundleVersion',
     'rejectionAttachments',
   ],
+  version: [
+    'app',
+    'routingAppCoverage',
+    'resetRatingsRequest',
+    'appStoreVersionSubmission',
+    'appStoreVersionPhasedRelease',
+    'appStoreVersionLocalizations',
+    'ageRatingDeclaration',
+    'appStoreReviewDetail',
+    'gameCenterConfiguration',
+    'appClipDefaultExperience',
+  ],
 } as const;
 
 export const OPEN_SUBMISSION_STATES = [
@@ -74,6 +86,14 @@ export function listReviewSubmissions(
     limit: options.limit ?? 2000,
     'limit[items]': 0,
     'filter[state]': [...(options.states ?? OPEN_SUBMISSION_STATES)],
+  });
+}
+
+/** One submission on its own, without going via the app. */
+export function getReviewSubmission(session: Session, submissionId: string): Promise<Document<Resource>> {
+  return get(session, `reviewSubmissions/${submissionId}`, {
+    include: [...INCLUDES.reviewSubmissions],
+    'limit[items]': 0,
   });
 }
 
@@ -140,6 +160,23 @@ export function listApps(session: Session, options: { limit?: number } = {}): Pr
   });
 }
 
+/**
+ * Unread-message counts per app — what the App Store Connect home page badges with.
+ * The cheapest way to ask "has Apple said anything anywhere?" without walking threads.
+ */
+export function listAppMetrics(session: Session, options: { limit?: number } = {}): Promise<Document<Resource[]>> {
+  return get(session, 'apps', {
+    include: ['appStoreVersionMetrics', 'betaReviewMetrics', 'reviewSubmissions'],
+    limit: options.limit ?? 200,
+    'filter[removed]': false,
+    'fields[apps]': ['appStoreVersionMetrics', 'betaReviewMetrics', 'reviewSubmissions'],
+    'fields[appStoreVersionMetrics]': 'messageCount',
+    'fields[betaReviewMetrics]': ['messageCount', 'platform'],
+    'fields[reviewSubmissions]': 'state',
+    'limit[reviewSubmissions]': 10,
+  });
+}
+
 export function getApp(session: Session, appId: string): Promise<Document<Resource>> {
   return get(session, `apps/${appId}`, { include: ['gameCenterDetail'] });
 }
@@ -166,11 +203,60 @@ export function listThreadsForVersion(session: Session, versionId: string): Prom
   });
 }
 
-/** Builds behind an App Store version — what Apple actually reviewed. */
+/**
+ * The version page's own view of a version: state, release settings, and the ids of
+ * everything hanging off it. The counterpart to `updateVersion`.
+ */
+export function getVersion(session: Session, versionId: string): Promise<Document<Resource>> {
+  return get(session, `appStoreVersions/${versionId}`, {
+    include: [...INCLUDES.version],
+    'limit[appStoreVersionLocalizations]': 50,
+    'fields[apps]': 'isOrEverWasMadeForKids',
+    // Empty fieldsets: the UI wants these related records identified, not expanded.
+    'fields[appStoreReviewDetails]': '',
+    'fields[gameCenterConfigurations]': '',
+    'fields[appClipDefaultExperiences]': '',
+  });
+}
+
+/**
+ * Builds behind an App Store version — both the one attached and the others that could
+ * be. Re-read it after `setVersionBuild` to confirm which one is selected.
+ */
 export function listBuilds(session: Session, versionId: string): Promise<Document<Resource[]>> {
   return get(session, 'builds', {
     'filter[appStoreVersion]': versionId,
     include: ['icons', 'preReleaseVersion', 'buildBundles'],
+  });
+}
+
+export interface VersionUpdate {
+  attributes?: Record<string, unknown>;
+  relationships?: Record<string, { data: ResourceIdentifier | ResourceIdentifier[] | null }>;
+}
+
+/**
+ * Saves a change to a version — this is what the version page's Save button does.
+ * The body only carries what changed; anything omitted is left alone.
+ */
+export function updateVersion(
+  session: Session,
+  versionId: string,
+  update: VersionUpdate
+): Promise<Document<Resource>> {
+  return patch(session, `appStoreVersions/${versionId}`, {
+    data: { type: 'appStoreVersions', id: versionId, ...update },
+  });
+}
+
+/** Attaches a build to a version, or detaches the current one with `null`. */
+export function setVersionBuild(
+  session: Session,
+  versionId: string,
+  buildId: string | null
+): Promise<Document<Resource>> {
+  return updateVersion(session, versionId, {
+    relationships: { build: { data: buildId === null ? null : { type: 'builds', id: buildId } } },
   });
 }
 
@@ -221,4 +307,9 @@ export async function findThreadForSubmission(
 /** Escape hatch for probing endpoints we haven't mapped yet. */
 export function raw<T extends Document>(session: Session, path: string, query: Query = {}): Promise<T> {
   return get<T>(session, path, query);
+}
+
+/** Write-side escape hatch: send a hand-written JSON:API body at any path. */
+export function rawPatch<T = unknown>(session: Session, path: string, body: unknown): Promise<T> {
+  return patch<T>(session, path, body);
 }

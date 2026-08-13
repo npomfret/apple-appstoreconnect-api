@@ -6,6 +6,11 @@ export interface Session {
   headers: Record<string, string>;
   /** Apple account id, decoded from the itctx cookie. */
   dsId?: string;
+  /**
+   * Provider/team id. Writes send it as X-Connect-Team-ID; read requests don't carry it,
+   * so it's decoded from the itctx cookie's `cp` field instead.
+   */
+  teamId?: string;
   /** When Apple says the session dies (ISO). Advisory — the server is the authority. */
   expiresAt?: string;
   /** App id scraped from the Referer of the captured request, used as a default. */
@@ -42,6 +47,7 @@ export function describeSession(session: Session): string {
   const lines = [
     `captured:  ${session.capturedAt}`,
     `account:   ${session.dsId ?? 'unknown'}`,
+    `team:      ${session.teamId ?? 'unknown'}`,
     `app:       ${session.appId ?? 'unknown'}`,
   ];
 
