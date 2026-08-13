@@ -1,0 +1,19 @@
+{
+  "name": "appstoreconnect-bot",
+  "version": "1.0.0",
+  "description": "Unofficial client for the App Store Connect review centre",
+  "main": "dist/index.js",
+  "bin": {
+    "asc": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "asc": "tsc && node dist/cli.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.5.3"
+  },
+  "private": true
+}
