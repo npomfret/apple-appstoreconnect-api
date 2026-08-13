@@ -1,4 +1,4 @@
-# appstoreconnect-bot
+# Apple appstoreconnect API
 
 An unofficial client for the App Store Connect **review centre** — the Resolution Center
 threads, rejections and review submissions that Apple's public App Store Connect API does
