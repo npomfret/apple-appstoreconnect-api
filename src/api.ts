@@ -210,6 +210,88 @@ export function listThreadsForVersion(session: Session, versionId: string): Prom
 }
 
 /**
+ * Version states that mean "on the store", not "being worked on". A version in one of
+ * these is not the one you want to edit.
+ */
+export const LIVE_VERSION_STATES = [
+  'READY_FOR_SALE',
+  'REPLACED_WITH_NEW_VERSION',
+  'REMOVED_FROM_SALE',
+  'DEVELOPER_REMOVED_FROM_SALE',
+] as const;
+
+/**
+ * Enough of each version to tell them apart, and no more — what the version switcher in
+ * the header runs on. The cheap way to find a version id when there is no open submission
+ * to take one from; `getVersion` has the rest.
+ *
+ * One current version per platform, plus whatever is live: an account with a Mac build
+ * gets its READY_FOR_SALE versions back here alongside the iOS one being edited. Pass a
+ * platform, or filter on `appStoreState`, before assuming the first is the one you meant.
+ */
+export function listAppVersions(
+  session: Session,
+  appId: string,
+  options: { platform?: string } = {}
+): Promise<Document<Resource[]>> {
+  return get(session, `apps/${appId}/appStoreVersions`, {
+    include: ['alternativeDistributionPackage'],
+    'filter[platform]': options.platform,
+    'fields[appStoreVersions]': [
+      'appStoreState',
+      'appVersionState',
+      'versionString',
+      'platform',
+      'downloadable',
+      'alternativeDistributionPackage',
+    ],
+  });
+}
+
+/**
+ * Every state the version has passed through, oldest first — the "History" tab. Apple
+ * keeps this even across rejections and resubmissions, so it is the only record of how
+ * long a past review actually took.
+ *
+ * `initiator` is "Apple" for their side and an Apple ID for yours, which is what tells a
+ * rejection apart from your own withdrawal back to PREPARE_FOR_SUBMISSION.
+ */
+export function listVersionStateChanges(
+  session: Session,
+  versionId: string,
+  options: { limit?: number } = {}
+): Promise<Document<Resource[]>> {
+  // The UI sends no query at all and takes the default page of 50. The limit is ours,
+  // for versions that have been round the loop more times than that.
+  return get(session, `appStoreVersions/${versionId}/appStoreVersionStateChanges`, {
+    limit: options.limit ?? 200,
+  });
+}
+
+/**
+ * The App Privacy declarations — one record per (category, purpose, protection) the app
+ * admits to, or a single DATA_NOT_COLLECTED row standing for "none of it".
+ *
+ * Worth reading before a submission: these are declarations rather than anything Apple
+ * measures, so they go stale silently when an SDK starts collecting something new.
+ */
+export function listDataUsages(
+  session: Session,
+  appId: string,
+  options: { limit?: number } = {}
+): Promise<Document<Resource[]>> {
+  return get(session, `apps/${appId}/dataUsages`, {
+    include: ['category', 'purpose', 'grouping', 'dataProtection'],
+    limit: options.limit ?? 500,
+  });
+}
+
+/** Whether the privacy declarations above are live on the store, and who last published them. */
+export function getDataUsagePublishState(session: Session, appId: string): Promise<Document<Resource>> {
+  return get(session, `apps/${appId}/dataUsagePublishState`, {});
+}
+
+/**
  * The version page's own view of a version: state, release settings, and the ids of
  * everything hanging off it. The counterpart to `updateVersion`.
  */

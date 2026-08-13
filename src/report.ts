@@ -265,6 +265,179 @@ export function formatBuilds(builds: BuildChoice[]): string {
   return lines.join('\n');
 }
 
+export interface StateChange {
+  /** The state the version moved into. */
+  state: string;
+  date?: string;
+  /** "Apple", or the Apple ID of whoever on your side did it. */
+  initiator?: string;
+  /** True when Apple made the move rather than someone on the account. */
+  byApple: boolean;
+  /** How long the version sat in this state, in seconds. Absent for the current one. */
+  heldForSeconds?: number;
+}
+
+/**
+ * The version's whole submission history, oldest first — how many times it went round,
+ * who moved it each time, and how long each state lasted.
+ */
+export async function fetchHistory(session: Session, versionId: string): Promise<StateChange[]> {
+  const document = await api.listVersionStateChanges(session, versionId);
+
+  const changes = denormalizeAll(document)
+    .map((change) => {
+      const initiator = asString(change['initiator']);
+      return {
+        // appStoreState and appVersionState have agreed on every capture so far; the
+        // first is the one the History tab shows.
+        state: asString(change['appStoreState']) ?? asString(change['appVersionState']) ?? 'UNKNOWN',
+        date: asString(change['date']),
+        initiator,
+        byApple: initiator === 'Apple',
+      } as StateChange;
+    })
+    .sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')));
+
+  for (let i = 0; i < changes.length - 1; i++) {
+    const from = Date.parse(changes[i]!.date ?? '');
+    const to = Date.parse(changes[i + 1]!.date ?? '');
+    if (!Number.isNaN(from) && !Number.isNaN(to)) {
+      changes[i]!.heldForSeconds = Math.round((to - from) / 1000);
+    }
+  }
+
+  return changes;
+}
+
+/** "2026-04-25T07:34:29-07:00" -> "2026-04-25 07:34-07:00", keeping the offset honest. */
+function shortDate(date: string | undefined): string {
+  if (!date) return 'unknown date';
+  return `${date.slice(0, 10)} ${date.slice(11, 16)}${date.slice(19)}`;
+}
+
+/** Rounds a span to its largest useful unit — exact seconds mean nothing after a day. */
+function duration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86400) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.round((seconds % 3600) / 60);
+    return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.round((seconds % 86400) / 3600);
+  return hours ? `${days}d ${hours}h` : `${days}d`;
+}
+
+/** Renders the history as a timeline. */
+export function formatHistory(changes: StateChange[]): string {
+  if (changes.length === 0) return 'No recorded state changes for this version.';
+
+  const lines = changes.map((change) => {
+    const who = change.byApple ? 'Apple' : (change.initiator ?? 'unknown');
+    const held = change.heldForSeconds === undefined ? '(current)' : duration(change.heldForSeconds);
+
+    return [shortDate(change.date), change.state.padEnd(22), who.padEnd(28), held].join('  ');
+  });
+
+  const reviews = changes.filter((change) => change.state === 'IN_REVIEW').length;
+  const rejections = changes.filter((change) => change.state === 'REJECTED').length;
+  if (reviews || rejections) {
+    const times = (count: number) => (count === 1 ? 'once' : `${count} times`);
+    lines.push('');
+    lines.push(`Reviewed ${times(reviews)}, rejected ${times(rejections)}.`);
+  }
+
+  return lines.join('\n');
+}
+
+export interface DataUsage {
+  /** What is collected, e.g. "PAYMENT_INFORMATION". */
+  category?: string;
+  /** The heading it sits under, e.g. "FINANCIAL_INFO". */
+  grouping?: string;
+  /** What it is used for, e.g. "ANALYTICS". */
+  purpose?: string;
+  /** LINKED / NOT_LINKED / TRACKING, or DATA_NOT_COLLECTED for the "we collect nothing" row. */
+  protection?: string;
+}
+
+export interface PrivacyDeclaration {
+  /** Whether what follows is live on the store, or only a draft. */
+  published: boolean;
+  lastPublished?: string;
+  lastPublishedBy?: string;
+  /** True when the app declares it collects nothing at all. */
+  collectsNothing: boolean;
+  usages: DataUsage[];
+}
+
+/** The relationship's id *is* the value on these — they are enum rows, not records. */
+function relationshipId(usage: Denormalized, field: string): string | undefined {
+  const related = usage[field];
+  if (!related || typeof related !== 'object') return undefined;
+  return asString((related as Record<string, unknown>)['id']);
+}
+
+/** The App Privacy nutrition label as declared, and whether it has been published. */
+export async function fetchPrivacy(session: Session, appId: string): Promise<PrivacyDeclaration> {
+  const [usageDoc, stateDoc] = await Promise.all([
+    api.listDataUsages(session, appId),
+    api.getDataUsagePublishState(session, appId),
+  ]);
+
+  const usages = denormalizeAll(usageDoc).map((usage) => ({
+    category: relationshipId(usage, 'category'),
+    grouping: relationshipId(usage, 'grouping'),
+    purpose: relationshipId(usage, 'purpose'),
+    protection: relationshipId(usage, 'dataProtection'),
+  }));
+
+  const state = stateDoc.data?.attributes ?? {};
+
+  return {
+    published: state['published'] === true,
+    lastPublished: asString(state['lastPublished']),
+    lastPublishedBy: asString(state['lastPublishedBy']),
+    // Apple stores "nothing collected" as one row with no category and this protection,
+    // not as an empty list — an empty list would mean "not filled in yet".
+    collectsNothing: usages.some((usage) => usage.protection === 'DATA_NOT_COLLECTED' && !usage.category),
+    usages,
+  };
+}
+
+/** Renders the privacy declarations for a terminal. */
+export function formatPrivacy(privacy: PrivacyDeclaration): string {
+  const lines = [
+    privacy.published
+      ? `Published ${privacy.lastPublished ?? 'at an unknown date'}${privacy.lastPublishedBy ? ` by ${privacy.lastPublishedBy}` : ''}`
+      : 'Not published — these declarations are still a draft',
+  ];
+
+  if (privacy.usages.length === 0) {
+    lines.push('No privacy declarations at all — this app has not answered the questionnaire.');
+    return lines.join('\n');
+  }
+
+  if (privacy.collectsNothing) {
+    lines.push('Declares that it collects no data.');
+    return lines.join('\n');
+  }
+
+  lines.push('');
+  for (const usage of privacy.usages) {
+    lines.push(
+      [
+        (usage.category ?? '?').padEnd(28),
+        (usage.purpose ?? '-').padEnd(24),
+        usage.protection ?? '-',
+      ].join('  ')
+    );
+  }
+
+  return lines.join('\n');
+}
+
 export interface LocaleMetadata {
   locale: string;
   /** Id of the appStoreVersionLocalization — feed it to `listScreenshotSets`. */

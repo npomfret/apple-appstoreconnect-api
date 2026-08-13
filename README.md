@@ -90,6 +90,7 @@ document):
 | `submissions [appId]` | `apps/{appId}/reviewSubmissions` |
 | `submission <id>` | `reviewSubmissions/{id}` |
 | `items <submissionId>` | `reviewSubmissions/{id}/items` |
+| `versions [appId]` | `apps/{appId}/appStoreVersions?filter[platform]=` |
 | `version [versionId]` | `appStoreVersions/{id}` |
 | `metadata [versionId]` | `apps/{appId}/appInfos` + `appStoreVersions/{id}/appStoreVersionLocalizations` |
 | `screenshots [versionId]` | `appStoreVersionLocalizations?filter[appStoreVersion]={id}&include=appScreenshotSets,appPreviewSets` |
@@ -136,6 +137,39 @@ The demo account password is blanked unless you ask for it. Everything here prin
 stdout, and a live credential left in terminal scrollback is a worse problem than having
 to pass a flag. The account *name* is shown — it's the pair that's the credential, and
 knowing which account Apple was given is usually the point.
+
+### History
+
+```sh
+node dist/cli.js history                 # every state this version has passed through
+node dist/cli.js history --json
+```
+
+```
+2026-04-25 05:46-07:00  PREPARE_FOR_SUBMISSION  nick@example.com   1h 48m
+2026-04-25 07:34-07:00  WAITING_FOR_REVIEW      nick@example.com   2d 8h
+2026-04-27 15:40-07:00  IN_REVIEW               Apple              11m
+2026-04-27 15:51-07:00  REJECTED                Apple              13d 16h
+...
+Reviewed 3 times, rejected 3 times.
+```
+
+The last column is how long the version sat in that state, which is the part worth having:
+it's the only record of how long a past review actually took, and it survives rejections
+and resubmissions. `initiator` separates Apple's moves from your own — that's what tells a
+`REJECTED` apart from a `DEVELOPER_REJECTED` you did yourself.
+
+### Privacy
+
+```sh
+node dist/cli.js privacy                 # the App Privacy declarations, and if they're live
+```
+
+Apple stores "collects nothing" as a single row with no category and a `DATA_NOT_COLLECTED`
+protection — *not* as an empty list. An empty list means the questionnaire was never
+answered, which is a different problem, so the digest distinguishes them. Note these are
+declarations, not measurements: they go stale silently when a dependency starts collecting
+something new.
 
 For anything not mapped yet, probe it directly:
 
@@ -322,8 +356,11 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
   `limit[rejections]=2000` / `limit[resolutionCenterMessageAttachments]=1000` pair match
   exactly), `listAppInfos`, `getReviewDetails`, the localizations-with-assets call behind
   `screenshots`, and — from a HAR of one attach-a-build-and-save — `listBuilds`,
-  `listBuildCandidates`, `listPreviewSets` and the `set-build` PATCH body. Still
-  probe-only, and so likelier to shift:
+  `listBuildCandidates`, `listPreviewSets` and the `set-build` PATCH body. From HARs of
+  the History, Trust & Safety and Growth tabs: `listVersionStateChanges` (the browser
+  sends no query at all; the `limit` is ours, and tested), `listAppVersions`,
+  `listDataUsages` and `getDataUsagePublishState`. Still probe-only, and so likelier to
+  shift:
   `listVersionLocalizations` (the path form — the browser uses a filter on the collection
   instead) and `listAppInfoLocalizations`.
 - `resolutionCenterDraftMessage` returns `{"data": null}` when there's no draft, rather
@@ -333,6 +370,16 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
   there — far more than "Copy as cURL" gives you one at a time. Note that a HAR contains
   the full session cookie in plain text, so it belongs in `tmp/` with everything else
   gitignored. `asc login` doesn't parse HAR yet; it wants a curl or a `Cookie:` line.
+- **Seen but deliberately not mapped.** HARs of the Monetization, Growth & Marketing and
+  Trust & Safety tabs turn up about 40 further endpoints. Pricing is the substantial one —
+  `appPriceSchedules/{appId}/automaticPrices` and `/manualPrices` (price points are
+  base64 blobs of `{s,t,p}`: app, territory, tier), `/baseTerritory`,
+  `apps/{id}/supportedTerritories`, `taxCategories` — left alone as a different domain
+  from review, and a write surface worth respecting. The rest were empty on this account
+  and so unverifiable: `appCustomProductPages`, `appEvents`, `appStoreVersionExperimentsV2`,
+  `inAppPurchasesV2`, `subscriptionGroups`, `customerReviewSummarizations`,
+  `accessibilityDeclarations`, `appEncryptionDeclarations`, `backgroundAssets`, `appClips`.
+  `asc get` reaches all of them without a code change.
 - The include lists in `src/api.ts` are copied verbatim from the browser. `iris` rejects
   the whole request with a `400` if you ask for an include it doesn't recognise, so don't
   edit them without testing.

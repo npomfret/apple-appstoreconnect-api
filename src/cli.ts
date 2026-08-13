@@ -3,7 +3,17 @@ import { sessionFromCapture } from './curl';
 import { describeSession, loadSession, saveSession, SESSION_PATH, Session } from './session';
 import { denormalizeAll, Document } from './jsonapi';
 import { Query } from './http';
-import { buildReport, fetchBuilds, fetchMetadata, formatBuilds, formatReport } from './report';
+import {
+  buildReport,
+  fetchBuilds,
+  fetchHistory,
+  fetchMetadata,
+  fetchPrivacy,
+  formatBuilds,
+  formatHistory,
+  formatPrivacy,
+  formatReport,
+} from './report';
 import { audit, log } from './log';
 import * as api from './api';
 
@@ -19,7 +29,11 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc submissions [appId]     List review submissions for an app
   asc submission <id>         Show one review submission
   asc items <submissionId>    List the items bundled into a submission
+  asc versions [appId]        List the app's editable versions — where version ids come from
   asc version [versionId]     Show one App Store version and everything hanging off it
+  asc history [versionId]     The version's submission history: every state it passed through,
+                              who moved it, and how long each one lasted
+  asc privacy [appId]         App Privacy declarations and whether they are published
   asc builds [versionId]      Builds you can attach to a version, newest first, with the
                               current one marked "*" — the version page's build picker
   asc metadata [versionId]    Per-locale name, subtitle, description and keywords (defaults
@@ -51,7 +65,8 @@ Writes (these change your live App Store Connect data):
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
-  --json                      For "report" and "builds": emit JSON instead of the digest
+  --json                      For "report", "builds", "history" and "privacy": emit JSON
+                              instead of the digest
   --force                     For "upload-screenshot": upload despite failed checks
   --reveal                    For "review-details": print the demo account password
 
@@ -88,10 +103,26 @@ function requireAppId(session: Session, given: string | undefined): string {
 /** Falls back to the version attached to the first open review submission. */
 async function versionUnderReview(session: Session, appId: string): Promise<string> {
   const [report] = await buildReport(session, appId);
-  if (!report?.versionId) {
-    throw new Error('No open submission to take a version from — pass one: asc metadata <versionId>');
+  if (report?.versionId) return report.versionId;
+
+  // Nothing open — the app is between rounds, so fall back to the version being edited.
+  // Live versions come back from this call too, and on a multi-platform app so does one
+  // per platform, so narrow to the drafts and refuse to guess between two of them.
+  const versions = denormalizeAll(await api.listAppVersions(session, appId));
+  const drafts = versions.filter(
+    (version) => !(api.LIVE_VERSION_STATES as readonly string[]).includes(String(version['appStoreState'] ?? ''))
+  );
+
+  if (drafts.length === 0) {
+    throw new Error('No open submission and no version in progress — pass one: asc metadata <versionId>');
   }
-  return report.versionId;
+  if (drafts.length > 1) {
+    const choices = drafts.map((v) => `  ${v.id}  ${v['platform']} ${v['versionString']}`).join('\n');
+    throw new Error(`More than one version is in progress — say which:\n${choices}`);
+  }
+
+  log.debug('no open submission, using the version in progress', { versionId: drafts[0]!.id });
+  return drafts[0]!.id;
 }
 
 function requireArg(value: string | undefined, name: string, example: string): string {
@@ -212,6 +243,28 @@ async function main(argv: string[]): Promise<number> {
       const versionId = rest[0] ?? (await versionUnderReview(session, appId));
       const builds = await fetchBuilds(session, versionId);
       console.log(json ? JSON.stringify(builds, null, 2) : formatBuilds(builds));
+      return 0;
+    }
+
+    case 'history': {
+      const session = loadSession();
+      const appId = requireAppId(session, undefined);
+      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
+      const changes = await fetchHistory(session, versionId);
+      console.log(json ? JSON.stringify(changes, null, 2) : formatHistory(changes));
+      return 0;
+    }
+
+    case 'privacy': {
+      const session = loadSession();
+      const privacy = await fetchPrivacy(session, requireAppId(session, rest[0]));
+      console.log(json ? JSON.stringify(privacy, null, 2) : formatPrivacy(privacy));
+      return 0;
+    }
+
+    case 'versions': {
+      const session = loadSession();
+      emit(await api.listAppVersions(session, requireAppId(session, rest[0])), raw);
       return 0;
     }
 
