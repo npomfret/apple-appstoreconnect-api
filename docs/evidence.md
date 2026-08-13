@@ -9,8 +9,15 @@ evidenced. This page says which is which.
 screenshot flow, and the Resolution Center draft behind `save-draft` and `delete-draft`.
 Still uncaptured: **sending** a draft, editing metadata (`appInfoLocalizations`,
 `appStoreVersionLocalizations`) and submitting for review. Do each once in the browser,
-export the HAR, and they can be added the same way — see
-[capturing new endpoints](sessions.md#capturing-new-endpoints).
+export the HAR, and they can be added the same way.
+
+## Capturing a new endpoint
+
+A **HAR export** is the best way to do it. Record dev tools → Network while doing the
+thing in the browser, export, and every request *and response* is in there — far more than
+"Copy as cURL" gives you one at a time. Note that a HAR contains the full session cookie in
+plain text, so it belongs in `tmp/` with everything else gitignored. The capture file the
+client reads wants a curl or a `Cookie:` line, not a HAR.
 
 ## Calls confirmed against the browser
 

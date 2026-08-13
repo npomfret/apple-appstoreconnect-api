@@ -11,6 +11,11 @@ const messages = denormalizeAll(await listMessages(session, reports[0].threadId!
 `denormalize` splices JSON:API `included` resources into their relationships, so you can
 read `submission.appStoreVersionForReview.versionString` instead of hand-joining sideloads.
 
+`loadSession()` reads and parses the capture file — `tmp/curl.txt`, or `ASC_CURL_PATH` —
+every time you call it; nothing is cached on disk. Call it once and keep the `Session`,
+rather than per request. `sessionFromCapture(text)` does the same parse on a string you
+already have, if the capture reaches you some other way.
+
 `src/index.ts` re-exports everything, so any function in `src/api.ts` is importable from
 the package root.
 

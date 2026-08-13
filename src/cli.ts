@@ -1,6 +1,5 @@
 import { readFileSync } from 'fs';
-import { sessionFromCapture } from './curl';
-import { describeSession, loadSession, saveSession, SESSION_PATH, Session } from './session';
+import { CURL_PATH, describeSession, loadSession, Session } from './session';
 import { denormalizeAll, Document } from './jsonapi';
 import { Query } from './http';
 import {
@@ -14,14 +13,12 @@ import {
   formatPrivacy,
   formatReport,
 } from './report';
-import { audit, log } from './log';
+import { log } from './log';
 import * as api from './api';
 
 const USAGE = `App Store Connect review-centre client (unofficial, session-scraped).
 
-  asc login [file]            Store a session from file (or stdin): either a "Copy as cURL"
-                              command, or plain text with a "Cookie: ..." line in it
-  asc status                  Show the stored session and how long it has left
+  asc status [file]           Show the captured session and how long it has left
   asc report [appId]          Digest of every open submission: state, guidelines, Apple's latest message
   asc apps                    List every app on the account
   asc inbox                   Unread message counts per app — where to look first
@@ -82,10 +79,11 @@ Logging goes to stderr as one JSON object per line, so stdout stays pipeable:
 Every change to live data is logged whatever the level, marked "audit":true. To keep just
 the audit trail:  asc upload-screenshot ... 2>&1 >/dev/null | jq -c 'select(.audit)'
 
-The session lives at ${SESSION_PATH} (override with ASC_SESSION_PATH).
-Capture a new one whenever Apple expires it — log in with your passkey, open dev tools,
-right-click any /iris/v1 request and "Copy as cURL". Or copy just its Cookie header into
-a text file; everything else is derived from it.`;
+The session is read from ${CURL_PATH} (override with ASC_CURL_PATH), fresh on every
+command. There is no login step: log in with your passkey, open dev tools, right-click any
+/iris/v1 request, "Copy as cURL", and paste it over that file. Its Cookie header on its own
+works too — everything else is derived from it. Keep the file gitignored; it is a live
+credential.`;
 
 function readStdin(): string {
   try {
@@ -198,28 +196,12 @@ async function main(argv: string[]): Promise<number> {
       console.log(USAGE);
       return 0;
 
-    case 'login': {
-      const source = rest[0] ? readFileSync(rest[0], 'utf8') : readStdin();
-      if (!source.trim()) {
-        throw new Error('Nothing to read. Pass a file: asc login curl.txt — or pipe it: pbpaste | asc login');
-      }
-      const session = sessionFromCapture(source);
-      saveSession(session);
-      // The credential itself never goes near the log — only what it says about itself.
-      audit('session.save', 'ok', {
-        path: SESSION_PATH,
-        account: session.dsId,
-        team: session.teamId,
-        app: session.appId,
-        expiresAt: session.expiresAt,
-      });
-      console.log(describeSession(session));
+    case 'status': {
+      const path = rest[0] ?? CURL_PATH;
+      const session = loadSession(path);
+      console.log(`file:      ${path}\n${describeSession(session)}`);
       return 0;
     }
-
-    case 'status':
-      console.log(describeSession(loadSession()));
-      return 0;
 
     case 'report': {
       const session = loadSession();

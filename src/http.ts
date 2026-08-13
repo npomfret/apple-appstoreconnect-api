@@ -8,7 +8,7 @@ export class SessionExpiredError extends Error {
   constructor(status: number) {
     super(
       `App Store Connect rejected the session (HTTP ${status}). ` +
-        'Log in with your browser, copy a fresh request as cURL and run "asc login".'
+        'Log in with your browser, copy a fresh request as cURL and paste it over the capture file.'
     );
     this.name = 'SessionExpiredError';
   }

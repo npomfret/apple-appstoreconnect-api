@@ -1,5 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { dirname, resolve } from 'path';
+import { existsSync, readFileSync, statSync } from 'fs';
+import { resolve } from 'path';
+
+import { sessionFromCapture } from './curl';
 
 export interface Session {
   cookie: string;
@@ -15,25 +17,29 @@ export interface Session {
   expiresAt?: string;
   /** App id scraped from the Referer of the captured request, used as a default. */
   appId?: string;
+  /** When the capture file was last written — its mtime, not when it was parsed. */
   capturedAt: string;
 }
 
-export const SESSION_PATH = resolve(
-  process.env.ASC_SESSION_PATH ?? resolve(__dirname, '..', 'tmp', 'session.json')
-);
+/**
+ * The pasted capture *is* the session. There's no login step and nothing derived on disk:
+ * every command re-reads this file, so replacing it when Apple expires the cookie is the
+ * whole of "logging in again".
+ */
+export const CURL_PATH = resolve(process.env.ASC_CURL_PATH ?? resolve(__dirname, '..', 'tmp', 'curl.txt'));
 
-export function saveSession(session: Session, path = SESSION_PATH): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(session, null, 2), { mode: 0o600 });
-}
-
-export function loadSession(path = SESSION_PATH): Session {
+export function loadSession(path = CURL_PATH): Session {
   if (!existsSync(path)) {
-    throw new Error(`No session at ${path}. Run "asc login" with a fresh curl or Cookie header from your browser.`);
+    throw new Error(
+      `No capture at ${path}. Copy a request from your browser's dev tools ("Copy as cURL") ` +
+        'and save it there, or point ASC_CURL_PATH somewhere else.'
+    );
   }
-  const session = JSON.parse(readFileSync(path, 'utf8')) as Session;
-  if (!session.cookie) throw new Error(`Session at ${path} has no cookie — capture a new one.`);
-  return session;
+
+  const session = sessionFromCapture(readFileSync(path, 'utf8'));
+  // Parsing happens on every command, so "now" would say nothing. The file's mtime is
+  // when you actually pasted the cookie, which is what you want to see in `asc status`.
+  return { ...session, capturedAt: statSync(path).mtime.toISOString() };
 }
 
 /** Milliseconds until the session expires, or undefined if Apple didn't tell us. */
