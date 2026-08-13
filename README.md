@@ -20,7 +20,7 @@ Sessions last a few hours. When one lapses you do this again.
    you care about (a review submission or the version page).
 2. Dev tools → **Network**, filter to Fetch/XHR, click any request to `/iris/v1/...`.
 3. Right-click it → **Copy** → **Copy as cURL**.
-4. Paste it into a scratch file — `tmp/` is gitignored, keep it there.
+4. Paste it into a scratch file - save it to somewhere (eg `tmp/curl.txt`) **that is gitignored**, keep it there.
 5. Hand it over:
 
    ```sh
