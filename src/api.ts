@@ -453,6 +453,34 @@ export function listAppInfoLocalizations(session: Session, appInfoId: string): P
   return get(session, `appInfos/${appInfoId}/appInfoLocalizations`);
 }
 
+/** An app info record in this state is the one on the store, not the one you're editing. */
+const LIVE_APP_INFO_STATE = 'READY_FOR_DISTRIBUTION';
+
+/**
+ * The app info record that can actually be changed.
+ *
+ * An app on the store has two: the live one and the one being prepared alongside the
+ * version in review. **The live one is listed first**, and writing to it is refused with
+ * `409 ENTITY_ERROR.ATTRIBUTE.INVALID.INVALID_STATE` — "The field 'subtitle' can not be
+ * modified in the current state" — so taking the first record is taking the wrong one.
+ * Reads are worth pointing here too: the live record still says whatever the store says,
+ * not the name you edited this morning.
+ *
+ * An app that has never shipped has one record, in an editable state, and it is returned.
+ */
+export async function findEditableAppInfo(session: Session, appId: string): Promise<Resource> {
+  const appInfos = (await listAppInfos(session, appId)).data;
+  if (!appInfos.length) throw new Error(`App ${appId} has no appInfo record`);
+
+  const editable = appInfos.filter((one) => one.attributes?.state !== LIVE_APP_INFO_STATE);
+  if (editable.length > 1) {
+    const states = editable.map((one) => `${one.id} (${String(one.attributes?.state)})`).join(', ');
+    log.warn('appInfo.ambiguous', { appId, candidates: states });
+  }
+
+  return editable[0] ?? appInfos[0]!;
+}
+
 /**
  * Per-locale version metadata: description, keywords, promo text, what's new.
  * Not in the captured requests — found by probing, and it's the bridge from a version to
@@ -460,6 +488,126 @@ export function listAppInfoLocalizations(session: Session, appInfoId: string): P
  */
 export function listVersionLocalizations(session: Session, versionId: string): Promise<Document<Resource[]>> {
   return get(session, `appStoreVersions/${versionId}/appStoreVersionLocalizations`);
+}
+
+/**
+ * The two halves of App Store metadata, and which resource each field lives on. Every
+ * name here was read off a captured response, so the spelling is Apple's; what isn't
+ * captured is the PATCH that writes them — see `setMetadataField`.
+ *
+ * The split matters when a 4.1 rejection names a field: `name` and `subtitle` belong to
+ * the app info record and change for the whole app, while a description or keyword list
+ * belongs to one version and only ships when that version does.
+ */
+export const METADATA_FIELDS = {
+  appStoreVersionLocalizations: [
+    'description',
+    'keywords',
+    'promotionalText',
+    'whatsNew',
+    'marketingUrl',
+    'supportUrl',
+  ],
+  appInfoLocalizations: [
+    'name',
+    'subtitle',
+    'privacyPolicyUrl',
+    'privacyPolicyText',
+    'privacyChoicesUrl',
+  ],
+} as const;
+
+export type MetadataResource = keyof typeof METADATA_FIELDS;
+
+/** Which of the two resources owns a field, or undefined if it isn't one we know. */
+export function metadataResourceFor(field: string): MetadataResource | undefined {
+  for (const [resource, fields] of Object.entries(METADATA_FIELDS)) {
+    if ((fields as readonly string[]).includes(field)) return resource as MetadataResource;
+  }
+  return undefined;
+}
+
+/** One editable field, located: which record holds it, and what it says now. */
+export interface MetadataField {
+  field: string;
+  locale: string;
+  resource: MetadataResource;
+  localizationId: string;
+  current: string | null;
+}
+
+/**
+ * Finds the record a field lives on, for one locale, and reads its current value.
+ *
+ * Both halves have to be searched by locale rather than addressed directly: the ids are
+ * per-locale and never shown in the UI. A locale the app doesn't have is an error here
+ * rather than a silently created one — adding a language is a bigger decision than editing
+ * a line of text, and isn't what `set-metadata` is for.
+ */
+export async function findMetadataField(
+  session: Session,
+  target: { appId: string; versionId: string; locale: string; field: string }
+): Promise<MetadataField> {
+  const { appId, versionId, locale, field } = target;
+  const resource = metadataResourceFor(field);
+  if (!resource) {
+    const known = [...METADATA_FIELDS.appInfoLocalizations, ...METADATA_FIELDS.appStoreVersionLocalizations];
+    throw new Error(`Unknown metadata field "${field}". Try one of: ${known.join(', ')}`);
+  }
+
+  let localizations: Resource[];
+  if (resource === 'appStoreVersionLocalizations') {
+    localizations = (await listVersionLocalizations(session, versionId)).data;
+  } else {
+    localizations = (await listAppInfoLocalizations(session, (await findEditableAppInfo(session, appId)).id)).data;
+  }
+
+  const found = localizations.find((one) => one.attributes?.locale === locale);
+  if (!found) {
+    const have = localizations.map((one) => String(one.attributes?.locale)).join(', ');
+    throw new Error(`No ${locale} localization to edit. This app has: ${have || 'none'}`);
+  }
+
+  const current = found.attributes?.[field];
+  return {
+    field,
+    locale,
+    resource,
+    localizationId: found.id,
+    current: typeof current === 'string' ? current : null,
+  };
+}
+
+/**
+ * Writes one metadata field.
+ *
+ * **The PATCH itself is not captured.** Its shape is the captured version PATCH's — same
+ * envelope, same `application/json`, same habit of sending only what changed — pointed at
+ * a localization, and the field names come from real responses. The version page's Save
+ * button is what sends both, which is the reason to think they match. That makes it a good
+ * guess rather than a certainty; the failure mode is a 4xx, not a wrong edit.
+ *
+ * The old value is not recoverable from Apple once this returns, which is why the CLI
+ * prints it before asking. Changing a version's metadata doesn't reach the store until the
+ * version ships; changing the app info's name or subtitle applies to the app itself.
+ */
+export function setMetadataField(
+  session: Session,
+  field: MetadataField,
+  value: string
+): Promise<Document<Resource>> {
+  return audited(
+    'metadata.set',
+    { resource: field.resource, localizationId: field.localizationId, field: field.field, locale: field.locale },
+    () =>
+      patch<Document<Resource>>(session, `${field.resource}/${field.localizationId}`, {
+        data: {
+          type: field.resource,
+          id: field.localizationId,
+          attributes: { [field.field]: value },
+        },
+      })
+  );
 }
 
 /** Screenshots for one localization of a version — the metadata behind 4.1/2.3 rejections. */
@@ -957,6 +1105,192 @@ export function resolveSubmissionItem(session: Session, itemId: string): Promise
       VND_API_CONTENT_TYPE
     )
   );
+}
+
+/**
+ * Submitting a version for review.
+ *
+ * **Read this before using it.** Nothing below was captured. Every other write in this
+ * file was copied from App Store Connect doing the thing; these four were not, because no
+ * recording of the Submit button exists. What they are built on:
+ *
+ * - Apple's *public* App Store Connect API documents this exact flow on these exact
+ *   resource names — create a `reviewSubmissions`, add `reviewSubmissionItems` to it,
+ *   PATCH `submitted: true`.
+ * - iris demonstrably shares that model: `reviewSubmissions`, `reviewSubmissionItems` and
+ *   `items` all read back the way the public API describes, and the `resolved` attribute
+ *   we *did* capture is the public API's documented attribute, spelled the same way.
+ *
+ * That is a good reason to expect these to work and not a reason to be sure. The realistic
+ * failure is a 4xx; the unpleasant one is a half-made submission left on the account, so
+ * `runSubmission` stops at the first error and says where it got to. Record the Submit
+ * button once and this can be replaced with something certain.
+ */
+
+/** Starts an empty review submission for an app. Nothing is in front of Apple yet. */
+export function createReviewSubmission(
+  session: Session,
+  appId: string,
+  platform = 'IOS'
+): Promise<Document<Resource>> {
+  return audited('submission.create', { appId, platform }, () =>
+    post<Document<Resource>>(
+      session,
+      'reviewSubmissions',
+      {
+        data: {
+          type: 'reviewSubmissions',
+          attributes: { platform },
+          relationships: { app: { data: { type: 'apps', id: appId } } },
+        },
+      },
+      VND_API_CONTENT_TYPE
+    )
+  );
+}
+
+/** Puts a version into a submission — the "add for review" step. Still not submitted. */
+export function addSubmissionItem(
+  session: Session,
+  submissionId: string,
+  versionId: string
+): Promise<Document<Resource>> {
+  return audited('submission.item.add', { submissionId, versionId }, () =>
+    post<Document<Resource>>(
+      session,
+      'reviewSubmissionItems',
+      {
+        data: {
+          type: 'reviewSubmissionItems',
+          relationships: {
+            reviewSubmission: { data: { type: 'reviewSubmissions', id: submissionId } },
+            appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
+          },
+        },
+      },
+      VND_API_CONTENT_TYPE
+    )
+  );
+}
+
+/**
+ * Hands the submission to App Review. **This is the irreversible one** — everything before
+ * it is a draft you can throw away, and this is the step that starts the review.
+ *
+ * `cancelReviewSubmission` is the nearest thing to an undo, and only while Apple hasn't
+ * started looking.
+ */
+export function submitReviewSubmission(session: Session, submissionId: string): Promise<Document<Resource>> {
+  return audited('submission.submit', { submissionId }, () =>
+    patch<Document<Resource>>(
+      session,
+      `reviewSubmissions/${submissionId}`,
+      { data: { type: 'reviewSubmissions', id: submissionId, attributes: { submitted: true } } },
+      VND_API_CONTENT_TYPE
+    )
+  );
+}
+
+/** Withdraws a submission from the queue. Once review has started this is refused. */
+export function cancelReviewSubmission(session: Session, submissionId: string): Promise<Document<Resource>> {
+  return audited('submission.cancel', { submissionId }, () =>
+    patch<Document<Resource>>(
+      session,
+      `reviewSubmissions/${submissionId}`,
+      { data: { type: 'reviewSubmissions', id: submissionId, attributes: { canceled: true } } },
+      VND_API_CONTENT_TYPE
+    )
+  );
+}
+
+/** What `submit` would do, worked out before anything is written. */
+export interface SubmissionPlan {
+  appId: string;
+  versionId: string;
+  versionString?: string;
+  platform: string;
+  /** An unsubmitted submission to reuse. Absent means one has to be created. */
+  submissionId?: string;
+  /** The item for this version, if it's already on that submission. */
+  itemId?: string;
+  /** A submission already in front of Apple — the reason not to make another. */
+  inFlight?: { id: string; state: string };
+}
+
+/**
+ * Works out the three steps without taking any of them: which of create / add / submit are
+ * actually needed for this version.
+ *
+ * Existing submissions are reused rather than duplicated, because App Store Connect only
+ * carries one open submission per platform and a second POST would either fail or make a
+ * mess. A submission that has already gone to Apple stops the plan instead — resubmitting
+ * over the top of one in review is not a thing this should do quietly.
+ */
+export async function planSubmission(
+  session: Session,
+  appId: string,
+  versionId: string
+): Promise<SubmissionPlan> {
+  const version = (await getVersion(session, versionId)).data;
+  const platform = String(version.attributes?.platform ?? 'IOS');
+  const plan: SubmissionPlan = {
+    appId,
+    versionId,
+    versionString: version.attributes?.versionString as string | undefined,
+    platform,
+  };
+
+  const submissions = (await listReviewSubmissions(session, appId)).data.filter(
+    (one) => String(one.attributes?.platform ?? platform) === platform
+  );
+
+  // "Not yet submitted" is the pair: still READY_FOR_REVIEW and never given a submitted
+  // date. Either on its own would misread a submission Apple has already seen.
+  const open = submissions.find(
+    (one) => one.attributes?.state === 'READY_FOR_REVIEW' && !one.attributes?.submittedDate
+  );
+  const sent = submissions.find((one) => one !== open);
+
+  if (open) {
+    plan.submissionId = open.id;
+    const items = (await listSubmissionItems(session, open.id)).data;
+    plan.itemId = items.find(
+      (item) => item.relationships?.appStoreVersion?.data &&
+        !Array.isArray(item.relationships.appStoreVersion.data) &&
+        item.relationships.appStoreVersion.data.id === versionId
+    )?.id;
+  } else if (sent) {
+    plan.inFlight = { id: sent.id, state: String(sent.attributes?.state ?? 'unknown') };
+  }
+
+  return plan;
+}
+
+/**
+ * Carries out a plan: create if needed, add the version if needed, then submit.
+ *
+ * Each step is logged as it lands, so a run that dies in the middle leaves a record of
+ * exactly how far it got — which matters more here than usual, since the half-finished
+ * state is a real submission sitting on the account.
+ */
+export async function runSubmission(session: Session, plan: SubmissionPlan): Promise<Resource> {
+  if (plan.inFlight) {
+    throw new Error(
+      `Submission ${plan.inFlight.id} is already with Apple (${plan.inFlight.state}). ` +
+        'Cancel it first if you mean to replace it.'
+    );
+  }
+
+  const submissionId =
+    plan.submissionId ?? (await createReviewSubmission(session, plan.appId, plan.platform)).data.id;
+  if (!plan.submissionId) log.info('submission.created', { submissionId, appId: plan.appId });
+
+  if (!plan.itemId) {
+    const item = (await addSubmissionItem(session, submissionId, plan.versionId)).data;
+    log.info('submission.item.added', { submissionId, itemId: item.id, versionId: plan.versionId });
+  }
+
+  return (await submitReviewSubmission(session, submissionId)).data;
 }
 
 /**

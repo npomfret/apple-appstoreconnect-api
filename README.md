@@ -74,7 +74,7 @@ all) works unedited.
 | `privacy` | App Privacy declarations, and whether they're live |
 | `get` | any endpoint at all, mapped or not |
 
-**Writing** — every flow here is copied from a capture of the browser doing it:
+**Writing** — most of these are copied from a capture of the browser doing it:
 
 | | |
 | --- | --- |
@@ -82,13 +82,19 @@ all) works unedited.
 | `upload-screenshot`, `delete-screenshot` | the full reserve → upload → commit dance, with size checks — [docs/screenshots.md](docs/screenshots.md) |
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
 | `send-reply` | send it — [docs/replying.md](docs/replying.md) |
+| `set-metadata` | one field, one locale: description, keywords, name, subtitle… — [docs/writing.md](docs/writing.md) |
 | `resolve-item` | tell App Review an issue is fixed and put it back in the queue — [docs/writing.md](docs/writing.md) |
+| `submit`, `cancel-submission` | submit a version for review, or withdraw it — [docs/writing.md](docs/writing.md) |
 | `patch` | any PATCH, for anything not mapped |
 
-**`send-reply` and `resolve-item` can't be undone**, so they print what they are about to
-do and ask first — `send-reply` shows you the whole draft. `--yes` answers for you; with no
-terminal to ask on, they stop rather than assume. The three deletes ask too. Nothing else
-does: a bad `set-build` is one more `set-build` away from being right.
+**`send-reply`, `resolve-item` and `submit` can't be undone**, so they print what they are
+about to do and ask first — `send-reply` shows you the whole draft, `submit --dry-run`
+prints the steps and sends nothing. `set-metadata`, `cancel-submission` and the three
+deletes ask too. `--yes` answers for you; with no terminal to ask on, they stop rather than
+assume. Nothing else asks: a bad `set-build` is one more `set-build` away from being right.
+
+The `submit` flow is the one thing here **not** taken from a capture — see
+[docs/evidence.md](docs/evidence.md) before the first real run.
 
 The lower-level commands print denormalized JSON, or the untouched JSON:API document with
 `--raw`; the digests (`report`, `builds`, `history`, `privacy`) take `--json` instead. Ids

@@ -9,11 +9,11 @@ The captured writes are the version PATCH behind `set-build`, the screenshot flo
 Resolution Center draft behind `save-draft` and `delete-draft`, sending it (`send-reply`),
 and resolving a submission item (`resolve-item`).
 
-Still uncaptured: editing metadata (`appInfoLocalizations`, `appStoreVersionLocalizations`),
-and **creating** a review submission — what was recorded covers resolving an item on a
-submission that already exists, not making a new one or the first submit of a new version.
-Do each once in the browser with the network log recording, and they can be added the same
-way.
+Two more are implemented without a capture behind them, and are the ones to read about
+before use: **editing metadata** (`set-metadata`) and **submitting a version**
+(`submit`, `cancel-submission`). What was recorded of a submission covers resolving an item
+on one that already exists — not making a new one, and not the Submit button. Record either
+in the browser and they can be put on the same footing as the rest.
 
 ## Capturing a new endpoint
 
@@ -51,6 +51,22 @@ sends matches what the browser sent.
 
 - `listVersionLocalizations` (the path form — the browser uses a filter on the collection
   instead) and `listAppInfoLocalizations`.
+- `setMetadataField` was never captured, but **it has been run**: both halves were PATCHed
+  with the value they already held — a real request that changed nothing — and both
+  returned 200 with the record intact. The envelope is the captured version PATCH's, down
+  to the `application/json`, and the field names were read off captured responses. The one
+  thing that test flushed out is worth knowing: the *first* `appInfos` record is the live
+  one, and writing to it is refused with `409
+  ENTITY_ERROR.ATTRIBUTE.INVALID.INVALID_STATE`. `findEditableAppInfo` picks by state now.
+- `submit` (`createReviewSubmission`, `addSubmissionItem`, `submitReviewSubmission`) and
+  `cancelReviewSubmission` are **the least evidenced writes here, and among the most
+  consequential**. No recording, and no way to rehearse one: the only test is a real
+  submission. They rest on Apple's public App Store Connect API documenting this flow on
+  these resource names, plus the fact that iris shares that model — the `resolved`
+  attribute that *was* captured is the public API's own. Expect them to work; don't assume
+  it. `asc submit --dry-run` prints the plan without sending, and a failed run says which
+  of the three steps it reached, because a half-made submission on the account is the
+  outcome worth being able to see.
 - `deleteScreenshot`, `deleteScreenshotSet` and `deleteMessageAttachment` were **probed,
   not captured** — no browser request for any of them was ever copied. They work
   (`deleteMessageAttachment` returns a 204 and the attachment is gone on the next read),

@@ -461,8 +461,8 @@ export async function fetchMetadata(
   appId: string,
   versionId: string
 ): Promise<LocaleMetadata[]> {
-  const [appInfosDoc, versionLocsDoc] = await Promise.all([
-    api.listAppInfos(session, appId),
+  const [appInfo, versionLocsDoc] = await Promise.all([
+    api.findEditableAppInfo(session, appId),
     api.listVersionLocalizations(session, versionId),
   ]);
 
@@ -483,17 +483,15 @@ export async function fetchMetadata(
     });
   }
 
-  // Any of the app info records will do for names; the editable one is listed first.
-  const appInfo = appInfosDoc.data[0];
-  if (appInfo) {
-    for (const localization of denormalizeAll(await api.listAppInfoLocalizations(session, appInfo.id))) {
-      const locale = asString(localization['locale']);
-      if (!locale) continue;
-      const existing = byLocale.get(locale) ?? { locale };
-      existing.name = asString(localization['name']);
-      existing.subtitle = asString(localization['subtitle']);
-      byLocale.set(locale, existing);
-    }
+  // Names come from the editable app info record, not the live one — see
+  // findEditableAppInfo. A shipped app has both, and they disagree the moment you edit.
+  for (const localization of denormalizeAll(await api.listAppInfoLocalizations(session, appInfo.id))) {
+    const locale = asString(localization['locale']);
+    if (!locale) continue;
+    const existing = byLocale.get(locale) ?? { locale };
+    existing.name = asString(localization['name']);
+    existing.subtitle = asString(localization['subtitle']);
+    byLocale.set(locale, existing);
   }
 
   return [...byLocale.values()];

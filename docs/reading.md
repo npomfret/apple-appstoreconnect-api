@@ -53,6 +53,11 @@ App Store metadata is split across two records and `metadata` merges them per lo
 text and what's-new hang off the version. For a metadata rejection the name and subtitle
 are usually the point, so don't read only the version half.
 
+A shipped app has *two* `appInfos` records — the live one and the one being prepared — and
+the live one comes back first. `metadata` reads the editable one, so what it shows is what
+you last edited rather than what the store currently says. Ask for `appInfos` through `get`
+and you'll see both, with a `state` telling them apart.
+
 The ids chain together, which is what makes scripting possible:
 
 ```sh

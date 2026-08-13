@@ -67,18 +67,31 @@ Writes (these change your live App Store Connect data):
   asc delete-draft <threadId> Throw the thread's draft away, attachments and all
   asc patch <path> <json>     Raw PATCH against /iris/v1 with a hand-written body
 
-These reach Apple and cannot be undone. Both show you what they are about to do and ask
-first; --yes answers for you:
+  asc set-metadata <locale> <field> <value|-> [versionId]
+                              Change one metadata field for one locale. name, subtitle and
+                              the privacy URLs are app-wide; description, keywords,
+                              promotionalText, whatsNew, marketingUrl and supportUrl belong
+                              to the version. Shows you the old value and asks
+
+These reach Apple and cannot be undone. Each shows what it is about to do and asks first;
+--yes answers for you:
   asc send-reply <threadId>   Send the thread's draft to App Review. No unsend, no edit
   asc resolve-item <itemId>   Mark a submission item fixed and put it back in the review
                               queue — what you press after answering a rejection. Item ids
                               come from "asc items <submissionId>"
+  asc submit [versionId]      Submit a version for review: create the submission, add the
+                              version to it, hand it to Apple. --dry-run prints the steps
+                              and sends nothing. NOT captured from the browser — read
+                              docs/evidence.md before the first real run
+  asc cancel-submission <id>  Withdraw a submission from the queue. Refused once review has
+                              started. Also not captured
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
   --json                      For "report", "builds", "history" and "privacy": emit JSON
                               instead of the digest
   --yes                       Skip the confirmation prompt on the commands that ask
+  --dry-run                   For "submit": work out and print the steps, send nothing
   --force                     For "upload-screenshot": upload despite failed checks
   --reveal                    For "review-details": print the demo account password
   --attach <file>             For "save-draft": a file to attach. Repeat for several
@@ -186,6 +199,74 @@ async function describeItem(session: Session, itemId: string): Promise<string[]>
   }
 }
 
+/**
+ * What `set-metadata` shows before it asks. Both values in full: Apple keeps no history,
+ * so this printout is the only copy of the old text anyone gets.
+ */
+function describeMetadataChange(target: api.MetadataField, value: string): string[] {
+  const rule = '─'.repeat(72);
+  const scope =
+    target.resource === 'appInfoLocalizations'
+      ? 'the app itself — this changes what is on the store now'
+      : 'this version — it ships when the version does';
+
+  return [
+    '',
+    `  field:   ${target.field} (${target.locale})`,
+    `  record:  ${target.resource}/${target.localizationId}`,
+    `  scope:   ${scope}`,
+    '',
+    '  now:',
+    rule,
+    target.current ?? '(empty)',
+    rule,
+    '  becomes:',
+    rule,
+    value.trimEnd(),
+    rule,
+    '',
+  ];
+}
+
+/** What `submit` is about to do, step by step — also the whole of `--dry-run`. */
+function describePlan(plan: api.SubmissionPlan): string[] {
+  const version = `${plan.versionString ?? plan.versionId} (${plan.platform})`;
+
+  if (plan.inFlight) {
+    // A rejection isn't a dead submission — it's the same one, waiting on you. Sending it
+    // back is "resolve-item", and saying "cancel it" here would be the wrong advice.
+    const next =
+      plan.inFlight.state === 'UNRESOLVED_ISSUES'
+        ? '  Fix what Apple asked for, then "asc resolve-item" puts it back in the queue.'
+        : '  Cancel it first if you mean to replace it.';
+
+    return [
+      '',
+      `  Submission ${plan.inFlight.id} is already with Apple: ${plan.inFlight.state}.`,
+      '  Nothing to submit.',
+      next,
+      '',
+    ];
+  }
+
+  return [
+    '',
+    `  app:      ${plan.appId}`,
+    `  version:  ${version}`,
+    '',
+    plan.submissionId
+      ? `  1. reuse submission ${plan.submissionId}`
+      : '  1. POST reviewSubmissions — create one',
+    plan.itemId
+      ? `  2. the version is already on it as item ${plan.itemId}`
+      : '  2. POST reviewSubmissionItems — add the version to it',
+    '  3. PATCH reviewSubmissions/{id} {"submitted":true} — hand it to App Review',
+    '',
+    '  Steps 1-3 are not captured from the browser: see docs/evidence.md.',
+    '',
+  ];
+}
+
 function requireArg(value: string | undefined, name: string, example: string): string {
   if (!value) throw new Error(`Missing <${name}>. Example: asc ${example}`);
   return value;
@@ -237,7 +318,8 @@ async function main(argv: string[]): Promise<number> {
   const force = positional.includes('--force');
   const reveal = positional.includes('--reveal');
   const yes = positional.includes('--yes');
-  const flags = new Set(['--raw', '--json', '--force', '--reveal', '--yes']);
+  const dryRun = positional.includes('--dry-run');
+  const flags = new Set(['--raw', '--json', '--force', '--reveal', '--yes', '--dry-run']);
   const args = positional.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
 
@@ -416,6 +498,64 @@ async function main(argv: string[]): Promise<number> {
       const sent = await api.sendDraftMessage(session, draft.id);
       emit(sent as Document, raw);
       console.error(`Sent. Message ${sent.data.id} is on thread ${threadId}.`);
+      return 0;
+    }
+
+    case 'set-metadata': {
+      const session = loadSession();
+      const example = 'set-metadata en-GB subtitle "Race weekend times"';
+      const locale = requireArg(rest[0], 'locale', example);
+      const field = requireArg(rest[1], 'field', example);
+      const given = requireArg(rest[2], 'value', example);
+      // Descriptions run to paragraphs, same as a reply — "-" keeps their newlines intact.
+      const value = given === '-' ? readStdin() : given;
+
+      const appId = requireAppId(session, undefined);
+      const versionId = rest[3] ?? (await versionUnderReview(session, appId));
+      const target = await api.findMetadataField(session, { appId, versionId, locale, field });
+
+      await confirm({
+        question: `Replace ${target.field} (${target.locale})? The old text is not recoverable.`,
+        detail: describeMetadataChange(target, value),
+        yes,
+      });
+
+      emit((await api.setMetadataField(session, target, value)) as Document, raw);
+      return 0;
+    }
+
+    case 'submit': {
+      const session = loadSession();
+      const appId = requireAppId(session, undefined);
+      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
+      const plan = await api.planSubmission(session, appId, versionId);
+      const steps = describePlan(plan);
+
+      if (dryRun) {
+        console.log(steps.join('\n'));
+        return 0;
+      }
+      if (plan.inFlight) {
+        // Refused either way, but saying so before the prompt beats asking a question
+        // whose only honest answer is "no".
+        log.error('submission.inFlight', plan.inFlight);
+        console.error(steps.join('\n'));
+        return 1;
+      }
+
+      await confirm({ question: 'Submit this to App Review?', detail: steps, yes });
+
+      const submission = await api.runSubmission(session, plan);
+      console.log(JSON.stringify(submission, null, 2));
+      console.error(`Submitted. Submission ${submission.id} is with Apple.`);
+      return 0;
+    }
+
+    case 'cancel-submission': {
+      const session = loadSession();
+      const id = requireArg(rest[0], 'submissionId', 'cancel-submission <submissionId>');
+      await confirm({ question: `Withdraw submission ${id} from the review queue?`, yes });
+      emit((await api.cancelReviewSubmission(session, id)) as Document, raw);
       return 0;
     }
 
