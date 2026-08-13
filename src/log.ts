@@ -1,0 +1,102 @@
+/**
+ * Structured logging: one JSON object per line, always on **stderr**.
+ *
+ * stderr rather than stdout on purpose — the commands print their data to stdout, so
+ * keeping the two apart means `asc report --json | jq` still works with logging on.
+ *
+ * Every mutation goes through `audit`. Those records are emitted whatever the level is
+ * set to, because an audit trail you can turn down isn't one: this tool changes live App
+ * Store Connect data, and the record of what it changed shouldn't depend on verbosity.
+ */
+
+export type Level = 'debug' | 'info' | 'warn' | 'error';
+
+export type Fields = Record<string, unknown>;
+
+const ORDER: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
+
+/** Keys whose values never get written out, wherever they turn up in a record. */
+const SENSITIVE = /^(cookie|set-cookie|authorization|x-csrf-itc|myacinfo|itctx|dqsid|wosid)$/i;
+
+/** Long strings are trimmed so one fat body can't bury the rest of the log. */
+const MAX_STRING = 2000;
+
+function level(): number {
+  const configured = (process.env.ASC_LOG ?? 'info').toLowerCase();
+  if (configured === 'off' || configured === 'silent' || configured === 'none') return Infinity;
+  return ORDER[configured as Level] ?? ORDER.info;
+}
+
+function scrub(key: string, value: unknown): unknown {
+  if (SENSITIVE.test(key)) return '[redacted]';
+  if (typeof value === 'string' && value.length > MAX_STRING) {
+    return `${value.slice(0, MAX_STRING)}… (${value.length} chars)`;
+  }
+  if (value instanceof Error) return { name: value.name, message: value.message };
+  return value;
+}
+
+/**
+ * Serialising must never be what breaks a command, so a body that can't be stringified
+ * (circular, a BigInt, a stray Proxy) degrades to a note rather than throwing.
+ */
+function line(record: Fields): string {
+  try {
+    return JSON.stringify(record, scrub);
+  } catch (error) {
+    return JSON.stringify({
+      ts: record.ts,
+      level: 'error',
+      event: 'log.unserializable',
+      of: String(record.event),
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function write(severity: Level, event: string, fields: Fields, always = false): void {
+  if (!always && ORDER[severity] < level()) return;
+  console.error(line({ ts: new Date().toISOString(), level: severity, event, ...fields }));
+}
+
+export const log = {
+  debug: (event: string, fields: Fields = {}) => write('debug', event, fields),
+  info: (event: string, fields: Fields = {}) => write('info', event, fields),
+  warn: (event: string, fields: Fields = {}) => write('warn', event, fields),
+  error: (event: string, fields: Fields = {}) => write('error', event, fields),
+};
+
+/** Where a change had got to. `start` is emitted before the request leaves. */
+export type Phase = 'start' | 'ok' | 'error';
+
+/**
+ * Records one step of a change to live data. Always emitted, and marked `audit` so the
+ * trail can be sieved out of everything else:
+ *
+ *     asc upload-screenshot ... 2>&1 >/dev/null | jq -c 'select(.audit)'
+ */
+export function audit(action: string, phase: Phase, fields: Fields = {}): void {
+  write(phase === 'error' ? 'error' : 'info', action, { audit: true, phase, ...fields }, true);
+}
+
+/**
+ * Brackets a change with start/ok or start/error records, so a run that dies halfway
+ * still leaves evidence that the write was in flight — which is the case you most want
+ * a log for.
+ */
+export async function audited<T>(action: string, fields: Fields, run: () => Promise<T>): Promise<T> {
+  const started = Date.now();
+  audit(action, 'start', fields);
+  try {
+    const result = await run();
+    audit(action, 'ok', { ...fields, ms: Date.now() - started });
+    return result;
+  } catch (error) {
+    audit(action, 'error', {
+      ...fields,
+      ms: Date.now() - started,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}

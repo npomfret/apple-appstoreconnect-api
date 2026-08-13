@@ -4,6 +4,7 @@ import { Session } from './session';
 import { del, get, patch, post, uploadPart, Query, UploadOperation } from './http';
 import { Document, Resource, ResourceIdentifier } from './jsonapi';
 import { checkScreenshot, readImageSize } from './screenshots';
+import { audited, log } from './log';
 
 /**
  * Include lists lifted verbatim from the browser's own requests. The iris API is
@@ -258,9 +259,11 @@ export function setVersionBuild(
   versionId: string,
   buildId: string | null
 ): Promise<Document<Resource>> {
-  return updateVersion(session, versionId, {
-    relationships: { build: { data: buildId === null ? null : { type: 'builds', id: buildId } } },
-  });
+  return audited('version.build.set', { versionId, buildId }, () =>
+    updateVersion(session, versionId, {
+      relationships: { build: { data: buildId === null ? null : { type: 'builds', id: buildId } } },
+    })
+  );
 }
 
 /**
@@ -366,12 +369,16 @@ export function completeScreenshot(session: Session, screenshotId: string): Prom
 
 /** Removes a screenshot. Not in any capture — the shape was probed and works. */
 export function deleteScreenshot(session: Session, screenshotId: string): Promise<void> {
-  return del(session, `appScreenshots/${screenshotId}`);
+  return audited('screenshot.delete', { screenshotId }, () =>
+    del<void>(session, `appScreenshots/${screenshotId}`)
+  );
 }
 
 /** Removes a whole set, screenshots and all. Probed, like `deleteScreenshot`. */
 export function deleteScreenshotSet(session: Session, setId: string): Promise<void> {
-  return del(session, `appScreenshotSets/${setId}`);
+  return audited('screenshotSet.delete', { setId }, () =>
+    del<void>(session, `appScreenshotSets/${setId}`)
+  );
 }
 
 /**
@@ -397,9 +404,6 @@ export interface UploadScreenshotOptions {
   filePath: string;
   /** Upload even if the pre-flight checks object. */
   force?: boolean;
-  onProgress?: (part: number, total: number) => void;
-  /** Called with each pre-flight complaint. Upload proceeds only if `force` is set. */
-  onProblem?: (problem: string) => void;
 }
 
 /**
@@ -413,9 +417,11 @@ export async function uploadScreenshot(
   session: Session,
   options: UploadScreenshotOptions
 ): Promise<Resource> {
-  const { localizationId, displayType, filePath, force, onProgress, onProblem } = options;
+  const { localizationId, displayType, filePath, force } = options;
+  const fileName = basename(filePath);
 
   const file = readFileSync(filePath);
+  const size = readImageSize(file);
   const existingSet = await findScreenshotSet(session, localizationId, displayType);
 
   // Counted from the set we just read; a set that doesn't exist yet is empty by definition.
@@ -423,31 +429,48 @@ export async function uploadScreenshot(
     ? ((existingSet.relationships?.appScreenshots?.data as unknown[] | undefined) ?? []).length
     : 0;
 
-  const problems = checkScreenshot({ displayType, size: readImageSize(file), existing });
+  const problems = checkScreenshot({ displayType, size, existing });
+  for (const problem of problems) {
+    log.warn('screenshot.check', { fileName, displayType, problem, forced: Boolean(force) });
+  }
   if (problems.length && !force) {
     throw new Error(
-      `Not uploading ${basename(filePath)}: ${problems.join('; ')}. Pass --force to upload anyway.`
+      `Not uploading ${fileName}: ${problems.join('; ')}. Pass --force to upload anyway.`
     );
   }
-  // Only worth reporting when we're going ahead regardless — otherwise the error says it.
-  for (const problem of problems) onProblem?.(problem);
 
-  const setId = existingSet?.id ?? (await createScreenshotSet(session, localizationId, displayType)).data.id;
+  return audited(
+    'screenshot.upload',
+    {
+      localizationId,
+      displayType,
+      fileName,
+      fileSize: file.length,
+      dimensions: size && `${size.width} × ${size.height}`,
+      existingInSet: existing,
+      forced: problems.length ? true : undefined,
+    },
+    async () => {
+      const setId =
+        existingSet?.id ?? (await createScreenshotSet(session, localizationId, displayType)).data.id;
 
-  const reserved = await reserveScreenshot(session, setId, basename(filePath), file.length);
-  const screenshot = reserved.data;
-  const operations = (screenshot.attributes?.uploadOperations ?? []) as UploadOperation[];
-  if (!operations.length) {
-    throw new Error(`Reservation ${screenshot.id} came back with no uploadOperations — nowhere to send the file`);
-  }
+      const reserved = await reserveScreenshot(session, setId, fileName, file.length);
+      const screenshot = reserved.data;
+      const operations = (screenshot.attributes?.uploadOperations ?? []) as UploadOperation[];
+      if (!operations.length) {
+        throw new Error(
+          `Reservation ${screenshot.id} came back with no uploadOperations — nowhere to send the file`
+        );
+      }
 
-  for (let i = 0; i < operations.length; i++) {
-    onProgress?.(i + 1, operations.length);
-    await uploadPart(operations[i], file);
-  }
+      log.info('screenshot.reserved', { screenshotId: screenshot.id, setId, parts: operations.length });
 
-  const done = await completeScreenshot(session, screenshot.id);
-  return done.data;
+      for (const operation of operations) await uploadPart(operation, file);
+
+      const done = await completeScreenshot(session, screenshot.id);
+      return done.data;
+    }
+  );
 }
 
 /**
@@ -471,5 +494,5 @@ export function raw<T extends Document>(session: Session, path: string, query: Q
 
 /** Write-side escape hatch: send a hand-written JSON:API body at any path. */
 export function rawPatch<T = unknown>(session: Session, path: string, body: unknown): Promise<T> {
-  return patch<T>(session, path, body);
+  return audited('raw.patch', { path }, () => patch<T>(session, path, body));
 }

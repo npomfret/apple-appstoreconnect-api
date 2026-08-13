@@ -4,6 +4,7 @@ import { describeSession, loadSession, saveSession, SESSION_PATH, Session } from
 import { denormalizeAll, Document } from './jsonapi';
 import { Query } from './http';
 import { buildReport, fetchMetadata, formatReport } from './report';
+import { audit, log } from './log';
 import * as api from './api';
 
 const USAGE = `App Store Connect review-centre client (unofficial, session-scraped).
@@ -45,6 +46,11 @@ Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
   --json                      For "report": emit JSON instead of the readable digest
   --force                     For "upload-screenshot": upload despite failed checks
+
+Logging goes to stderr as one JSON object per line, so stdout stays pipeable:
+  ASC_LOG=debug|info|warn|error|off   default info
+Every change to live data is logged whatever the level, marked "audit":true. To keep just
+the audit trail:  asc upload-screenshot ... 2>&1 >/dev/null | jq -c 'select(.audit)'
 
 The session lives at ${SESSION_PATH} (override with ASC_SESSION_PATH).
 Capture a new one whenever Apple expires it — log in with your passkey, open dev tools,
@@ -109,6 +115,10 @@ async function main(argv: string[]): Promise<number> {
   const args = argv.filter((arg) => arg !== '--raw' && arg !== '--json' && arg !== '--force');
   const [command, ...rest] = args;
 
+  // Arguments are ids and file paths — the one secret, a piped-in capture, arrives on
+  // stdin and never appears here.
+  log.debug('command.start', { command, args: rest });
+
   switch (command) {
     case undefined:
     case '-h':
@@ -124,7 +134,15 @@ async function main(argv: string[]): Promise<number> {
       }
       const session = sessionFromCapture(source);
       saveSession(session);
-      console.log(`Saved session to ${SESSION_PATH}\n${describeSession(session)}`);
+      // The credential itself never goes near the log — only what it says about itself.
+      audit('session.save', 'ok', {
+        path: SESSION_PATH,
+        account: session.dsId,
+        team: session.teamId,
+        app: session.appId,
+        expiresAt: session.expiresAt,
+      });
+      console.log(describeSession(session));
       return 0;
     }
 
@@ -189,7 +207,6 @@ async function main(argv: string[]): Promise<number> {
       const versionId = requireArg(rest[0], 'versionId', 'set-build <versionId> <buildId>');
       const buildId = requireArg(rest[1], 'buildId', 'set-build <versionId> <buildId>');
       const document = await api.setVersionBuild(session, versionId, buildId === 'none' ? null : buildId);
-      console.error(`Saved version ${versionId}: build ${buildId}`);
       emit(document as Document, raw);
       return 0;
     }
@@ -199,7 +216,6 @@ async function main(argv: string[]): Promise<number> {
       const locId = requireArg(rest[0], 'localizationId', 'screenshot-set <localizationId> APP_IPHONE_65');
       const displayType = requireArg(rest[1], 'displayType', 'screenshot-set <localizationId> APP_IPHONE_65');
       const document = await api.createScreenshotSet(session, locId, displayType);
-      console.error(`Created ${displayType} set ${document.data.id}`);
       emit(document as Document, raw);
       return 0;
     }
@@ -212,10 +228,7 @@ async function main(argv: string[]): Promise<number> {
         displayType: requireArg(rest[1], 'displayType', example),
         filePath: requireArg(rest[2], 'file', example),
         force,
-        onProblem: (problem) => console.error(`warning: ${problem}`),
-        onProgress: (part, total) => console.error(`uploading part ${part}/${total}`),
       });
-      console.error(`Uploaded ${rest[2]} as screenshot ${screenshot.id}`);
       console.log(JSON.stringify(screenshot, null, 2));
       return 0;
     }
@@ -224,7 +237,6 @@ async function main(argv: string[]): Promise<number> {
       const session = loadSession();
       const id = requireArg(rest[0], 'screenshotId', 'delete-screenshot <screenshotId>');
       await api.deleteScreenshot(session, id);
-      console.error(`Deleted screenshot ${id}`);
       return 0;
     }
 
@@ -262,7 +274,7 @@ async function main(argv: string[]): Promise<number> {
       const id = requireArg(rest[0], 'submissionId', 'thread <submissionId>');
       const thread = await api.findThreadForSubmission(session, id);
       if (!thread) {
-        console.error(`No Resolution Center thread found for submission ${id}`);
+        log.error('thread.notFound', { submissionId: id });
         return 1;
       }
       console.log(JSON.stringify(thread, null, 2));
@@ -302,16 +314,22 @@ async function main(argv: string[]): Promise<number> {
     }
 
     default:
-      console.error(`Unknown command "${command}".\n\n${USAGE}`);
+      log.error('command.unknown', { command });
+      console.log(USAGE);
       return 1;
   }
 }
 
-main(process.argv.slice(2))
+const invoked = process.argv.slice(2);
+
+main(invoked)
   .then((code) => {
     process.exitCode = code;
   })
   .catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    log.error('command.failed', {
+      command: invoked[0],
+      error: error instanceof Error ? error.message : String(error),
+    });
     process.exitCode = 1;
   });

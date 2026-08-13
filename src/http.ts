@@ -1,5 +1,6 @@
 import { Session, timeToExpiry } from './session';
 import { Document } from './jsonapi';
+import { audit, log } from './log';
 
 export const BASE_URL = 'https://appstoreconnect.apple.com/iris/v1';
 
@@ -94,13 +95,33 @@ export async function request<T = unknown>(
   const target = `${url}${buildQuery(options.query ?? {})}`;
   const method = options.method ?? 'GET';
 
-  const response = await fetch(target, {
-    method,
-    headers: headersFor(session, method, options.contentType),
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
+  // Every mutation in this client funnels through here, so auditing at this one point is
+  // what makes the trail complete — the higher-level calls add meaning, not coverage.
+  const mutating = WRITE_METHODS.has(method);
+  const started = Date.now();
+  if (mutating) audit('http.write', 'start', { method, url: target, body: options.body });
 
-  const text = await response.text();
+  let response: Response;
+  let text: string;
+  try {
+    response = await fetch(target, {
+      method,
+      headers: headersFor(session, method, options.contentType),
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+    text = await response.text();
+  } catch (error) {
+    // A transport failure on a write is the ambiguous case: the change may or may not
+    // have landed, and that uncertainty is worth a record of its own.
+    if (mutating) {
+      audit('http.write', 'error', { method, url: target, ms: Date.now() - started, error });
+    }
+    throw error;
+  }
+
+  const outcome = { method, url: target, status: response.status, ms: Date.now() - started };
+  if (mutating) audit('http.write', response.ok ? 'ok' : 'error', outcome);
+  else log.debug('http.read', outcome);
 
   // A 403 isn't only an expired session: iris also uses it to refuse a query it doesn't
   // support, and reporting that as "log in again" sends you chasing the wrong problem.
@@ -167,13 +188,42 @@ export async function uploadPart(operation: UploadOperation, file: Buffer): Prom
   const headers: Record<string, string> = {};
   for (const header of operation.requestHeaders ?? []) headers[header.name] = header.value;
 
-  const response = await fetch(operation.url, {
-    method: operation.method ?? 'PUT',
-    headers,
-    body: file.subarray(operation.offset, operation.offset + operation.length),
+  const method = operation.method ?? 'PUT';
+  const started = Date.now();
+  // The presigned URL carries the signature in its query string, so only the host and
+  // path go in the record — the rest is a credential.
+  const where = { method, host: safeHost(operation.url), offset: operation.offset, length: operation.length };
+  audit('asset.part', 'start', where);
+
+  let response: Response;
+  try {
+    response = await fetch(operation.url, {
+      method,
+      headers,
+      body: file.subarray(operation.offset, operation.offset + operation.length),
+    });
+  } catch (error) {
+    audit('asset.part', 'error', { ...where, ms: Date.now() - started, error });
+    throw error;
+  }
+
+  audit('asset.part', response.ok ? 'ok' : 'error', {
+    ...where,
+    status: response.status,
+    ms: Date.now() - started,
   });
 
   if (!response.ok) {
     throw new ApiError(response.status, operation.url, await response.text());
+  }
+}
+
+/** Host and path of a URL, dropping the query string — which is where Apple's signatures live. */
+function safeHost(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.host}${parsed.pathname}`;
+  } catch {
+    return '<unparseable url>';
   }
 }
