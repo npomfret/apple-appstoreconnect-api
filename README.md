@@ -280,6 +280,7 @@ node dist/cli.js draft <threadId>                              # what's in the b
 node dist/cli.js save-draft <threadId> "We have fixed…" --attach shot.png
 cat reply.txt | node dist/cli.js save-draft <threadId> -       # "-" reads stdin
 node dist/cli.js delete-attachment <attachmentId>
+node dist/cli.js delete-draft <threadId>                        # bin the whole thing
 ```
 
 **This does not send anything.** App Store Connect keeps one unsent message per thread and
@@ -295,12 +296,13 @@ sentence. Attachments are added to whatever the draft already carries; `delete-a
 takes one back off. Every attachment path is checked for existence *before* the text is
 saved, so a typo can't leave the reply half-written.
 
-Three endpoints, all `application/vnd.api+json`:
+Four endpoints, all `application/vnd.api+json`:
 
 ```
-POST  resolutionCenterDraftMessages           {messageBody} + relationship to the thread
-PATCH resolutionCenterDraftMessages/{id}      {messageBody} — the autosave
-POST  resolutionCenterMessageAttachments      {fileName, fileSize} + relationship to the draft
+POST   resolutionCenterDraftMessages          {messageBody} + relationship to the thread
+PATCH  resolutionCenterDraftMessages/{id}     {messageBody} — the autosave
+DELETE resolutionCenterDraftMessages/{id}     no body — the Delete Draft button
+POST   resolutionCenterMessageAttachments     {fileName, fileSize} + relationship to the draft
 ```
 
 `save-draft` reads the thread first and POSTs or PATCHes accordingly, since the draft is
@@ -309,6 +311,13 @@ reserve → PUT the parts → `{"uploaded":true}` dance as screenshots, against
 `resolutionCenterMessageAttachments` instead of `appScreenshots` — the guess in the old
 notes turned out right. Neither the POST nor the PATCH response mentions attachments, so
 the draft is re-read at the end; that GET is what the command prints.
+
+`delete-draft` takes a thread id rather than a draft id, because draft ids are internal and
+a new one is minted every time a draft is started. Attachments go with the draft: after one
+was deleted this way, a GET of the attachment it carried returned 404.
+
+Drafts only live on **open** threads. A closed one refuses the POST with 409
+`ENTITY_ERROR.RELATIONSHIP.INVALID` — "Cannot add draft message to closed thread".
 
 `assetDeliveryState` reads `UPLOAD_COMPLETE` the moment the commit lands and `COMPLETE`
 once Apple has processed the file, at which point `sourceFileChecksum` (an MD5) and a
@@ -378,7 +387,8 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
 ## Notes and limits
 
 - **Mostly read-only.** The captured writes are the version PATCH behind `set-build`, the
-  screenshot flow, and the Resolution Center draft behind `save-draft`. Still uncaptured:
+  screenshot flow, and the Resolution Center draft behind `save-draft` and `delete-draft`.
+  Still uncaptured:
   **sending** a draft, editing metadata (`appInfoLocalizations`,
   `appStoreVersionLocalizations`) and submitting for review. Do each once in the browser,
   export the HAR, and they can be added the same way.
@@ -386,6 +396,10 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
   not captured** — no browser request for any of them was ever copied. They work
   (`deleteMessageAttachment` returns a 204 and the attachment is gone on the next read),
   but they're the least evidenced calls here, and they destroy live data.
+- `deleteDraftMessage` is the other way round: the request was copied from the browser's
+  **Delete Draft** button, so the shape is certain, but this client has never run it — the
+  one open thread's draft had already been deleted in the browser, and closed threads won't
+  take a scratch draft to practise on. The aftermath is what's documented above.
 - Screenshot sets are readable only through the collection filtered by localization.
   `GET appScreenshotSets/{id}` 404s for a set that demonstrably exists, and
   `appScreenshots?filter[appScreenshotSet]=` is refused with a 403. That's why

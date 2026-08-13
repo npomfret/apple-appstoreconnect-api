@@ -674,6 +674,9 @@ export async function uploadScreenshot(
  * Starts the thread's draft. The web UI POSTs this the moment you type the first
  * character and PATCHes from then on, so call it only when there is no draft already —
  * `saveDraftReply` handles that choice.
+ *
+ * Only open threads take drafts: a closed one answers 409 ENTITY_ERROR.RELATIONSHIP.INVALID,
+ * "Cannot add draft message to closed thread".
  */
 export function createDraftMessage(
   session: Session,
@@ -707,6 +710,19 @@ export function updateDraftMessage(
     `resolutionCenterDraftMessages/${draftId}`,
     { data: { type: 'resolutionCenterDraftMessages', id: draftId, attributes: { messageBody } } },
     VND_API_CONTENT_TYPE
+  );
+}
+
+/**
+ * Throws the draft away — the "Delete Draft" button. A DELETE with no body at all.
+ *
+ * Attachments go with it: after a draft was deleted this way, a GET of the attachment
+ * that had been on it returned 404. The thread is left with no draft, so the next
+ * `saveDraftReply` starts a fresh one.
+ */
+export function deleteDraftMessage(session: Session, draftId: string): Promise<void> {
+  return audited('draft.delete', { draftId }, () =>
+    del<void>(session, `resolutionCenterDraftMessages/${draftId}`)
   );
 }
 
@@ -840,6 +856,18 @@ export async function saveDraftReply(session: Session, reply: DraftReply): Promi
       return saved as Document<Resource>;
     }
   );
+}
+
+/**
+ * Deletes the thread's draft, attachments and all, and says which one went. Addressed by
+ * thread because that is the id you have — draft ids are internal and change each time a
+ * draft is started.
+ */
+export async function discardDraftReply(session: Session, threadId: string): Promise<string> {
+  const draft = (await getDraftMessage(session, threadId)).data;
+  if (!draft) throw new Error(`Thread ${threadId} has no draft to delete`);
+  await deleteDraftMessage(session, draft.id);
+  return draft.id;
 }
 
 /**

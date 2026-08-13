@@ -66,6 +66,7 @@ Writes (these change your live App Store Connect data):
                               attachments. "-" reads the text from stdin. This does NOT
                               send it — press Send in the browser once it reads right
   asc delete-attachment <id>  Remove one attachment from a draft
+  asc delete-draft <threadId> Throw the thread's draft away, attachments and all
   asc patch <path> <json>     Raw PATCH against /iris/v1 with a hand-written body
 
 Options:
@@ -350,6 +351,14 @@ async function main(argv: string[]): Promise<number> {
       const document = await api.saveDraftReply(session, { threadId, body, attach });
       emit(document, raw);
       console.error('Saved as a draft. Nothing has been sent — press Send in App Store Connect.');
+      return 0;
+    }
+
+    case 'delete-draft': {
+      const session = loadSession();
+      const threadId = requireArg(rest[0], 'threadId', 'delete-draft <threadId>');
+      const draftId = await api.discardDraftReply(session, threadId);
+      console.error(`Deleted draft ${draftId} and its attachments.`);
       return 0;
     }
 
