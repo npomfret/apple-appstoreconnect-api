@@ -1,8 +1,8 @@
 # Writing: builds and versions
 
-Three things are mapped: attaching a build to a version (the version page's **Save**
-button), [adding a screenshot](screenshots.md), and [writing the reply to App
-Review](replying.md) into a thread's draft box.
+Mapped: attaching a build to a version (the version page's **Save** button), [adding a
+screenshot](screenshots.md), [writing and sending the reply to App Review](replying.md),
+and putting a resolved item back in the review queue.
 
 ```sh
 node dist/cli.js builds [versionId]                 # the picker — "*" marks the current one
@@ -34,6 +34,47 @@ The PATCH body carries only what changed — omitted fields are left alone:
 {"data":{"type":"appStoreVersions","id":"<versionId>",
   "relationships":{"build":{"data":{"type":"builds","id":"<buildId>"}}}}}
 ```
+
+## Putting a rejected item back in review
+
+A rejected submission sits in `UNRESOLVED_ISSUES` with one item per thing under review.
+Once you've fixed the problem — new build, new screenshots, [a reply](replying.md) — you
+tell App Review the item is resolved, and that is what puts it back in the queue:
+
+```sh
+node dist/cli.js items <submissionId>       # item ids live here
+node dist/cli.js resolve-item <itemId>
+```
+
+```
+PATCH reviewSubmissionItems/{id}   {"attributes":{"resolved":true}}   application/vnd.api+json
+```
+
+The item comes straight back as `READY_FOR_REVIEW`. The parent submission's own state lags
+a second or two behind — a `reviewSubmissions` read taken at the same moment still said
+`UNRESOLVED_ISSUES` — so re-read it rather than believing the first answer.
+
+**There is no un-resolve**, so `resolve-item` asks first, showing the state and version it
+found. It reaches those through the parent submission: `GET reviewSubmissionItems/{id}` on
+its own is refused with a 403, but an item id is base64 of
+`{submissionId}|{n}|{appId}`, so the parent can be recovered from the id itself. That
+decoding is a guess about Apple's format and treated as one — if it doesn't come apart
+cleanly the prompt just says less.
+
+## Confirmations
+
+Two commands reach Apple in a way nothing can walk back: `send-reply` and `resolve-item`.
+Both print what they are about to do and ask. So do the three deletes
+(`delete-draft`, `delete-attachment`, `delete-screenshot`), which destroy data rather than
+publish it. Everything else writes without asking — `set-build` and the screenshot upload
+are undone by doing them again.
+
+`--yes` answers for you. With no terminal — cron, a pipe, CI — the answer can't be asked
+for, so the command prints what it would have done and stops; add `--yes` if that's what
+you meant. Declining exits 1, so a script notices.
+
+The guard is in the CLI, not the library. `sendDraftMessage()` and `resolveSubmissionItem()`
+called from code send immediately.
 
 ## Headers on a write
 

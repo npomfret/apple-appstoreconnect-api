@@ -665,9 +665,9 @@ export async function uploadScreenshot(
  * Resolution Center replies live as a *draft* until you send them: Apple keeps one unsent
  * message per thread and autosaves it as you type, which is what the calls below do.
  *
- * Sending is deliberately absent. No capture of the Send button exists yet, and a reply
- * to App Review is not something to reach by guessing at an endpoint — an accidental send
- * cannot be taken back. Save the draft here, then press Send in the browser.
+ * Sending is `sendDraftMessage`, and it is the one call here that cannot be taken back:
+ * the message is on the thread the moment it returns, with no edit and no unsend. Nothing
+ * else in this file reaches Apple.
  */
 
 /**
@@ -871,6 +871,92 @@ export async function discardDraftReply(session: Session, threadId: string): Pro
   if (!draft) throw new Error(`Thread ${threadId} has no draft to delete`);
   await deleteDraftMessage(session, draft.id);
   return draft.id;
+}
+
+/**
+ * Sends the draft. **This is the irreversible one.**
+ *
+ * The Send button doesn't post the text: it posts a *reference to the draft*, and iris
+ * copies the body and its attachments across into a real message. So whatever is in the
+ * draft box at this moment is what Apple gets — read it back before calling this.
+ *
+ * Copied from a recording of one real send. The draft is gone afterwards and the message is on
+ * the thread, with a `createdDate` and no relationships in the response; read the thread
+ * to see it in context. There is no unsend.
+ */
+export function sendDraftMessage(session: Session, draftId: string): Promise<Document<Resource>> {
+  return audited('message.send', { draftId }, () =>
+    post<Document<Resource>>(
+      session,
+      'resolutionCenterMessages',
+      {
+        data: {
+          type: 'resolutionCenterMessages',
+          relationships: {
+            createFromDraftMessage: { data: { type: 'resolutionCenterDraftMessages', id: draftId } },
+          },
+        },
+      },
+      VND_API_CONTENT_TYPE
+    )
+  );
+}
+
+/**
+ * Sends whatever is in the thread's draft box, addressed by thread because that is the id
+ * you have. Refuses an empty one: the browser disables Send until there's text, and an
+ * empty message to App Review helps nobody.
+ */
+export async function sendDraftReply(session: Session, threadId: string): Promise<Resource> {
+  const draft = (await getDraftMessage(session, threadId)).data;
+  if (!draft) throw new Error(`Thread ${threadId} has no draft to send`);
+  if (!String(draft.attributes?.messageBody ?? '').trim()) {
+    throw new Error(`Draft ${draft.id} on thread ${threadId} is empty — nothing to send`);
+  }
+  return (await sendDraftMessage(session, draft.id)).data;
+}
+
+/**
+ * The submission an item belongs to, read out of the item's own id.
+ *
+ * Item ids are base64 of `{submissionId}|{n}|{appId}` — `7ecf0154-…|6|884926566`. The
+ * browser never decodes them and Apple never promised the format, so this is a guess and
+ * treated as one: anything that doesn't come back as a leading UUID gives `undefined`
+ * rather than a wrong answer. Worth having because a direct
+ * `GET reviewSubmissionItems/{id}` is refused with a 403, so the parent is the only way in.
+ */
+export function submissionIdFromItemId(itemId: string): string | undefined {
+  const [first] = Buffer.from(itemId, 'base64').toString('utf8').split('|');
+  return first && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(first) ? first : undefined;
+}
+
+/** Every item of the submission an item id points at, or nothing if the id won't decode. */
+export async function findSubmissionItems(
+  session: Session,
+  itemId: string
+): Promise<Document<Resource[]> | undefined> {
+  const submissionId = submissionIdFromItemId(itemId);
+  return submissionId ? listSubmissionItems(session, submissionId) : undefined;
+}
+
+/**
+ * Marks one item of a submission as fixed — the "resolved" step on a submission sitting in
+ * `UNRESOLVED_ISSUES`. **Also irreversible:** the item goes straight to `READY_FOR_REVIEW`
+ * and back into Apple's queue, and there is no un-resolve.
+ *
+ * Copied from a recording of one real resolve. The response carries the new state; the parent
+ * submission's own state lags a moment behind, so re-read it rather than trusting the
+ * `UNRESOLVED_ISSUES` you may still see immediately afterwards.
+ */
+export function resolveSubmissionItem(session: Session, itemId: string): Promise<Document<Resource>> {
+  return audited('submission.item.resolve', { itemId }, () =>
+    patch<Document<Resource>>(
+      session,
+      `reviewSubmissionItems/${itemId}`,
+      { data: { type: 'reviewSubmissionItems', id: itemId, attributes: { resolved: true } } },
+      VND_API_CONTENT_TYPE
+    )
+  );
 }
 
 /**

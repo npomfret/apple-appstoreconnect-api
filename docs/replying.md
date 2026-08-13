@@ -6,14 +6,11 @@ node dist/cli.js save-draft <threadId> "We have fixed…" --attach shot.png
 cat reply.txt | node dist/cli.js save-draft <threadId> -       # "-" reads stdin
 node dist/cli.js delete-attachment <attachmentId>
 node dist/cli.js delete-draft <threadId>                        # bin the whole thing
+node dist/cli.js send-reply <threadId>                          # the point of no return
 ```
 
-**This does not send anything.** App Store Connect keeps one unsent message per thread and
-autosaves it as you type; `save-draft` writes into that box, and the reply reaches Apple
-only when someone presses **Send** in the browser. Sending is deliberately unmapped: no
-capture of that button exists, and a reply to App Review is the wrong thing to reach by
-guessing at an endpoint — it can't be taken back. Write it here, read it back, send it
-there.
+App Store Connect keeps one unsent message per thread and autosaves it as you type.
+`save-draft` writes into that box and sends nothing; `send-reply` is what reaches Apple.
 
 The text replaces the draft's contents rather than appending, and newlines survive the
 round trip, so `-` and a here-doc are the sane way to write anything longer than a
@@ -21,14 +18,42 @@ sentence. Attachments are added to whatever the draft already carries; `delete-a
 takes one back off. Every attachment path is checked for existence *before* the text is
 saved, so a typo can't leave the reply half-written.
 
-Four endpoints, all `application/vnd.api+json`:
+Five endpoints, all `application/vnd.api+json`:
 
 ```
 POST   resolutionCenterDraftMessages          {messageBody} + relationship to the thread
 PATCH  resolutionCenterDraftMessages/{id}     {messageBody} — the autosave
 DELETE resolutionCenterDraftMessages/{id}     no body — the Delete Draft button
 POST   resolutionCenterMessageAttachments     {fileName, fileSize} + relationship to the draft
+POST   resolutionCenterMessages               a reference to the draft — the Send button
 ```
+
+## Sending
+
+```sh
+node dist/cli.js draft <threadId>          # read it one more time
+node dist/cli.js send-reply <threadId>
+```
+
+Send doesn't post the message text. It posts a *reference to the draft*, and iris copies
+the body and its attachments across:
+
+```json
+{"data":{"type":"resolutionCenterMessages","relationships":{
+  "createFromDraftMessage":{"data":{"type":"resolutionCenterDraftMessages","id":"<draftId>"}}}}}
+```
+
+Which means whatever is in the box at that moment is what Apple gets — there is no version
+of the text in the request to check against. `send-reply` therefore reads the draft, prints
+it in full, and asks before posting. `--yes` skips the question; a run with no terminal
+refuses rather than assuming.
+
+It comes back `201` with the new message, its `createdDate`, and no relationships. The
+draft is gone: the thread's draft box reads `{"data": null}` again, and the message is on
+the thread from the next `messages` call onwards. **There is no unsend and no edit.**
+
+An empty draft is refused before anything is sent, matching the browser, which keeps Send
+disabled until there's text.
 
 `save-draft` reads the thread first and POSTs or PATCHes accordingly, since the draft is
 created on the first keystroke and updated forever after. Attachments are the same

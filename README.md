@@ -74,18 +74,21 @@ all) works unedited.
 | `privacy` | App Privacy declarations, and whether they're live |
 | `get` | any endpoint at all, mapped or not |
 
-**Writing** — three flows are captured from the browser and mapped:
+**Writing** — every flow here is copied from a capture of the browser doing it:
 
 | | |
 | --- | --- |
 | `builds`, `set-build` | attach a build to a version — [docs/writing.md](docs/writing.md) |
 | `upload-screenshot`, `delete-screenshot` | the full reserve → upload → commit dance, with size checks — [docs/screenshots.md](docs/screenshots.md) |
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
+| `send-reply` | send it — [docs/replying.md](docs/replying.md) |
+| `resolve-item` | tell App Review an issue is fixed and put it back in the queue — [docs/writing.md](docs/writing.md) |
 | `patch` | any PATCH, for anything not mapped |
 
-**Sending a draft reply is deliberately not mapped.** `save-draft` fills the box; someone
-presses **Send** in the browser. A reply to App Review can't be taken back, so it isn't
-something to reach by guessing at an endpoint.
+**`send-reply` and `resolve-item` can't be undone**, so they print what they are about to
+do and ask first — `send-reply` shows you the whole draft. `--yes` answers for you; with no
+terminal to ask on, they stop rather than assume. The three deletes ask too. Nothing else
+does: a bad `set-build` is one more `set-build` away from being right.
 
 The lower-level commands print denormalized JSON, or the untouched JSON:API document with
 `--raw`; the digests (`report`, `builds`, `history`, `privacy`) take `--json` instead. Ids
@@ -94,13 +97,13 @@ chain between commands, which is what makes scripting it possible.
 ## Docs
 
 - [Reading](docs/reading.md) — every read command and the endpoint behind it
-- [Writing](docs/writing.md) — builds, versions, and how a write differs from a read
+- [Writing](docs/writing.md) — builds, versions, resolving an item, and what asks before it acts
 - [Screenshots](docs/screenshots.md) — the upload flow and the pre-flight checks
-- [Replying to App Review](docs/replying.md) — Resolution Center drafts and attachments
+- [Replying to App Review](docs/replying.md) — Resolution Center drafts, attachments, and sending
 - [Logging and the audit trail](docs/logging.md) — structured logs, and why every write is recorded
 - [As a library](docs/library.md) — importing it instead of shelling out
 - [Evidence and limits](docs/evidence.md) — which calls are confirmed, which are guesses,
-  what's missing, and how to capture a new endpoint with a HAR
+  what's missing, and how to capture a new endpoint
 
 ## The short version of the caveats
 

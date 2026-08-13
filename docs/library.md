@@ -19,6 +19,10 @@ already have, if the capture reaches you some other way.
 `src/index.ts` re-exports everything, so any function in `src/api.ts` is importable from
 the package root.
 
+**The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
+`resolveSubmissionItem()` called from code go straight to Apple, and neither can be undone.
+`confirm()` from `src/confirm.ts` is there if you want the same guard.
+
 ## Conventions worth knowing before editing
 
 - The include lists in `src/api.ts` are copied verbatim from the browser. `iris` rejects

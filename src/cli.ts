@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { CURL_PATH, describeSession, loadSession, Session } from './session';
-import { denormalizeAll, Document } from './jsonapi';
+import { Cancelled, confirm } from './confirm';
+import { denormalize, denormalizeAll, Denormalized, Document } from './jsonapi';
 import { Query } from './http';
 import {
   buildReport,
@@ -61,15 +62,23 @@ Writes (these change your live App Store Connect data):
   asc save-draft <threadId> <text|-> [--attach file ...]
                               Write the reply to Apple into the thread's draft box, with
                               attachments. "-" reads the text from stdin. This does NOT
-                              send it — press Send in the browser once it reads right
+                              send it — see send-reply
   asc delete-attachment <id>  Remove one attachment from a draft
   asc delete-draft <threadId> Throw the thread's draft away, attachments and all
   asc patch <path> <json>     Raw PATCH against /iris/v1 with a hand-written body
+
+These reach Apple and cannot be undone. Both show you what they are about to do and ask
+first; --yes answers for you:
+  asc send-reply <threadId>   Send the thread's draft to App Review. No unsend, no edit
+  asc resolve-item <itemId>   Mark a submission item fixed and put it back in the review
+                              queue — what you press after answering a rejection. Item ids
+                              come from "asc items <submissionId>"
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
   --json                      For "report", "builds", "history" and "privacy": emit JSON
                               instead of the digest
+  --yes                       Skip the confirmation prompt on the commands that ask
   --force                     For "upload-screenshot": upload despite failed checks
   --reveal                    For "review-details": print the demo account password
   --attach <file>             For "save-draft": a file to attach. Repeat for several
@@ -130,6 +139,53 @@ async function versionUnderReview(session: Session, appId: string): Promise<stri
   return drafts[0]!.id;
 }
 
+/**
+ * What `send-reply` shows before it asks. The whole body, not a preview of it: this is the
+ * last look anyone gets at a message that can't be edited or taken back afterwards.
+ */
+function describeDraft(threadId: string, draft: Denormalized): string[] {
+  const body = String(draft['messageBody'] ?? '');
+  const attachments = (draft['resolutionCenterMessageAttachments'] ?? []) as Denormalized[];
+  const rule = '─'.repeat(72);
+
+  return [
+    '',
+    `  thread:      ${threadId}`,
+    `  draft:       ${draft.id}`,
+    `  message:     ${body.length} characters`,
+    ...attachments.map((file) => `  attachment:  ${String(file['fileName'] ?? file.id)}`),
+    '',
+    rule,
+    body.trimEnd(),
+    rule,
+    '',
+  ];
+}
+
+/**
+ * What `resolve-item` shows before it asks. Reached through the parent submission, since
+ * iris answers a direct GET of an item with a 403. It's a nicety: if the id won't decode
+ * or the read fails, the prompt is thinner and the command still works.
+ */
+async function describeItem(session: Session, itemId: string): Promise<string[]> {
+  try {
+    const document = await api.findSubmissionItems(session, itemId);
+    if (!document) return [];
+    const item = denormalizeAll(document).find((candidate) => candidate.id === itemId);
+    if (!item) return [];
+
+    const version = item['appStoreVersion'] as Denormalized | undefined;
+    return [
+      `  submission: ${api.submissionIdFromItemId(itemId)}`,
+      `  state:      ${String(item['state'] ?? 'unknown')}`,
+      ...(version ? [`  version:    ${String(version['versionString'] ?? version.id)}`] : []),
+    ];
+  } catch (error) {
+    log.debug('item.describe.failed', { itemId, error });
+    return [];
+  }
+}
+
 function requireArg(value: string | undefined, name: string, example: string): string {
   if (!value) throw new Error(`Missing <${name}>. Example: asc ${example}`);
   return value;
@@ -180,7 +236,8 @@ async function main(argv: string[]): Promise<number> {
   const json = positional.includes('--json');
   const force = positional.includes('--force');
   const reveal = positional.includes('--reveal');
-  const flags = new Set(['--raw', '--json', '--force', '--reveal']);
+  const yes = positional.includes('--yes');
+  const flags = new Set(['--raw', '--json', '--force', '--reveal', '--yes']);
   const args = positional.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
 
@@ -314,6 +371,7 @@ async function main(argv: string[]): Promise<number> {
     case 'delete-screenshot': {
       const session = loadSession();
       const id = requireArg(rest[0], 'screenshotId', 'delete-screenshot <screenshotId>');
+      await confirm({ question: `Delete screenshot ${id}?`, yes });
       await api.deleteScreenshot(session, id);
       return 0;
     }
@@ -332,13 +390,58 @@ async function main(argv: string[]): Promise<number> {
 
       const document = await api.saveDraftReply(session, { threadId, body, attach });
       emit(document, raw);
-      console.error('Saved as a draft. Nothing has been sent — press Send in App Store Connect.');
+      console.error('Saved as a draft. Nothing has been sent — "asc send-reply" does that.');
+      return 0;
+    }
+
+    case 'send-reply': {
+      const session = loadSession();
+      const threadId = requireArg(rest[0], 'threadId', 'send-reply <threadId>');
+
+      // Read the draft here rather than letting the API call do it, because what's in the
+      // box is the whole of what the confirmation is about.
+      const document = await api.getDraftMessage(session, threadId);
+      if (!document.data) throw new Error(`Thread ${threadId} has no draft to send`);
+      const draft = denormalize(document as Document, document.data);
+      if (!String(draft['messageBody'] ?? '').trim()) {
+        throw new Error(`The draft on thread ${threadId} is empty — nothing to send`);
+      }
+
+      await confirm({
+        question: 'Send this to App Review? It cannot be edited or taken back.',
+        detail: describeDraft(threadId, draft),
+        yes,
+      });
+
+      const sent = await api.sendDraftMessage(session, draft.id);
+      emit(sent as Document, raw);
+      console.error(`Sent. Message ${sent.data.id} is on thread ${threadId}.`);
+      return 0;
+    }
+
+    case 'resolve-item': {
+      const session = loadSession();
+      const itemId = requireArg(rest[0], 'itemId', 'resolve-item <itemId>');
+
+      await confirm({
+        question: 'Tell App Review this is fixed and put it back in the queue?',
+        detail: ['', `  item:       ${itemId}`, ...(await describeItem(session, itemId)), ''],
+        yes,
+      });
+
+      const resolved = await api.resolveSubmissionItem(session, itemId);
+      emit(resolved as Document, raw);
+      console.error(`Item ${itemId} is now ${String(resolved.data.attributes?.state ?? 'updated')}.`);
       return 0;
     }
 
     case 'delete-draft': {
       const session = loadSession();
       const threadId = requireArg(rest[0], 'threadId', 'delete-draft <threadId>');
+      await confirm({
+        question: `Delete the draft on thread ${threadId}, attachments and all?`,
+        yes,
+      });
       const draftId = await api.discardDraftReply(session, threadId);
       console.error(`Deleted draft ${draftId} and its attachments.`);
       return 0;
@@ -347,6 +450,7 @@ async function main(argv: string[]): Promise<number> {
     case 'delete-attachment': {
       const session = loadSession();
       const id = requireArg(rest[0], 'attachmentId', 'delete-attachment <attachmentId>');
+      await confirm({ question: `Delete attachment ${id}?`, yes });
       await api.deleteMessageAttachment(session, id);
       return 0;
     }
@@ -459,6 +563,14 @@ main(invoked)
     process.exitCode = code;
   })
   .catch((error: unknown) => {
+    // Declining isn't a failure worth a stack of log fields — say so plainly, but still
+    // exit non-zero so a script that expected the write to happen notices.
+    if (error instanceof Cancelled) {
+      console.error(`${error.message} Nothing was changed.`);
+      process.exitCode = 1;
+      return;
+    }
+
     log.error('command.failed', {
       command: invoked[0],
       error: error instanceof Error ? error.message : String(error),
