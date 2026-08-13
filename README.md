@@ -124,8 +124,8 @@ node dist/cli.js get resolutionCenterThreads 'filter[reviewSubmission]=<id>'
 
 ## Writing
 
-One write is mapped: attaching a build to a version, which is what the version page's
-**Save** button does.
+Two things are mapped: attaching a build to a version (the version page's **Save**
+button) and adding a screenshot.
 
 ```sh
 node dist/cli.js builds <versionId>                 # pick an id
@@ -133,10 +133,35 @@ node dist/cli.js set-build <versionId> <buildId>    # or "none" to detach
 node dist/cli.js patch appStoreVersions/<id> '{"data":{...}}'   # anything else
 ```
 
-Writes send a different header set to reads — `Content-Type: application/json` instead of
-`application/vnd.api+json`, plus `Origin` and the `X-Connect-Team-*` pair. The team id is
-only present on captured write requests, so it's also decoded from the `itctx` cookie's
-`cp` field; that means a session captured from any ordinary `GET` can still write.
+Writes send a different header set to reads — `Origin` and the `X-Connect-Team-*` pair,
+plus a `Content-Type` that isn't the same for every endpoint: the version PATCH sends
+`application/json`, the asset endpoints `application/vnd.api+json`. Both were copied from
+the browser. The team id is only present on captured write requests, so it's also decoded
+from the `itctx` cookie's `cp` field; that means a session captured from any ordinary
+`GET` can still write.
+
+### Adding a screenshot
+
+Three requests, and the middle one doesn't go to Apple's API at all:
+
+```sh
+node dist/cli.js metadata                            # -> localizationId per locale
+node dist/cli.js screenshots <locId>                 # -> existing set ids and display types
+node dist/cli.js screenshot-set <locId> APP_IPHONE_65   # only if that size has no set yet
+node dist/cli.js upload-screenshot <setId> shot.png
+```
+
+`upload-screenshot` does the whole dance: `POST appScreenshots` reserves a slot for a file
+of that name and size, the response comes back with an `uploadOperations` array of
+presigned URLs, the bytes are PUT to each in turn, and `PATCH appScreenshots/{id}` with
+`{"uploaded":true}` commits it. Skip that last step and the screenshot stays an empty
+reservation that never appears on the version page.
+
+The upload legs go to `object-storage.apple.com`, not `appstoreconnect.apple.com`, and
+carry **no cookie** — the presigned query string is the entire authentication. `uploadPart`
+in `src/http.ts` bypasses the normal request path for exactly that reason, so the session
+never follows the bytes to another host. Apple splits large files into several parts, so
+the operations are replayed in order rather than assumed to be one PUT.
 
 The PATCH body carries only what changed — omitted fields are left alone:
 
@@ -160,11 +185,15 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
 
 ## Notes and limits
 
-- **Mostly read-only.** The only captured write is the version PATCH behind `set-build`.
-  Replying to Apple, saving a draft, editing metadata and uploading evidence are all
+- **Mostly read-only.** The captured writes are the version PATCH behind `set-build` and
+  the screenshot flow. Replying to Apple, saving a draft and editing metadata are all
   writes too (`POST`/`PATCH` to `resolutionCenterDraftMessage`, `appInfoLocalizations`,
-  `appStoreVersionLocalizations` and the attachment upload flow) and none have been
-  captured. Do each once in the browser, copy the curl, and they can be added the same way.
+  `appStoreVersionLocalizations`) and none have been captured. Do each once in the browser,
+  copy the curl, and they can be added the same way. The Resolution Center's own attachment
+  upload is likely the same reserve/PUT/commit shape as screenshots, but that's a guess.
+- `SCREENSHOT_DISPLAY_TYPES` is only partly verified: `APP_IPHONE_65` is the one in the
+  capture, the rest are from Apple's public API. Read a known-good value off an existing
+  set with `screenshots <locId>` rather than trusting the list.
 - Deleting a screenshot is **not** the same save. The version page removes it with its own
   request at the moment you click the X, not when you press Save, so it isn't in the
   captured `saveReview` PATCH and isn't mapped.

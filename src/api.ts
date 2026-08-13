@@ -1,5 +1,7 @@
+import { basename } from 'path';
+import { readFileSync } from 'fs';
 import { Session } from './session';
-import { get, patch, Query } from './http';
+import { get, patch, post, uploadPart, Query, UploadOperation } from './http';
 import { Document, Resource, ResourceIdentifier } from './jsonapi';
 
 /**
@@ -288,6 +290,126 @@ export function listScreenshotSets(session: Session, localizationId: string): Pr
     include: ['appScreenshots'],
     'filter[appStoreVersionLocalization]': localizationId,
   });
+}
+
+/**
+ * The asset endpoints send application/vnd.api+json on writes, unlike the version PATCH
+ * behind `updateVersion` which sends application/json. Both were copied from the browser.
+ */
+const ASSET_CONTENT_TYPE = 'application/vnd.api+json';
+
+/**
+ * Screenshot sets are keyed by device size. Only APP_IPHONE_65 appears in the captured
+ * requests; the rest come from Apple's public API, so treat them as likely-but-unverified.
+ * The reliable way to get one is to read it off an existing set via `listScreenshotSets`.
+ */
+export const SCREENSHOT_DISPLAY_TYPES = [
+  'APP_IPHONE_67',
+  'APP_IPHONE_65',
+  'APP_IPHONE_61',
+  'APP_IPHONE_58',
+  'APP_IPHONE_55',
+  'APP_IPHONE_47',
+  'APP_IPAD_PRO_3GEN_129',
+  'APP_IPAD_PRO_3GEN_11',
+  'APP_IPAD_PRO_129',
+  'APP_IPAD_105',
+  'APP_DESKTOP',
+  'APP_APPLE_VISION_PRO',
+] as const;
+
+/**
+ * Creates an empty screenshot set for one device size on one locale. Only needed when
+ * the locale has no set for that size yet — otherwise upload straight into the existing
+ * set id from `listScreenshotSets`.
+ */
+export function createScreenshotSet(
+  session: Session,
+  localizationId: string,
+  displayType: string
+): Promise<Document<Resource>> {
+  return post(
+    session,
+    'appScreenshotSets',
+    {
+      data: {
+        type: 'appScreenshotSets',
+        attributes: { screenshotDisplayType: displayType },
+        relationships: {
+          appStoreVersionLocalization: {
+            data: { type: 'appStoreVersionLocalizations', id: localizationId },
+          },
+        },
+      },
+    },
+    ASSET_CONTENT_TYPE
+  );
+}
+
+/**
+ * Step one of an upload: reserve a slot for a file of this name and size. No bytes yet —
+ * the response carries the `uploadOperations` saying where to put them.
+ */
+export function reserveScreenshot(
+  session: Session,
+  setId: string,
+  fileName: string,
+  fileSize: number
+): Promise<Document<Resource>> {
+  return post(
+    session,
+    'appScreenshots',
+    {
+      data: {
+        type: 'appScreenshots',
+        attributes: { fileSize, fileName },
+        relationships: { appScreenshotSet: { data: { type: 'appScreenshotSets', id: setId } } },
+      },
+    },
+    ASSET_CONTENT_TYPE
+  );
+}
+
+/**
+ * Step three: tell iris the bytes are all there. Until this lands the screenshot exists
+ * as an empty reservation and doesn't show up on the version page.
+ */
+export function completeScreenshot(session: Session, screenshotId: string): Promise<Document<Resource>> {
+  return patch(
+    session,
+    `appScreenshots/${screenshotId}`,
+    { data: { type: 'appScreenshots', id: screenshotId, attributes: { uploaded: true } } },
+    ASSET_CONTENT_TYPE
+  );
+}
+
+/**
+ * The whole add-a-screenshot flow: reserve, send the parts, commit. Apple splits large
+ * files across several presigned URLs, so the operations are replayed in order rather
+ * than assumed to be a single PUT.
+ */
+export async function uploadScreenshot(
+  session: Session,
+  setId: string,
+  filePath: string,
+  onProgress?: (part: number, total: number) => void
+): Promise<Resource> {
+  const file = readFileSync(filePath);
+  const reserved = await reserveScreenshot(session, setId, basename(filePath), file.length);
+
+  const screenshot = reserved.data;
+  const operations = (screenshot.attributes?.uploadOperations ?? []) as UploadOperation[];
+  if (!operations.length) {
+    throw new Error(`Reservation ${screenshot.id} came back with no uploadOperations — nowhere to send the file`);
+  }
+
+  for (let i = 0; i < operations.length; i++) {
+    onProgress?.(i + 1, operations.length);
+    await uploadPart(operations[i], file);
+  }
+
+  const done = await completeScreenshot(session, screenshot.id);
+  return done.data;
 }
 
 /**

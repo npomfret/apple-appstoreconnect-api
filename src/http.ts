@@ -43,6 +43,11 @@ export interface RequestOptions {
   method?: string;
   query?: Query;
   body?: unknown;
+  /**
+   * Overrides the Content-Type a write would otherwise send. Not every write agrees:
+   * the version PATCH uses application/json, the asset endpoints application/vnd.api+json.
+   */
+  contentType?: string;
 }
 
 const WRITE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
@@ -55,7 +60,7 @@ export const TEAM_TYPE = 'PURPLESOFTWARE';
  * X-Connect-Team-* pair only when mutating, and switches Content-Type to plain
  * application/json. Mirror that rather than sending one header set for everything.
  */
-function headersFor(session: Session, method: string): Record<string, string> {
+function headersFor(session: Session, method: string, contentType?: string): Record<string, string> {
   const headers: Record<string, string> = {
     accept: 'application/vnd.api+json, application/json, text/csv',
     'content-type': 'application/vnd.api+json',
@@ -64,7 +69,7 @@ function headersFor(session: Session, method: string): Record<string, string> {
   };
 
   if (WRITE_METHODS.has(method)) {
-    headers['content-type'] = 'application/json';
+    headers['content-type'] = contentType ?? 'application/json';
     headers['origin'] = 'https://appstoreconnect.apple.com';
     const teamId = session.headers['x-connect-team-id'] ?? session.teamId;
     if (teamId) headers['x-connect-team-id'] = teamId;
@@ -91,7 +96,7 @@ export async function request<T = unknown>(
 
   const response = await fetch(target, {
     method,
-    headers: headersFor(session, method),
+    headers: headersFor(session, method, options.contentType),
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
 
@@ -112,14 +117,58 @@ export function get<T extends Document>(session: Session, path: string, query?: 
   return request<T>(session, path, { query });
 }
 
-export function patch<T = unknown>(session: Session, path: string, body: unknown): Promise<T> {
-  return request<T>(session, path, { method: 'PATCH', body });
+export function patch<T = unknown>(
+  session: Session,
+  path: string,
+  body: unknown,
+  contentType?: string
+): Promise<T> {
+  return request<T>(session, path, { method: 'PATCH', body, contentType });
 }
 
-export function post<T = unknown>(session: Session, path: string, body: unknown): Promise<T> {
-  return request<T>(session, path, { method: 'POST', body });
+export function post<T = unknown>(
+  session: Session,
+  path: string,
+  body: unknown,
+  contentType?: string
+): Promise<T> {
+  return request<T>(session, path, { method: 'POST', body, contentType });
 }
 
 export function del<T = unknown>(session: Session, path: string): Promise<T> {
   return request<T>(session, path, { method: 'DELETE' });
+}
+
+/**
+ * One leg of an asset upload, as iris hands it back on the reservation response. The url
+ * is presigned and already carries the part number, so the client just replays these in
+ * order rather than working out where the bytes go.
+ */
+export interface UploadOperation {
+  method?: string;
+  url: string;
+  /** Byte range of the source file this part covers. */
+  offset: number;
+  length: number;
+  requestHeaders?: { name: string; value: string }[];
+}
+
+/**
+ * Sends one part to Apple's object storage. Deliberately does not go through `request`:
+ * these leave for a different host (object-storage.apple.com) and the whole of the auth
+ * is the presigned query string, so the session cookie must not follow the bytes there.
+ */
+export async function uploadPart(operation: UploadOperation, file: Buffer): Promise<void> {
+  const headers: Record<string, string> = {};
+  for (const header of operation.requestHeaders ?? []) headers[header.name] = header.value;
+
+  const response = await fetch(operation.url, {
+    method: operation.method ?? 'PUT',
+    headers,
+    body: file.subarray(operation.offset, operation.offset + operation.length),
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, operation.url, await response.text());
+  }
 }

@@ -33,6 +33,10 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
 Writes (these change your live App Store Connect data):
   asc set-build <versionId> <buildId|none>
                               Attach a build to a version — the version page's Save button
+  asc screenshot-set <locId> <displayType>
+                              Create an empty screenshot set for a device size
+  asc upload-screenshot <setId> <file>
+                              Add a screenshot: reserve, upload the bytes, mark it complete
   asc patch <path> <json>     Raw PATCH against /iris/v1 with a hand-written body
 
 Options:
@@ -183,6 +187,28 @@ async function main(argv: string[]): Promise<number> {
       const document = await api.setVersionBuild(session, versionId, buildId === 'none' ? null : buildId);
       console.error(`Saved version ${versionId}: build ${buildId}`);
       emit(document as Document, raw);
+      return 0;
+    }
+
+    case 'screenshot-set': {
+      const session = loadSession();
+      const locId = requireArg(rest[0], 'localizationId', 'screenshot-set <localizationId> APP_IPHONE_65');
+      const displayType = requireArg(rest[1], 'displayType', 'screenshot-set <localizationId> APP_IPHONE_65');
+      const document = await api.createScreenshotSet(session, locId, displayType);
+      console.error(`Created ${displayType} set ${document.data.id}`);
+      emit(document as Document, raw);
+      return 0;
+    }
+
+    case 'upload-screenshot': {
+      const session = loadSession();
+      const setId = requireArg(rest[0], 'setId', 'upload-screenshot <setId> shot.png');
+      const file = requireArg(rest[1], 'file', 'upload-screenshot <setId> shot.png');
+      const screenshot = await api.uploadScreenshot(session, setId, file, (part, total) => {
+        console.error(`uploading part ${part}/${total}`);
+      });
+      console.error(`Uploaded ${file} as screenshot ${screenshot.id}`);
+      console.log(JSON.stringify(screenshot, null, 2));
       return 0;
     }
 
