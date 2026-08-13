@@ -35,13 +35,16 @@ Writes (these change your live App Store Connect data):
                               Attach a build to a version — the version page's Save button
   asc screenshot-set <locId> <displayType>
                               Create an empty screenshot set for a device size
-  asc upload-screenshot <setId> <file>
-                              Add a screenshot: reserve, upload the bytes, mark it complete
+  asc upload-screenshot <locId> <displayType> <file>
+                              Add a screenshot, creating the set if the size has none yet.
+                              Checks dimensions and the 10-per-set limit before uploading
+  asc delete-screenshot <id>  Remove a screenshot
   asc patch <path> <json>     Raw PATCH against /iris/v1 with a hand-written body
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
   --json                      For "report": emit JSON instead of the readable digest
+  --force                     For "upload-screenshot": upload despite failed checks
 
 The session lives at ${SESSION_PATH} (override with ASC_SESSION_PATH).
 Capture a new one whenever Apple expires it — log in with your passkey, open dev tools,
@@ -102,7 +105,8 @@ function parseQueryArgs(args: string[]): Query {
 async function main(argv: string[]): Promise<number> {
   const raw = argv.includes('--raw');
   const json = argv.includes('--json');
-  const args = argv.filter((arg) => arg !== '--raw' && arg !== '--json');
+  const force = argv.includes('--force');
+  const args = argv.filter((arg) => arg !== '--raw' && arg !== '--json' && arg !== '--force');
   const [command, ...rest] = args;
 
   switch (command) {
@@ -202,13 +206,25 @@ async function main(argv: string[]): Promise<number> {
 
     case 'upload-screenshot': {
       const session = loadSession();
-      const setId = requireArg(rest[0], 'setId', 'upload-screenshot <setId> shot.png');
-      const file = requireArg(rest[1], 'file', 'upload-screenshot <setId> shot.png');
-      const screenshot = await api.uploadScreenshot(session, setId, file, (part, total) => {
-        console.error(`uploading part ${part}/${total}`);
+      const example = 'upload-screenshot <localizationId> APP_IPHONE_65 shot.png';
+      const screenshot = await api.uploadScreenshot(session, {
+        localizationId: requireArg(rest[0], 'localizationId', example),
+        displayType: requireArg(rest[1], 'displayType', example),
+        filePath: requireArg(rest[2], 'file', example),
+        force,
+        onProblem: (problem) => console.error(`warning: ${problem}`),
+        onProgress: (part, total) => console.error(`uploading part ${part}/${total}`),
       });
-      console.error(`Uploaded ${file} as screenshot ${screenshot.id}`);
+      console.error(`Uploaded ${rest[2]} as screenshot ${screenshot.id}`);
       console.log(JSON.stringify(screenshot, null, 2));
+      return 0;
+    }
+
+    case 'delete-screenshot': {
+      const session = loadSession();
+      const id = requireArg(rest[0], 'screenshotId', 'delete-screenshot <screenshotId>');
+      await api.deleteScreenshot(session, id);
+      console.error(`Deleted screenshot ${id}`);
       return 0;
     }
 

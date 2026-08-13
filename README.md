@@ -142,26 +142,56 @@ from the `itctx` cookie's `cp` field; that means a session captured from any ord
 
 ### Adding a screenshot
 
-Three requests, and the middle one doesn't go to Apple's API at all:
-
 ```sh
 node dist/cli.js metadata                            # -> localizationId per locale
-node dist/cli.js screenshots <locId>                 # -> existing set ids and display types
-node dist/cli.js screenshot-set <locId> APP_IPHONE_65   # only if that size has no set yet
-node dist/cli.js upload-screenshot <setId> shot.png
+node dist/cli.js screenshots <locId>                 # -> existing sets and display types
+node dist/cli.js upload-screenshot <locId> APP_IPHONE_65 shot.png
+node dist/cli.js delete-screenshot <screenshotId>
 ```
 
-`upload-screenshot` does the whole dance: `POST appScreenshots` reserves a slot for a file
-of that name and size, the response comes back with an `uploadOperations` array of
-presigned URLs, the bytes are PUT to each in turn, and `PATCH appScreenshots/{id}` with
-`{"uploaded":true}` commits it. Skip that last step and the screenshot stays an empty
-reservation that never appears on the version page.
+`upload-screenshot` does the whole dance, creating the set if that device size doesn't
+have one yet: `POST appScreenshots` reserves a slot for a file of that name and size, the
+response comes back with an `uploadOperations` array of presigned URLs, the bytes are PUT
+to each in turn, and `PATCH appScreenshots/{id}` with `{"uploaded":true}` commits it. Skip
+that last step and the screenshot stays an empty reservation that never appears on the
+version page.
 
 The upload legs go to `object-storage.apple.com`, not `appstoreconnect.apple.com`, and
 carry **no cookie** — the presigned query string is the entire authentication. `uploadPart`
 in `src/http.ts` bypasses the normal request path for exactly that reason, so the session
 never follows the bytes to another host. Apple splits large files into several parts, so
 the operations are replayed in order rather than assumed to be one PUT.
+
+Verified end to end against a live app: create set, upload, `assetDeliveryState` goes to
+`COMPLETE` with the dimensions Apple read back, then delete.
+
+#### Checks before uploading
+
+Dimensions and the ten-per-set limit are checked before any bytes move, and a failure
+stops the upload rather than warning past it — `--force` overrides. Failing early matters
+because the alternative is a half-made asset on a live version.
+
+```
+$ node dist/cli.js upload-screenshot <locId> APP_IPHONE_65 wrong-size.png
+Not uploading wrong-size.png: 800 × 600 is not a size APP_IPHONE_65 accepts — it takes
+1242 × 2688, 2688 × 1242, 1284 × 2778, 2778 × 1284. Pass --force to upload anyway.
+```
+
+`SCREENSHOT_DISPLAY_TYPES` in `src/screenshots.ts` is complete and authoritative — iris
+hands over the whole enum if you POST an invalid one, which is how it was obtained.
+
+`SCREENSHOT_SIZES` is **not** complete, on purpose. Accepted dimensions aren't in any API
+response; they're only in the drop-zone captions on the version page, so the table holds
+just the zones actually read off the screen — 6.5" iPhone, 12.9"/13" iPad, and Apple
+Watch. Any display type not in the table skips the dimension check instead of guessing at
+it, since a wrong entry would reject a good screenshot. To add one, read its caption in
+the browser and transcribe it.
+
+A caption covers several device generations at once and takes any of their sizes, so each
+entry is the union of what its caption lists. The watch zone is the awkward case: it names
+five generations (Ultra 3, Series 11, 9, 6, 3) with five different sizes but doesn't say
+which display type each maps to, so all five `APP_WATCH_*` types accept the union and the
+server makes the final call.
 
 The PATCH body carries only what changed — omitted fields are left alone:
 
@@ -191,12 +221,16 @@ read `submission.appStoreVersionForReview.versionString` instead of hand-joining
   `appStoreVersionLocalizations`) and none have been captured. Do each once in the browser,
   copy the curl, and they can be added the same way. The Resolution Center's own attachment
   upload is likely the same reserve/PUT/commit shape as screenshots, but that's a guess.
-- `SCREENSHOT_DISPLAY_TYPES` is only partly verified: `APP_IPHONE_65` is the one in the
-  capture, the rest are from Apple's public API. Read a known-good value off an existing
-  set with `screenshots <locId>` rather than trusting the list.
-- Deleting a screenshot is **not** the same save. The version page removes it with its own
-  request at the moment you click the X, not when you press Save, so it isn't in the
-  captured `saveReview` PATCH and isn't mapped.
+- `deleteScreenshot` and `deleteScreenshotSet` were **probed, not captured** — no browser
+  request for either was ever copied. They work, but they're the least evidenced calls
+  here, and they destroy live data.
+- Screenshot sets are readable only through the collection filtered by localization.
+  `GET appScreenshotSets/{id}` 404s for a set that demonstrably exists, and
+  `appScreenshots?filter[appScreenshotSet]=` is refused with a 403. That's why
+  `findScreenshotSet` takes a localization id rather than a set id.
+- A 403 from iris doesn't always mean the session died — it's also how an unsupported
+  filter is refused. `src/http.ts` tells them apart by whether the body is a JSON:API
+  error document, so a bad query no longer reads as "log in again".
 - `metadata` and `listVersionLocalizations` / `listAppInfoLocalizations` were found by
   probing, not copied from the browser — they aren't in the captured requests, so they're
   slightly more likely to shift than the rest.

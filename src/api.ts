@@ -1,8 +1,9 @@
 import { basename } from 'path';
 import { readFileSync } from 'fs';
 import { Session } from './session';
-import { get, patch, post, uploadPart, Query, UploadOperation } from './http';
+import { del, get, patch, post, uploadPart, Query, UploadOperation } from './http';
 import { Document, Resource, ResourceIdentifier } from './jsonapi';
+import { checkScreenshot, readImageSize } from './screenshots';
 
 /**
  * Include lists lifted verbatim from the browser's own requests. The iris API is
@@ -299,26 +300,6 @@ export function listScreenshotSets(session: Session, localizationId: string): Pr
 const ASSET_CONTENT_TYPE = 'application/vnd.api+json';
 
 /**
- * Screenshot sets are keyed by device size. Only APP_IPHONE_65 appears in the captured
- * requests; the rest come from Apple's public API, so treat them as likely-but-unverified.
- * The reliable way to get one is to read it off an existing set via `listScreenshotSets`.
- */
-export const SCREENSHOT_DISPLAY_TYPES = [
-  'APP_IPHONE_67',
-  'APP_IPHONE_65',
-  'APP_IPHONE_61',
-  'APP_IPHONE_58',
-  'APP_IPHONE_55',
-  'APP_IPHONE_47',
-  'APP_IPAD_PRO_3GEN_129',
-  'APP_IPAD_PRO_3GEN_11',
-  'APP_IPAD_PRO_129',
-  'APP_IPAD_105',
-  'APP_DESKTOP',
-  'APP_APPLE_VISION_PRO',
-] as const;
-
-/**
  * Creates an empty screenshot set for one device size on one locale. Only needed when
  * the locale has no set for that size yet — otherwise upload straight into the existing
  * set id from `listScreenshotSets`.
@@ -383,20 +364,77 @@ export function completeScreenshot(session: Session, screenshotId: string): Prom
   );
 }
 
+/** Removes a screenshot. Not in any capture — the shape was probed and works. */
+export function deleteScreenshot(session: Session, screenshotId: string): Promise<void> {
+  return del(session, `appScreenshots/${screenshotId}`);
+}
+
+/** Removes a whole set, screenshots and all. Probed, like `deleteScreenshot`. */
+export function deleteScreenshotSet(session: Session, setId: string): Promise<void> {
+  return del(session, `appScreenshotSets/${setId}`);
+}
+
 /**
- * The whole add-a-screenshot flow: reserve, send the parts, commit. Apple splits large
- * files across several presigned URLs, so the operations are replayed in order rather
- * than assumed to be a single PUT.
+ * The set for one device size on one locale, if it exists.
+ *
+ * Goes via the localization rather than the set id because iris has no GET for a single
+ * appScreenshotSet — `appScreenshotSets/{id}` 404s even for a set that demonstrably
+ * exists, and filtering appScreenshots by set is refused outright with a 403. The
+ * collection filtered by localization is the only way in.
+ */
+export async function findScreenshotSet(
+  session: Session,
+  localizationId: string,
+  displayType: string
+): Promise<Resource | undefined> {
+  const document = await listScreenshotSets(session, localizationId);
+  return document.data.find((set) => set.attributes?.screenshotDisplayType === displayType);
+}
+
+export interface UploadScreenshotOptions {
+  localizationId: string;
+  displayType: string;
+  filePath: string;
+  /** Upload even if the pre-flight checks object. */
+  force?: boolean;
+  onProgress?: (part: number, total: number) => void;
+  /** Called with each pre-flight complaint. Upload proceeds only if `force` is set. */
+  onProblem?: (problem: string) => void;
+}
+
+/**
+ * The whole add-a-screenshot flow: check, reserve, send the parts, commit.
+ *
+ * The set is created if the locale doesn't have one for that device size yet. Apple
+ * splits large files across several presigned URLs, so the operations are replayed in
+ * order rather than assumed to be a single PUT.
  */
 export async function uploadScreenshot(
   session: Session,
-  setId: string,
-  filePath: string,
-  onProgress?: (part: number, total: number) => void
+  options: UploadScreenshotOptions
 ): Promise<Resource> {
-  const file = readFileSync(filePath);
-  const reserved = await reserveScreenshot(session, setId, basename(filePath), file.length);
+  const { localizationId, displayType, filePath, force, onProgress, onProblem } = options;
 
+  const file = readFileSync(filePath);
+  const existingSet = await findScreenshotSet(session, localizationId, displayType);
+
+  // Counted from the set we just read; a set that doesn't exist yet is empty by definition.
+  const existing = existingSet
+    ? ((existingSet.relationships?.appScreenshots?.data as unknown[] | undefined) ?? []).length
+    : 0;
+
+  const problems = checkScreenshot({ displayType, size: readImageSize(file), existing });
+  if (problems.length && !force) {
+    throw new Error(
+      `Not uploading ${basename(filePath)}: ${problems.join('; ')}. Pass --force to upload anyway.`
+    );
+  }
+  // Only worth reporting when we're going ahead regardless — otherwise the error says it.
+  for (const problem of problems) onProblem?.(problem);
+
+  const setId = existingSet?.id ?? (await createScreenshotSet(session, localizationId, displayType)).data.id;
+
+  const reserved = await reserveScreenshot(session, setId, basename(filePath), file.length);
   const screenshot = reserved.data;
   const operations = (screenshot.attributes?.uploadOperations ?? []) as UploadOperation[];
   if (!operations.length) {

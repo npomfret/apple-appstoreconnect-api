@@ -102,7 +102,12 @@ export async function request<T = unknown>(
 
   const text = await response.text();
 
-  if (response.status === 401 || response.status === 403) throw new SessionExpiredError(response.status);
+  // A 403 isn't only an expired session: iris also uses it to refuse a query it doesn't
+  // support, and reporting that as "log in again" sends you chasing the wrong problem.
+  // Those refusals come back as a JSON:API error document; a dead session does not.
+  if (response.status === 401 || (response.status === 403 && !text.includes('"errors"'))) {
+    throw new SessionExpiredError(response.status);
+  }
   if (!response.ok) throw new ApiError(response.status, target, text);
   if (!text) return undefined as T;
 
