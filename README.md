@@ -7,36 +7,41 @@ not expose.
 It talks to the same private `https://appstoreconnect.apple.com/iris/v1` service the web UI
 uses, reusing a session you capture from your browser.
 
-## How auth works
+## First: you need a cookie
 
-There is no API key for this. You log in with your browser and passkey, then hand the tool
-a request copied out of dev tools:
+**There is no API key for this, and no way to get one.** `iris` authenticates with the
+browser session cookie and nothing else. Apple gates that behind an interactive login —
+passkey, 2FA — so every session starts with you in a browser. It's clunky. There's no
+alternative.
 
-1. Log in to App Store Connect and open a review submission page.
-2. Open dev tools → Network, right-click any `/iris/v1/...` request → **Copy as cURL**.
-3. Feed it in:
+Sessions last a few hours. When one lapses you do this again.
+
+1. Log in to <https://appstoreconnect.apple.com> as normal, and open any page of the app
+   you care about (a review submission or the version page).
+2. Dev tools → **Network**, filter to Fetch/XHR, click any request to `/iris/v1/...`.
+3. Right-click it → **Copy** → **Copy as cURL**.
+4. Paste it into a scratch file — `tmp/` is gitignored, keep it there.
+5. Hand it over:
 
    ```sh
-   pbpaste | npx asc login
-   # or
-   npx asc login some-file-with-the-curl.txt
+   npm install && npm run build
+   node dist/cli.js login tmp/curl.txt      # or: pbpaste | node dist/cli.js login
+   node dist/cli.js status                  # confirms it, and how long it has left
    ```
 
-The cookie jar and CSRF header are stored at `tmp/session.json` (mode `0600`, gitignored;
-override with `ASC_SESSION_PATH`). Apple stamps an expiry into the `itctx` cookie — usually
-a few hours — and `asc status` shows how long is left. When it lapses, repeat the capture.
+Any request will do, `GET` or otherwise — the team id that writes need is decoded from the
+cookie rather than read off the headers, so a session captured from a plain read can still
+write. The file can contain several curls with notes around them; the first is used, and
+only the cookie plus a handful of headers are kept.
 
-The input can be a whole file of several curl commands with notes around them; the first
-one found is used. Only the cookie and a handful of headers are kept.
+The result lands at `tmp/session.json` (mode `0600`, gitignored, `ASC_SESSION_PATH` to
+move it). Treat both files as live credentials: anyone holding that cookie is you, on your
+developer account, until it expires.
 
-Any request will do, `GET` or otherwise — the team id writes need is decoded from the
-cookie rather than taken from the headers, so a read request still yields a session that
-can write.
+### Or paste the cookie on its own
 
-### Or plain text
-
-If a curl is awkward to get, `login` takes an ordinary text file instead. One item per
-line, in any order — headers, the page URL, `#` comments, blank lines:
+If getting a clean curl is awkward, `login` takes ordinary text instead — one item per
+line, any order, `#` comments and blank lines ignored:
 
 ```
 # grabbed 13 Aug
@@ -44,20 +49,15 @@ Cookie: myacinfo=...; itctx=...; dqsid=...
 https://appstoreconnect.apple.com/apps/6761343835/distribution/ios/version/inflight
 ```
 
-The cookie is the only part that's required, and it can be pasted bare without the
-`Cookie:` prefix. Account id, team id and expiry are all decoded from it. The URL line is
-optional and only supplies the default app id, which you can otherwise pass per command
-(`asc report <appId>`).
-
-Anything else in the file is ignored, so an HTTP/2 header block copied straight out of
-dev tools (`:authority:`, `:path:`, `sec-fetch-*` and all) works unedited.
+Only the cookie is required, and the `Cookie:` prefix is optional. Account id, team id and
+expiry are all decoded from it. The URL line just supplies the default app id, which you
+can otherwise pass per command (`asc report <appId>`). Everything else is ignored, so an
+HTTP/2 header block pasted straight out of dev tools (`:authority:`, `sec-fetch-*` and
+all) works unedited.
 
 ## Usage
 
 ```sh
-npm install && npm run build
-
-node dist/cli.js status
 node dist/cli.js report                 # the useful one — digest of every open submission
 node dist/cli.js report --json
 ```
