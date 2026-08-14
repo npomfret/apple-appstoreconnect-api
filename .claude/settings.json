@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "defaultMode": "default",
+  "permissions": {
+    "ask": [
+      "Bash(git push *)",
+      "Bash(npm publish *)",
+      "Bash(npm install *)",
+      "Bash(npm uninstall *)",
+      "Bash(npm update *)",
+      "Bash(curl *)",
+      "Bash(node dist/cli.js *)",
+      "Bash(npm run asc *)",
+      "Bash(* --yes *)"
+    ],
+    "deny": [
+      "Read(tmp/**)",
+      "Edit(tmp/**)",
+      "Read(session.json)",
+      "Edit(session.json)",
+      "Read(**/*.session.json)",
+      "Edit(**/*.session.json)",
+      "Read(.env)",
+      "Read(.env.*)",
+      "Edit(dist/**)"
+    ]
+  }
+}

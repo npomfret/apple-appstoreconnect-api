@@ -8,6 +8,7 @@
     "asc": "dist/cli.js"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "build": "tsc",
     "asc": "tsc && node dist/cli.js"
   },
