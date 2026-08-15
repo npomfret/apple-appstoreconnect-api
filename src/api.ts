@@ -129,6 +129,58 @@ function sideloadLimits<D extends Readonly<Record<string, number>>>(
   return query;
 }
 
+/**
+ * Which attributes of a resource type come back — JSON:API's `fields[type]`, copied from
+ * the browser with the rest of each query. An empty list is not "all of them": it asks for
+ * that type to be identified by id alone, which is how the version page names a review
+ * detail record without pulling the demo-account credentials in it.
+ *
+ * Every call that sends one takes a `fields` option. Widening one is safe; narrowing one
+ * past what the browser asked for will start removing attributes this client's own
+ * formatting reads, so `report.ts` is the thing to check before trimming.
+ */
+const FIELDSETS = {
+  appMetrics: {
+    apps: ['appStoreVersionMetrics', 'betaReviewMetrics', 'reviewSubmissions'],
+    appStoreVersionMetrics: ['messageCount'],
+    betaReviewMetrics: ['messageCount', 'platform'],
+    reviewSubmissions: ['state'],
+  },
+  appVersions: {
+    appStoreVersions: [
+      'appStoreState',
+      'appVersionState',
+      'versionString',
+      'platform',
+      'downloadable',
+      'alternativeDistributionPackage',
+    ],
+  },
+  version: {
+    apps: ['isOrEverWasMadeForKids'],
+    appStoreReviewDetails: [],
+    gameCenterConfigurations: [],
+    appClipDefaultExperiences: [],
+  },
+  reviewDetails: { appStoreVersions: [] },
+  appInfoPage: { apps: ['isOrEverWasMadeForKids'] },
+} as const;
+
+/** The fieldsets one call sends, as an option: any subset of them, each a new attribute list. */
+export type Fieldsets<D> = Partial<Record<keyof D, readonly string[]>>;
+
+/** The `fields[type]` half of a query: a call's captured attribute lists, less any overridden. */
+function fieldsets<D extends Readonly<Record<string, readonly string[]>>>(
+  defaults: D,
+  overrides: Fieldsets<D> = {}
+): Query {
+  const query: Query = {};
+  for (const [type, captured] of Object.entries(defaults)) {
+    query[`fields[${type}]`] = [...(overrides[type as keyof D] ?? captured)];
+  }
+  return query;
+}
+
 export const OPEN_SUBMISSION_STATES = [
   'READY_FOR_REVIEW',
   'WAITING_FOR_REVIEW',
@@ -249,16 +301,17 @@ export function listApps(
  */
 export function listAppMetrics(
   session: Session,
-  options: { limit?: number; sideloads?: SideloadLimits<typeof SIDELOADS.appMetrics> } = {}
+  options: {
+    limit?: number;
+    sideloads?: SideloadLimits<typeof SIDELOADS.appMetrics>;
+    fields?: Fieldsets<typeof FIELDSETS.appMetrics>;
+  } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, 'apps', {
     include: ['appStoreVersionMetrics', 'betaReviewMetrics', 'reviewSubmissions'],
     limit: options.limit ?? 200,
     'filter[removed]': false,
-    'fields[apps]': ['appStoreVersionMetrics', 'betaReviewMetrics', 'reviewSubmissions'],
-    'fields[appStoreVersionMetrics]': 'messageCount',
-    'fields[betaReviewMetrics]': ['messageCount', 'platform'],
-    'fields[reviewSubmissions]': 'state',
+    ...fieldsets(FIELDSETS.appMetrics, options.fields),
     ...sideloadLimits(SIDELOADS.appMetrics, options.sideloads),
   });
 }
@@ -316,19 +369,12 @@ export const LIVE_VERSION_STATES = [
 export function listAppVersions(
   session: Session,
   appId: string,
-  options: { platform?: string } = {}
+  options: { platform?: string; fields?: Fieldsets<typeof FIELDSETS.appVersions> } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `apps/${appId}/appStoreVersions`, {
     include: ['alternativeDistributionPackage'],
     'filter[platform]': options.platform,
-    'fields[appStoreVersions]': [
-      'appStoreState',
-      'appVersionState',
-      'versionString',
-      'platform',
-      'downloadable',
-      'alternativeDistributionPackage',
-    ],
+    ...fieldsets(FIELDSETS.appVersions, options.fields),
   });
 }
 
@@ -382,16 +428,15 @@ export function getDataUsagePublishState(session: Session, appId: string): Promi
 export function getVersion(
   session: Session,
   versionId: string,
-  options: { sideloads?: SideloadLimits<typeof SIDELOADS.version> } = {}
+  options: {
+    sideloads?: SideloadLimits<typeof SIDELOADS.version>;
+    fields?: Fieldsets<typeof FIELDSETS.version>;
+  } = {}
 ): Promise<Document<Resource>> {
   return get(session, `appStoreVersions/${versionId}`, {
     include: [...INCLUDES.version],
     ...sideloadLimits(SIDELOADS.version, options.sideloads),
-    'fields[apps]': 'isOrEverWasMadeForKids',
-    // Empty fieldsets: the UI wants these related records identified, not expanded.
-    'fields[appStoreReviewDetails]': '',
-    'fields[gameCenterConfigurations]': '',
-    'fields[appClipDefaultExperiences]': '',
+    ...fieldsets(FIELDSETS.version, options.fields),
   });
 }
 
@@ -402,11 +447,15 @@ export function getVersion(
  * Worth reading on any rejection — "we were unable to sign in" or "we couldn't locate
  * the feature" are complaints about this record rather than about the build.
  */
-export function getReviewDetails(session: Session, reviewDetailId: string): Promise<Document<Resource>> {
+export function getReviewDetails(
+  session: Session,
+  reviewDetailId: string,
+  options: { fields?: Fieldsets<typeof FIELDSETS.reviewDetails> } = {}
+): Promise<Document<Resource>> {
   return get(session, `appStoreReviewDetails/${reviewDetailId}`, {
     include: [...INCLUDES.reviewDetails],
     // The version is wanted as an identifier only, not expanded — as the browser asks.
-    'fields[appStoreVersions]': '',
+    ...fieldsets(FIELDSETS.reviewDetails, options.fields),
   });
 }
 
@@ -638,10 +687,14 @@ export function setAppCategories(
  * their categories and their age-rating declarations, and the app narrowed to the one
  * field that page reads off it.
  */
-export function listAppInfoPage(session: Session, appId: string): Promise<Document<Resource[]>> {
+export function listAppInfoPage(
+  session: Session,
+  appId: string,
+  options: { fields?: Fieldsets<typeof FIELDSETS.appInfoPage> } = {}
+): Promise<Document<Resource[]>> {
   return get(session, `apps/${appId}/appInfos`, {
     include: [...INCLUDES.appInfoPage],
-    'fields[apps]': 'isOrEverWasMadeForKids',
+    ...fieldsets(FIELDSETS.appInfoPage, options.fields),
   });
 }
 

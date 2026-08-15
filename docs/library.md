@@ -37,6 +37,12 @@ nothing, so it's a safe thing to call first.
   `limit[items]=0`, which asks for a submission's items to be identified rather than
   expanded. Raise one when a thread, an app list or a version has outgrown the number the
   UI was built for.
+- So are the fieldsets. `{ fields }` is keyed by resource type and replaces one
+  `fields[type]` list, again defaulting to the captured one:
+  `getVersion(session, versionId, { fields: { appStoreReviewDetails: ['contactEmail'] } })`
+  expands a record the version page asks for by id alone. Widening is the safe direction;
+  narrowing past the browser's list will start removing attributes `report.ts` reads, so
+  check what formats a call before trimming it.
 - Query strings are built by hand rather than with `URLSearchParams`: Apple wants literal
   `[`, `]` and `,`, which `URLSearchParams` would percent-encode.
 - **Nothing from the account the captures came from is baked in.** Every id, category,
