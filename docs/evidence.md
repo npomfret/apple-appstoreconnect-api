@@ -30,7 +30,9 @@ Each of these was recorded from App Store Connect doing it, and the request this
 sends matches what the browser sent.
 
 - `listMessages` and `getDraftMessage` — includes and the `limit[rejections]=2000` /
-  `limit[resolutionCenterMessageAttachments]=1000` pair match exactly.
+  `limit[resolutionCenterMessageAttachments]=1000` pair match exactly. Those page sizes are
+  the defaults rather than fixed — a caller can name a different one — and a call with no
+  options sends the browser's, which is what was compared.
 - `listAppInfos`, `getReviewDetails`, and the localizations-with-assets call behind
   `screenshots`.
 - From one attach-a-build-and-save: `listBuilds`, `listBuildCandidates`, `listPreviewSets`

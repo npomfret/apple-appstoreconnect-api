@@ -92,6 +92,43 @@ const INCLUDES = {
   ],
 } as const;
 
+/**
+ * Page sizes for the records those includes drag along — JSON:API's
+ * `limit[relationship]` — copied from the browser with the include lists they pair with.
+ * `0` is not "no limit": it asks for the related records to be identified rather than
+ * expanded, which is how the review-centre UI avoids pulling every item of every
+ * submission just to list them.
+ *
+ * These are the browser's numbers for the browser's screens, so every call that sends them
+ * takes a `sideloads` option to name a different one. The defaults stay as captured.
+ */
+const SIDELOADS = {
+  reviewSubmissions: { items: 0 },
+  messages: { rejections: 2000, resolutionCenterMessageAttachments: 1000 },
+  draftMessage: { resolutionCenterMessageAttachments: 1000 },
+  rejections: { rejectionAttachments: 1000 },
+  apps: { displayableVersions: 20 },
+  appMetrics: { reviewSubmissions: 10 },
+  threads: { appStoreVersions: 2000 },
+  version: { appStoreVersionLocalizations: 50 },
+  versionAssets: { appScreenshotSets: 50, appPreviewSets: 50 },
+} as const;
+
+/** The sideloads one call sends, as an option: any subset of them, each a new page size. */
+export type SideloadLimits<D> = Partial<Record<keyof D, number>>;
+
+/** The `limit[relationship]` half of a query: a call's captured page sizes, less any overridden. */
+function sideloadLimits<D extends Readonly<Record<string, number>>>(
+  defaults: D,
+  overrides: SideloadLimits<D> = {}
+): Query {
+  const query: Query = {};
+  for (const [name, captured] of Object.entries(defaults)) {
+    query[`limit[${name}]`] = overrides[name as keyof D] ?? captured;
+  }
+  return query;
+}
+
 export const OPEN_SUBMISSION_STATES = [
   'READY_FOR_REVIEW',
   'WAITING_FOR_REVIEW',
@@ -107,21 +144,29 @@ export type SubmissionState = (typeof OPEN_SUBMISSION_STATES)[number];
 export function listReviewSubmissions(
   session: Session,
   appId: string,
-  options: { states?: readonly string[]; limit?: number } = {}
+  options: {
+    states?: readonly string[];
+    limit?: number;
+    sideloads?: SideloadLimits<typeof SIDELOADS.reviewSubmissions>;
+  } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `apps/${appId}/reviewSubmissions`, {
     include: [...INCLUDES.reviewSubmissions],
     limit: options.limit ?? 2000,
-    'limit[items]': 0,
+    ...sideloadLimits(SIDELOADS.reviewSubmissions, options.sideloads),
     'filter[state]': [...(options.states ?? OPEN_SUBMISSION_STATES)],
   });
 }
 
 /** One submission on its own, without going via the app. */
-export function getReviewSubmission(session: Session, submissionId: string): Promise<Document<Resource>> {
+export function getReviewSubmission(
+  session: Session,
+  submissionId: string,
+  options: { sideloads?: SideloadLimits<typeof SIDELOADS.reviewSubmissions> } = {}
+): Promise<Document<Resource>> {
   return get(session, `reviewSubmissions/${submissionId}`, {
     include: [...INCLUDES.reviewSubmissions],
-    'limit[items]': 0,
+    ...sideloadLimits(SIDELOADS.reviewSubmissions, options.sideloads),
   });
 }
 
@@ -138,19 +183,26 @@ export function listSubmissionItems(
 }
 
 /** The Resolution Center conversation: Apple's messages and yours, oldest first. */
-export function listMessages(session: Session, threadId: string): Promise<Document<Resource[]>> {
+export function listMessages(
+  session: Session,
+  threadId: string,
+  options: { sideloads?: SideloadLimits<typeof SIDELOADS.messages> } = {}
+): Promise<Document<Resource[]>> {
   return get(session, `resolutionCenterThreads/${threadId}/resolutionCenterMessages`, {
     include: [...INCLUDES.messages],
-    'limit[rejections]': 2000,
-    'limit[resolutionCenterMessageAttachments]': 1000,
+    ...sideloadLimits(SIDELOADS.messages, options.sideloads),
   });
 }
 
 /** The unsent reply sitting in the thread's draft box, if there is one. */
-export function getDraftMessage(session: Session, threadId: string): Promise<Document<Resource | null>> {
+export function getDraftMessage(
+  session: Session,
+  threadId: string,
+  options: { sideloads?: SideloadLimits<typeof SIDELOADS.draftMessage> } = {}
+): Promise<Document<Resource | null>> {
   return get(session, `resolutionCenterThreads/${threadId}/resolutionCenterDraftMessage`, {
     include: [...INCLUDES.draftMessage],
-    'limit[resolutionCenterMessageAttachments]': 1000,
+    ...sideloadLimits(SIDELOADS.draftMessage, options.sideloads),
   });
 }
 
@@ -158,13 +210,13 @@ export function getDraftMessage(session: Session, threadId: string): Promise<Doc
 export function listRejections(
   session: Session,
   threadId: string,
-  options: { limit?: number } = {}
+  options: { limit?: number; sideloads?: SideloadLimits<typeof SIDELOADS.rejections> } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, 'reviewRejections', {
     'filter[resolutionCenterMessage.resolutionCenterThread]': threadId,
     include: [...INCLUDES.rejections],
     limit: options.limit ?? 2000,
-    'limit[rejectionAttachments]': 1000,
+    ...sideloadLimits(SIDELOADS.rejections, options.sideloads),
   });
 }
 
@@ -180,11 +232,14 @@ export const THREAD_TYPES = [
 ] as const;
 
 /** Every app on the account. */
-export function listApps(session: Session, options: { limit?: number } = {}): Promise<Document<Resource[]>> {
+export function listApps(
+  session: Session,
+  options: { limit?: number; sideloads?: SideloadLimits<typeof SIDELOADS.apps> } = {}
+): Promise<Document<Resource[]>> {
   return get(session, 'apps', {
     include: ['appStoreIcon', 'displayableVersions'],
     limit: options.limit ?? 200,
-    'limit[displayableVersions]': 20,
+    ...sideloadLimits(SIDELOADS.apps, options.sideloads),
   });
 }
 
@@ -192,7 +247,10 @@ export function listApps(session: Session, options: { limit?: number } = {}): Pr
  * Unread-message counts per app — what the App Store Connect home page badges with.
  * The cheapest way to ask "has Apple said anything anywhere?" without walking threads.
  */
-export function listAppMetrics(session: Session, options: { limit?: number } = {}): Promise<Document<Resource[]>> {
+export function listAppMetrics(
+  session: Session,
+  options: { limit?: number; sideloads?: SideloadLimits<typeof SIDELOADS.appMetrics> } = {}
+): Promise<Document<Resource[]>> {
   return get(session, 'apps', {
     include: ['appStoreVersionMetrics', 'betaReviewMetrics', 'reviewSubmissions'],
     limit: options.limit ?? 200,
@@ -201,7 +259,7 @@ export function listAppMetrics(session: Session, options: { limit?: number } = {
     'fields[appStoreVersionMetrics]': 'messageCount',
     'fields[betaReviewMetrics]': ['messageCount', 'platform'],
     'fields[reviewSubmissions]': 'state',
-    'limit[reviewSubmissions]': 10,
+    ...sideloadLimits(SIDELOADS.appMetrics, options.sideloads),
   });
 }
 
@@ -213,11 +271,15 @@ export function getApp(session: Session, appId: string): Promise<Document<Resour
 export function listThreads(
   session: Session,
   appId: string,
-  options: { appStoreVersionId?: string; threadTypes?: readonly string[] } = {}
+  options: {
+    appStoreVersionId?: string;
+    threadTypes?: readonly string[];
+    sideloads?: SideloadLimits<typeof SIDELOADS.threads>;
+  } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `apps/${appId}/resolutionCenterThreads`, {
     include: ['appStoreVersions', 'app', 'appMessageThreadDetail', 'build', 'betaBackgroundAssetReviewSubmission'],
-    'limit[appStoreVersions]': 2000,
+    ...sideloadLimits(SIDELOADS.threads, options.sideloads),
     'filter[threadType]': [...(options.threadTypes ?? THREAD_TYPES)],
     'filter[appStoreVersion]': options.appStoreVersionId,
   });
@@ -317,10 +379,14 @@ export function getDataUsagePublishState(session: Session, appId: string): Promi
  * The version page's own view of a version: state, release settings, and the ids of
  * everything hanging off it. The counterpart to `updateVersion`.
  */
-export function getVersion(session: Session, versionId: string): Promise<Document<Resource>> {
+export function getVersion(
+  session: Session,
+  versionId: string,
+  options: { sideloads?: SideloadLimits<typeof SIDELOADS.version> } = {}
+): Promise<Document<Resource>> {
   return get(session, `appStoreVersions/${versionId}`, {
     include: [...INCLUDES.version],
-    'limit[appStoreVersionLocalizations]': 50,
+    ...sideloadLimits(SIDELOADS.version, options.sideloads),
     'fields[apps]': 'isOrEverWasMadeForKids',
     // Empty fieldsets: the UI wants these related records identified, not expanded.
     'fields[appStoreReviewDetails]': '',
@@ -385,13 +451,13 @@ export function redactReviewDetails(document: Document<Resource>): Document<Reso
  */
 export function listVersionLocalizationsWithAssets(
   session: Session,
-  versionId: string
+  versionId: string,
+  options: { sideloads?: SideloadLimits<typeof SIDELOADS.versionAssets> } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, 'appStoreVersionLocalizations', {
     'filter[appStoreVersion]': versionId,
     include: ['appScreenshotSets', 'appPreviewSets'],
-    'limit[appScreenshotSets]': 50,
-    'limit[appPreviewSets]': 50,
+    ...sideloadLimits(SIDELOADS.versionAssets, options.sideloads),
   });
 }
 

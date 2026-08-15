@@ -30,6 +30,13 @@ nothing, so it's a safe thing to call first.
 - The include lists in `src/api.ts` are copied verbatim from the browser. `iris` rejects
   the whole request with a `400` if you ask for an include it doesn't recognise, so don't
   edit them without testing.
+- Page sizes are options, never fixed. The top-level one is `{ limit }`; the per-relationship
+  caps on what an include drags along are `{ sideloads }`, keyed by relationship name:
+  `listMessages(session, threadId, { sideloads: { rejections: 5 } })`. Both default to the
+  browser's own numbers, which is what a call with no options sends — including
+  `limit[items]=0`, which asks for a submission's items to be identified rather than
+  expanded. Raise one when a thread, an app list or a version has outgrown the number the
+  UI was built for.
 - Query strings are built by hand rather than with `URLSearchParams`: Apple wants literal
   `[`, `]` and `,`, which `URLSearchParams` would percent-encode.
 - **Nothing from the account the captures came from is baked in.** Every id, category,
