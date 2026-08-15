@@ -27,9 +27,11 @@ nothing, so it's a safe thing to call first.
 
 ## Conventions worth knowing before editing
 
-- The include lists in `src/api.ts` are copied verbatim from the browser. `iris` rejects
-  the whole request with a `400` if you ask for an include it doesn't recognise, so don't
-  edit them without testing.
+- The include lists in `src/api.ts` are copied verbatim from the browser, all of them, in
+  one `INCLUDES` inventory. `{ include }` replaces the list for a call and `[]` drops the
+  parameter, but this is the option to be careful with: **iris rejects the whole request
+  with a `400` if you name a relationship it doesn't recognise**, so an override is a
+  hypothesis to test rather than a preference. The defaults are the lists observed to work.
 - Page sizes are options, never fixed. The top-level one is `{ limit }`; the per-relationship
   caps on what an include drags along are `{ sideloads }`, keyed by relationship name:
   `listMessages(session, threadId, { sideloads: { rejections: 5 } })`. Both default to the

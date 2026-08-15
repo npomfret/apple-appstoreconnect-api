@@ -7,9 +7,15 @@ import { checkScreenshot, readImageSize } from './screenshots';
 import { audited, log } from './log';
 
 /**
- * Include lists lifted verbatim from the browser's own requests. The iris API is
- * undocumented and picky: asking for an include it doesn't recognise 400s the whole
- * request, so these stay as-is unless verified against a live call.
+ * Include lists lifted verbatim from the browser's own requests — every one of them, so
+ * this is the whole inventory of what this client asks iris to sideload.
+ *
+ * Each is the default for its call, and each call takes an `include` option to replace it.
+ * Treat that option with more care than `sideloads` or `fields`: iris is undocumented and
+ * picky, and **a relationship name it doesn't recognise 400s the whole request** rather
+ * than being ignored. These lists are the ones observed to work, so an override is a
+ * hypothesis to test, not a preference — which is also why nothing here is edited without a
+ * live call behind it.
  */
 const INCLUDES = {
   reviewSubmissions: [
@@ -56,6 +62,23 @@ const INCLUDES = {
     'rejectionAttachments',
   ],
   builds: ['icons', 'preReleaseVersion', 'buildBundles'],
+  apps: ['appStoreIcon', 'displayableVersions'],
+  appMetrics: ['appStoreVersionMetrics', 'betaReviewMetrics', 'reviewSubmissions'],
+  app: ['gameCenterDetail'],
+  threads: [
+    'appStoreVersions',
+    'app',
+    'appMessageThreadDetail',
+    'build',
+    'betaBackgroundAssetReviewSubmission',
+  ],
+  threadsForVersion: ['appMessageThreadDetail'],
+  appVersions: ['alternativeDistributionPackage'],
+  dataUsages: ['category', 'purpose', 'grouping', 'dataProtection'],
+  versionAssets: ['appScreenshotSets', 'appPreviewSets'],
+  screenshotSets: ['appScreenshots'],
+  previewSets: ['appPreviews'],
+  territoryAgeRatings: ['territory'],
   version: [
     'app',
     'routingAppCoverage',
@@ -113,6 +136,16 @@ const SIDELOADS = {
   version: { appStoreVersionLocalizations: 50 },
   versionAssets: { appScreenshotSets: 50, appPreviewSets: 50 },
 } as const;
+
+/**
+ * The `include` half of a query: a call's captured relationships, or the list a caller gave
+ * instead. An empty list drops the parameter rather than sending `include=`, which is not a
+ * shape the browser was ever seen sending and so not one to invent here.
+ */
+function includeList(defaults: readonly string[], override?: readonly string[]): string[] | undefined {
+  const list = override ?? defaults;
+  return list.length ? [...list] : undefined;
+}
 
 /** The sideloads one call sends, as an option: any subset of them, each a new page size. */
 export type SideloadLimits<D> = Partial<Record<keyof D, number>>;
@@ -197,13 +230,14 @@ export function listReviewSubmissions(
   session: Session,
   appId: string,
   options: {
+    include?: readonly string[];
     states?: readonly string[];
     limit?: number;
     sideloads?: SideloadLimits<typeof SIDELOADS.reviewSubmissions>;
   } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `apps/${appId}/reviewSubmissions`, {
-    include: [...INCLUDES.reviewSubmissions],
+    include: includeList(INCLUDES.reviewSubmissions, options.include),
     limit: options.limit ?? 2000,
     ...sideloadLimits(SIDELOADS.reviewSubmissions, options.sideloads),
     'filter[state]': [...(options.states ?? OPEN_SUBMISSION_STATES)],
@@ -214,10 +248,10 @@ export function listReviewSubmissions(
 export function getReviewSubmission(
   session: Session,
   submissionId: string,
-  options: { sideloads?: SideloadLimits<typeof SIDELOADS.reviewSubmissions> } = {}
+  options: { include?: readonly string[]; sideloads?: SideloadLimits<typeof SIDELOADS.reviewSubmissions> } = {}
 ): Promise<Document<Resource>> {
   return get(session, `reviewSubmissions/${submissionId}`, {
-    include: [...INCLUDES.reviewSubmissions],
+    include: includeList(INCLUDES.reviewSubmissions, options.include),
     ...sideloadLimits(SIDELOADS.reviewSubmissions, options.sideloads),
   });
 }
@@ -226,10 +260,10 @@ export function getReviewSubmission(
 export function listSubmissionItems(
   session: Session,
   submissionId: string,
-  options: { limit?: number } = {}
+  options: { include?: readonly string[]; limit?: number } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `reviewSubmissions/${submissionId}/items`, {
-    include: [...INCLUDES.submissionItems],
+    include: includeList(INCLUDES.submissionItems, options.include),
     limit: options.limit ?? 200,
   });
 }
@@ -238,10 +272,10 @@ export function listSubmissionItems(
 export function listMessages(
   session: Session,
   threadId: string,
-  options: { sideloads?: SideloadLimits<typeof SIDELOADS.messages> } = {}
+  options: { include?: readonly string[]; sideloads?: SideloadLimits<typeof SIDELOADS.messages> } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `resolutionCenterThreads/${threadId}/resolutionCenterMessages`, {
-    include: [...INCLUDES.messages],
+    include: includeList(INCLUDES.messages, options.include),
     ...sideloadLimits(SIDELOADS.messages, options.sideloads),
   });
 }
@@ -250,10 +284,10 @@ export function listMessages(
 export function getDraftMessage(
   session: Session,
   threadId: string,
-  options: { sideloads?: SideloadLimits<typeof SIDELOADS.draftMessage> } = {}
+  options: { include?: readonly string[]; sideloads?: SideloadLimits<typeof SIDELOADS.draftMessage> } = {}
 ): Promise<Document<Resource | null>> {
   return get(session, `resolutionCenterThreads/${threadId}/resolutionCenterDraftMessage`, {
-    include: [...INCLUDES.draftMessage],
+    include: includeList(INCLUDES.draftMessage, options.include),
     ...sideloadLimits(SIDELOADS.draftMessage, options.sideloads),
   });
 }
@@ -262,11 +296,11 @@ export function getDraftMessage(
 export function listRejections(
   session: Session,
   threadId: string,
-  options: { limit?: number; sideloads?: SideloadLimits<typeof SIDELOADS.rejections> } = {}
+  options: { include?: readonly string[]; limit?: number; sideloads?: SideloadLimits<typeof SIDELOADS.rejections> } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, 'reviewRejections', {
     'filter[resolutionCenterMessage.resolutionCenterThread]': threadId,
-    include: [...INCLUDES.rejections],
+    include: includeList(INCLUDES.rejections, options.include),
     limit: options.limit ?? 2000,
     ...sideloadLimits(SIDELOADS.rejections, options.sideloads),
   });
@@ -286,10 +320,10 @@ export const THREAD_TYPES = [
 /** Every app on the account. */
 export function listApps(
   session: Session,
-  options: { limit?: number; sideloads?: SideloadLimits<typeof SIDELOADS.apps> } = {}
+  options: { include?: readonly string[]; limit?: number; sideloads?: SideloadLimits<typeof SIDELOADS.apps> } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, 'apps', {
-    include: ['appStoreIcon', 'displayableVersions'],
+    include: includeList(INCLUDES.apps, options.include),
     limit: options.limit ?? 200,
     ...sideloadLimits(SIDELOADS.apps, options.sideloads),
   });
@@ -302,13 +336,14 @@ export function listApps(
 export function listAppMetrics(
   session: Session,
   options: {
+    include?: readonly string[];
     limit?: number;
     sideloads?: SideloadLimits<typeof SIDELOADS.appMetrics>;
     fields?: Fieldsets<typeof FIELDSETS.appMetrics>;
   } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, 'apps', {
-    include: ['appStoreVersionMetrics', 'betaReviewMetrics', 'reviewSubmissions'],
+    include: includeList(INCLUDES.appMetrics, options.include),
     limit: options.limit ?? 200,
     'filter[removed]': false,
     ...fieldsets(FIELDSETS.appMetrics, options.fields),
@@ -316,8 +351,12 @@ export function listAppMetrics(
   });
 }
 
-export function getApp(session: Session, appId: string): Promise<Document<Resource>> {
-  return get(session, `apps/${appId}`, { include: ['gameCenterDetail'] });
+export function getApp(
+  session: Session,
+  appId: string,
+  options: { include?: readonly string[] } = {}
+): Promise<Document<Resource>> {
+  return get(session, `apps/${appId}`, { include: includeList(INCLUDES.app, options.include) });
 }
 
 /** Resolution Center threads on an app, optionally narrowed to one version. */
@@ -325,13 +364,14 @@ export function listThreads(
   session: Session,
   appId: string,
   options: {
+    include?: readonly string[];
     appStoreVersionId?: string;
     threadTypes?: readonly string[];
     sideloads?: SideloadLimits<typeof SIDELOADS.threads>;
   } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `apps/${appId}/resolutionCenterThreads`, {
-    include: ['appStoreVersions', 'app', 'appMessageThreadDetail', 'build', 'betaBackgroundAssetReviewSubmission'],
+    include: includeList(INCLUDES.threads, options.include),
     ...sideloadLimits(SIDELOADS.threads, options.sideloads),
     'filter[threadType]': [...(options.threadTypes ?? THREAD_TYPES)],
     'filter[appStoreVersion]': options.appStoreVersionId,
@@ -339,9 +379,13 @@ export function listThreads(
 }
 
 /** Threads attached to one App Store version, across apps. */
-export function listThreadsForVersion(session: Session, versionId: string): Promise<Document<Resource[]>> {
+export function listThreadsForVersion(
+  session: Session,
+  versionId: string,
+  options: { include?: readonly string[] } = {}
+): Promise<Document<Resource[]>> {
   return get(session, 'resolutionCenterThreads', {
-    include: ['appMessageThreadDetail'],
+    include: includeList(INCLUDES.threadsForVersion, options.include),
     'filter[appStoreVersion]': versionId,
   });
 }
@@ -369,10 +413,10 @@ export const LIVE_VERSION_STATES = [
 export function listAppVersions(
   session: Session,
   appId: string,
-  options: { platform?: string; fields?: Fieldsets<typeof FIELDSETS.appVersions> } = {}
+  options: { include?: readonly string[]; platform?: string; fields?: Fieldsets<typeof FIELDSETS.appVersions> } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `apps/${appId}/appStoreVersions`, {
-    include: ['alternativeDistributionPackage'],
+    include: includeList(INCLUDES.appVersions, options.include),
     'filter[platform]': options.platform,
     ...fieldsets(FIELDSETS.appVersions, options.fields),
   });
@@ -408,10 +452,10 @@ export function listVersionStateChanges(
 export function listDataUsages(
   session: Session,
   appId: string,
-  options: { limit?: number } = {}
+  options: { include?: readonly string[]; limit?: number } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `apps/${appId}/dataUsages`, {
-    include: ['category', 'purpose', 'grouping', 'dataProtection'],
+    include: includeList(INCLUDES.dataUsages, options.include),
     limit: options.limit ?? 500,
   });
 }
@@ -429,12 +473,13 @@ export function getVersion(
   session: Session,
   versionId: string,
   options: {
+    include?: readonly string[];
     sideloads?: SideloadLimits<typeof SIDELOADS.version>;
     fields?: Fieldsets<typeof FIELDSETS.version>;
   } = {}
 ): Promise<Document<Resource>> {
   return get(session, `appStoreVersions/${versionId}`, {
-    include: [...INCLUDES.version],
+    include: includeList(INCLUDES.version, options.include),
     ...sideloadLimits(SIDELOADS.version, options.sideloads),
     ...fieldsets(FIELDSETS.version, options.fields),
   });
@@ -450,10 +495,10 @@ export function getVersion(
 export function getReviewDetails(
   session: Session,
   reviewDetailId: string,
-  options: { fields?: Fieldsets<typeof FIELDSETS.reviewDetails> } = {}
+  options: { include?: readonly string[]; fields?: Fieldsets<typeof FIELDSETS.reviewDetails> } = {}
 ): Promise<Document<Resource>> {
   return get(session, `appStoreReviewDetails/${reviewDetailId}`, {
-    include: [...INCLUDES.reviewDetails],
+    include: includeList(INCLUDES.reviewDetails, options.include),
     // The version is wanted as an identifier only, not expanded — as the browser asks.
     ...fieldsets(FIELDSETS.reviewDetails, options.fields),
   });
@@ -501,11 +546,11 @@ export function redactReviewDetails(document: Document<Resource>): Document<Reso
 export function listVersionLocalizationsWithAssets(
   session: Session,
   versionId: string,
-  options: { sideloads?: SideloadLimits<typeof SIDELOADS.versionAssets> } = {}
+  options: { include?: readonly string[]; sideloads?: SideloadLimits<typeof SIDELOADS.versionAssets> } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, 'appStoreVersionLocalizations', {
     'filter[appStoreVersion]': versionId,
-    include: ['appScreenshotSets', 'appPreviewSets'],
+    include: includeList(INCLUDES.versionAssets, options.include),
     ...sideloadLimits(SIDELOADS.versionAssets, options.sideloads),
   });
 }
@@ -515,10 +560,14 @@ export function listVersionLocalizationsWithAssets(
  * offer the alternatives; `listBuildCandidates` is the one that lists those. Re-read it
  * after `setVersionBuild` to confirm the change landed.
  */
-export function listBuilds(session: Session, versionId: string): Promise<Document<Resource[]>> {
+export function listBuilds(
+  session: Session,
+  versionId: string,
+  options: { include?: readonly string[] } = {}
+): Promise<Document<Resource[]>> {
   return get(session, 'builds', {
     'filter[appStoreVersion]': versionId,
-    include: [...INCLUDES.builds],
+    include: includeList(INCLUDES.builds, options.include),
   });
 }
 
@@ -533,10 +582,10 @@ export function listBuilds(session: Session, versionId: string): Promise<Documen
 export function listBuildCandidates(
   session: Session,
   appId: string,
-  options: { platform?: string; limit?: number } = {}
+  options: { include?: readonly string[]; platform?: string; limit?: number } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, 'builds', {
-    include: [...INCLUDES.builds],
+    include: includeList(INCLUDES.builds, options.include),
     limit: options.limit ?? 10,
     'filter[app]': appId,
     'filter[preReleaseVersion.platform]': options.platform,
@@ -646,8 +695,12 @@ export type AppCategoryUpdate = Partial<Record<AppCategorySlot, string | null>>;
  * them. Point it at `findEditableAppInfo`: the live record answers with the categories the
  * store shows, not the ones being prepared.
  */
-export function getAppInfoCategories(session: Session, appInfoId: string): Promise<Document<Resource>> {
-  return get(session, `appInfos/${appInfoId}`, { include: [...APP_CATEGORY_SLOTS] });
+export function getAppInfoCategories(
+  session: Session,
+  appInfoId: string,
+  options: { include?: readonly string[] } = {}
+): Promise<Document<Resource>> {
+  return get(session, `appInfos/${appInfoId}`, { include: includeList(APP_CATEGORY_SLOTS, options.include) });
 }
 
 /**
@@ -690,10 +743,10 @@ export function setAppCategories(
 export function listAppInfoPage(
   session: Session,
   appId: string,
-  options: { fields?: Fieldsets<typeof FIELDSETS.appInfoPage> } = {}
+  options: { include?: readonly string[]; fields?: Fieldsets<typeof FIELDSETS.appInfoPage> } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `apps/${appId}/appInfos`, {
-    include: [...INCLUDES.appInfoPage],
+    include: includeList(INCLUDES.appInfoPage, options.include),
     ...fieldsets(FIELDSETS.appInfoPage, options.fields),
   });
 }
@@ -708,10 +761,10 @@ export function listAppInfoPage(
 export function listTerritoryAgeRatings(
   session: Session,
   appInfoId: string,
-  options: { limit?: number } = {}
+  options: { include?: readonly string[]; limit?: number } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `appInfos/${appInfoId}/territoryAgeRatings`, {
-    include: ['territory'],
+    include: includeList(INCLUDES.territoryAgeRatings, options.include),
     limit: options.limit ?? 500,
   });
 }
@@ -1048,9 +1101,13 @@ export function setMetadataField(
 }
 
 /** Screenshots for one localization of a version — the metadata behind 4.1/2.3 rejections. */
-export function listScreenshotSets(session: Session, localizationId: string): Promise<Document<Resource[]>> {
+export function listScreenshotSets(
+  session: Session,
+  localizationId: string,
+  options: { include?: readonly string[] } = {}
+): Promise<Document<Resource[]>> {
   return get(session, 'appScreenshotSets', {
-    include: ['appScreenshots'],
+    include: includeList(INCLUDES.screenshotSets, options.include),
     'filter[appStoreVersionLocalization]': localizationId,
   });
 }
@@ -1061,9 +1118,13 @@ export function listScreenshotSets(session: Session, localizationId: string): Pr
  * `listVersionLocalizationsWithAssets` names a locale's preview sets but not what is
  * inside them.
  */
-export function listPreviewSets(session: Session, localizationId: string): Promise<Document<Resource[]>> {
+export function listPreviewSets(
+  session: Session,
+  localizationId: string,
+  options: { include?: readonly string[] } = {}
+): Promise<Document<Resource[]>> {
   return get(session, 'appPreviewSets', {
-    include: ['appPreviews'],
+    include: includeList(INCLUDES.previewSets, options.include),
     'filter[appStoreVersionLocalization]': localizationId,
   });
 }

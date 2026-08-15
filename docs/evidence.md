@@ -29,9 +29,11 @@ different thing — it wants a curl command or a `Cookie:` line.
 Each of these was recorded from App Store Connect doing it, and the request this client
 sends matches what the browser sent.
 
-Page sizes and fieldsets are defaults rather than fixed values — a caller can name a
-different one — so what is compared below, and what you get by asking for nothing in
-particular, is the browser's own.
+Include lists, page sizes and fieldsets are defaults rather than fixed values — a caller can
+name a different one — so what is compared below, and what you get by asking for nothing in
+particular, is the browser's own. The include lists are the ones to leave alone without a
+reason: an unrecognised relationship name is a `400` on the whole request, so the captured
+list is the tested one and an override is not.
 
 - `listMessages` and `getDraftMessage` — includes and the `limit[rejections]=2000` /
   `limit[resolutionCenterMessageAttachments]=1000` pair match exactly.
