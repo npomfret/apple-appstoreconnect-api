@@ -49,7 +49,7 @@ per line, any order, `#` comments and blank lines ignored:
 ```
 # grabbed 13 Aug
 Cookie: myacinfo=...; itctx=...; dqsid=...
-https://appstoreconnect.apple.com/apps/6761343835/distribution/ios/version/inflight
+https://appstoreconnect.apple.com/apps/1234567890/distribution/ios/version/inflight
 ```
 
 Only the cookie is required, and the `Cookie:` prefix is optional. Account id, team id and

@@ -4,7 +4,7 @@
 import { loadSession, buildReport, listMessages, denormalizeAll } from './src';
 
 const session = loadSession();
-const reports = await buildReport(session, '6761343835');
+const reports = await buildReport(session, '1234567890');
 const messages = denormalizeAll(await listMessages(session, reports[0].threadId!));
 ```
 
@@ -32,6 +32,13 @@ nothing, so it's a safe thing to call first.
   edit them without testing.
 - Query strings are built by hand rather than with `URLSearchParams`: Apple wants literal
   `[`, `]` and `,`, which `URLSearchParams` would percent-encode.
+- **Nothing from the account the captures came from is baked in.** Every id, category,
+  locale, platform and territory reaches a request from an argument or from the session,
+  and the values in the recordings work as examples in help text and nowhere else. The
+  constants that *are* hard-coded are Apple's own schema — resource and field names, state
+  names, include lists, screenshot display types — never one app's data. The age-rating
+  questionnaire is the case worth remembering: the recorded 29 questions order a body,
+  while which questions exist is read back off the app being edited.
 - A 403 from iris doesn't always mean the session died — it's also how an unsupported
   filter is refused. `src/http.ts` tells them apart by whether the body is a JSON:API
   error document, so a bad query no longer reads as "log in again".

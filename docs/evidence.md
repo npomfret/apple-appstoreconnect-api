@@ -62,7 +62,10 @@ sends matches what the browser sent.
   - `PATCH ageRatingDeclarations/{id}` sending all 29 questionnaire answers in one body,
     behind `set-age-rating`. The body this client builds was replayed offline against the
     recording and is **identical to it byte for byte**, key order included — the question
-    list in `AGE_RATING_QUESTIONS` is that body's own order.
+    list in `AGE_RATING_QUESTIONS` is that body's own order. Note what that list is *not*:
+    those 29 are one app's questionnaire on one account, and nothing seen here says every
+    app is asked the same set. So they only order a body; which questions exist comes from
+    the declaration Apple returns for the app being edited.
   - the page's own two reads, behind `app-info`/`categories`/`age-rating` and
     `territory-ratings`: `GET apps/{appId}/appInfos` with the category includes plus
     `ageRatingDeclaration,app` and `fields[apps]=isOrEverWasMadeForKids`, and `GET

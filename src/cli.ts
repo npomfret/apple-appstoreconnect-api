@@ -385,9 +385,8 @@ async function readAppInfoPage(session: Session, appId: string): Promise<Denorma
  * The age-rating declaration hanging off an app info record: the id a write goes to, and
  * the questionnaire as `age-rating` prints it and `set-age-rating` reads it back in.
  *
- * Apple's own answers go through the same check as a hand-written file, minus the two
- * JSON:API keys. That is deliberate: a question this client doesn't know about would
- * otherwise be dropped from the body it resends, quietly unanswering it.
+ * The questions are whatever this record carries, less the two JSON:API keys — the recorded
+ * set is one app's, so reading it back is the only way to know what this app was asked.
  */
 function ageRatingOn(appInfo: Denormalized): { id: string; answers: api.AgeRatingAnswers } {
   const declaration = appInfo['ageRatingDeclaration'];
@@ -395,20 +394,20 @@ function ageRatingOn(appInfo: Denormalized): { id: string; answers: api.AgeRatin
     throw new Error('This app info record came back without its age-rating declaration');
   }
 
-  const { type: _type, id, ...answers } = declaration as Denormalized;
-  return { id, answers: api.parseAgeRatingAnswers(answers) };
+  const { type: _type, id, ...attributes } = declaration as Denormalized;
+  return { id, answers: api.ageRatingAnswersFrom(attributes) };
 }
 
 /** Only the questions whose answers differ, as the confirmation lists them. */
 function describeAgeRatingChange(before: api.AgeRatingAnswers, after: api.AgeRatingAnswers): string[] {
-  const changed = api.AGE_RATING_QUESTIONS.filter((question) => before[question] !== after[question]);
+  const changed = Object.keys(after).filter((question) => before[question] !== after[question]);
   const width = Math.max(0, ...changed.map((question) => question.length));
 
   return [
     ...changed.map((q) => `  ${q.padEnd(width)}  ${JSON.stringify(before[q])} -> ${JSON.stringify(after[q])}`),
     ...(changed.length ? [] : ['  (no answer differs from what is there now)']),
     '',
-    `  All ${api.AGE_RATING_QUESTIONS.length} answers are resent, as the browser sends them.`,
+    `  All ${Object.keys(after).length} answers are resent, as the browser sends them.`,
   ];
 }
 
@@ -796,9 +795,11 @@ async function main(argv: string[]): Promise<number> {
       const source = requireArg(rest[0], 'file|-', 'set-age-rating answers.json');
       const appId = requireAppId(session, rest[1]);
       const text = source === '-' ? readStdin() : readFileSync(source, 'utf8');
-      const answers = api.parseAgeRatingAnswers(JSON.parse(text));
 
+      // The current declaration is read first because it defines the questionnaire: which
+      // questions this app was asked is Apple's answer to give, not this client's.
       const current = ageRatingOn(await readAppInfoPage(session, appId));
+      const answers = api.parseAgeRatingAnswers(JSON.parse(text), current.answers);
 
       await confirm({
         question: "Replace this app's age-rating answers?",

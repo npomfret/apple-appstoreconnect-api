@@ -132,9 +132,12 @@ PATCH ageRatingDeclarations/{id}
 So `set-age-rating` is read-modify-write and takes the whole object. It refuses an
 incomplete one: no partial body was ever recorded, so whether an omitted answer would be
 left alone or cleared is unknown, and refusing is the only reading that can't quietly
-unanswer a question. It refuses names it doesn't know for the same reason — including on
-the way *in*, so a question Apple adds later fails loudly instead of being dropped from the
-body sent back.
+unanswer a question. It refuses names Apple didn't ask for too, since on a private API a
+typo would otherwise be sent and, at best, ignored.
+
+Which questions those are is read off the app's own declaration, not a list baked into this
+client. The 29 in the recording are one app's; an app asked a different set — a question
+Apple adds, one only a made-for-kids app gets — reads and writes on its own terms.
 
 The answers are typed loosely on purpose. Every frequency question in the recording said
 `NONE`, so the rest of Apple's scale (`INFREQUENT_OR_MILD`, `FREQUENT_OR_INTENSE`) is taken

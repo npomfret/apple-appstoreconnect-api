@@ -588,14 +588,20 @@ export function listTerritoryAgeRatings(session: Session, appInfoId: string): Pr
 }
 
 /**
- * Every question on the age-rating questionnaire, in the order the browser sent them.
+ * The questions the recorded body carried, in the order it carried them.
  *
- * The names are captured; the *values* mostly are not. Every one of the frequency
- * questions came back `"NONE"` in the recording, so the scale the public App Store Connect
- * API documents — `INFREQUENT_OR_MILD`, `FREQUENT_OR_INTENSE` — is inferred here, not
- * proven. `setAgeRating` checks the names and lets the values through: a value Apple
- * doesn't like is a 4xx, which is a better failure than this client refusing a legitimate
- * answer because it has never seen one.
+ * **This is one app's questionnaire, not the questionnaire.** It came off a single
+ * recording on a single account, and nothing observed here says every app is asked the same
+ * set — a made-for-kids app, a different storefront or a schema change would all show up as
+ * a different set of attributes. So this list orders a body; it does not decide what belongs
+ * in one. That comes from the declaration Apple returns for the app being edited — see
+ * `ageRatingAnswersFrom`.
+ *
+ * The values are less well evidenced than the names. Every frequency question came back
+ * `"NONE"` in the recording, so the scale the public App Store Connect API documents —
+ * `INFREQUENT_OR_MILD`, `FREQUENT_OR_INTENSE` — is inferred, not proven. Values are passed
+ * through unchecked: one Apple won't take is a 4xx, which beats this client refusing a
+ * legitimate answer it has never seen.
  */
 export const AGE_RATING_QUESTIONS = [
   'messagingAndChat',
@@ -629,39 +635,91 @@ export const AGE_RATING_QUESTIONS = [
   'sexualContentOrNudity',
 ] as const;
 
-export type AgeRatingQuestion = (typeof AGE_RATING_QUESTIONS)[number];
+/** One answer, as iris carries it: a choice, a yes/no, a number or unanswered. */
+export type AgeRatingAnswer = string | boolean | number | null;
 
-/** One complete set of answers — every question, as the browser sends it. */
-export type AgeRatingAnswers = Record<AgeRatingQuestion, string | boolean | number | null>;
+/** A whole questionnaire — whichever questions this app's declaration carries. */
+export type AgeRatingAnswers = Record<string, AgeRatingAnswer>;
 
-function isAnswer(value: unknown): value is string | boolean | number | null {
+function isAnswer(value: unknown): value is AgeRatingAnswer {
   return value === null || ['string', 'boolean', 'number'].includes(typeof value);
 }
 
 /**
- * Narrows a hand-written or piped-in questionnaire.
+ * Rebuilds a body in the recorded order: the questions that were in the recording first, in
+ * its order, then anything else in the order Apple listed it.
  *
- * Every question has to be present. The browser resends all of them on every save and
- * there is no recording of a partial body, so whether an omitted answer is left alone or
- * cleared is unknown — refusing an incomplete object is the only reading that can't
- * silently wipe an answer. Unknown names are refused too: on a private API a typo would
- * otherwise be sent and, at best, ignored.
+ * Key order means nothing to a JSON parser, so this buys no correctness — it keeps the body
+ * this client sends byte-identical to the recorded one for an app asked the same questions,
+ * which is what makes that comparison worth running at all.
  */
-export function parseAgeRatingAnswers(input: unknown): AgeRatingAnswers {
+function inRecordedOrder(answers: AgeRatingAnswers): AgeRatingAnswers {
+  const ordered: AgeRatingAnswers = {};
+  for (const question of AGE_RATING_QUESTIONS) {
+    if (question in answers) ordered[question] = answers[question];
+  }
+  for (const [question, value] of Object.entries(answers)) {
+    if (!(question in ordered)) ordered[question] = value;
+  }
+  return ordered;
+}
+
+/**
+ * The questionnaire as it stands on a declaration Apple returned, and the definition of
+ * which questions this app has. Takes the declaration's attributes — the JSON:API `type`
+ * and `id` are the caller's to strip, since it is the one that knows how the record reached
+ * it.
+ *
+ * An attribute that isn't a scalar is an error rather than something to drop: the whole
+ * questionnaire is resent on every save, so anything quietly discarded here is an answer
+ * quietly removed there.
+ */
+export function ageRatingAnswersFrom(attributes: Record<string, unknown>): AgeRatingAnswers {
+  const answers: AgeRatingAnswers = {};
+  for (const [question, value] of Object.entries(attributes)) {
+    if (!isAnswer(value)) {
+      throw new Error(`Age-rating answer ${question} came back as something other than a scalar`);
+    }
+    answers[question] = value;
+  }
+
+  if (!Object.keys(answers).length) {
+    throw new Error('The age-rating declaration came back with no answers on it');
+  }
+
+  return inRecordedOrder(answers);
+}
+
+/**
+ * Narrows a hand-written or piped-in questionnaire against the one Apple currently holds.
+ *
+ * `asked` is that current declaration, and it — not a list baked in here — is what decides
+ * which questions exist. The recording is one app's; an app asked a different set would
+ * otherwise be unable to read its own answers back, let alone write them.
+ *
+ * Every question has to be answered. The browser resends all of them on every save and no
+ * partial body was ever recorded, so whether an omitted answer is left alone or cleared is
+ * unknown, and refusing an incomplete object is the only reading that can't silently wipe
+ * one. Names Apple didn't ask for are refused for the mirror-image reason: on a private API
+ * a typo would otherwise be sent and, at best, ignored.
+ */
+export function parseAgeRatingAnswers(input: unknown, asked: AgeRatingAnswers): AgeRatingAnswers {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
     throw new Error('Expected a JSON object of age-rating answers');
   }
 
   const given = input as Record<string, unknown>;
-  const known = new Set<string>(AGE_RATING_QUESTIONS);
-  const unknownNames = Object.keys(given).filter((name) => !known.has(name));
+  const unknownNames = Object.keys(given).filter((name) => !(name in asked));
   if (unknownNames.length) {
-    throw new Error(`Not age-rating questions: ${unknownNames.join(', ')}`);
+    throw new Error(
+      `Not questions this app was asked: ${unknownNames.join(', ')}. ` +
+        'Start from "asc age-rating", which prints the current answers in this shape.'
+    );
   }
 
-  const answers = {} as AgeRatingAnswers;
+  const answers: AgeRatingAnswers = {};
   const missing: string[] = [];
-  for (const question of AGE_RATING_QUESTIONS) {
+  for (const question of Object.keys(asked)) {
     const value = given[question];
     if (value === undefined) {
       missing.push(question);
@@ -680,7 +738,7 @@ export function parseAgeRatingAnswers(input: unknown): AgeRatingAnswers {
     );
   }
 
-  return answers;
+  return inRecordedOrder(answers);
 }
 
 /**
@@ -1317,7 +1375,7 @@ export async function sendDraftReply(session: Session, threadId: string): Promis
 /**
  * The submission an item belongs to, read out of the item's own id.
  *
- * Item ids are base64 of `{submissionId}|{n}|{appId}` — `7ecf0154-…|6|884926566`. The
+ * Item ids are base64 of `{submissionId}|{n}|{appId}` — a uuid, an index, a numeric app id. The
  * browser never decodes them and Apple never promised the format, so this is a guess and
  * treated as one: anything that doesn't come back as a leading UUID gives `undefined`
  * rather than a wrong answer. Worth having because a direct
@@ -1377,11 +1435,17 @@ export function resolveSubmissionItem(session: Session, itemId: string): Promise
  * button once and this can be replaced with something certain.
  */
 
-/** Starts an empty review submission for an app. Nothing is in front of Apple yet. */
+/**
+ * Starts an empty review submission for an app. Nothing is in front of Apple yet.
+ *
+ * The platform is required rather than defaulted: a submission is per-platform, and an
+ * assumed one would put a Mac or tvOS version into an iOS submission on someone else's
+ * account. `planSubmission` reads it off the version.
+ */
 export function createReviewSubmission(
   session: Session,
   appId: string,
-  platform = 'IOS'
+  platform: string
 ): Promise<Document<Resource>> {
   return audited('submission.create', { appId, platform }, () =>
     post<Document<Resource>>(
@@ -1482,7 +1546,13 @@ export async function planSubmission(
   versionId: string
 ): Promise<SubmissionPlan> {
   const version = (await getVersion(session, versionId)).data;
-  const platform = String(version.attributes?.platform ?? 'IOS');
+  // Not defaulted to IOS: everything below is per-platform, and guessing would mean
+  // reusing or creating a submission on the wrong one.
+  const platform = version.attributes?.platform;
+  if (typeof platform !== 'string' || !platform) {
+    throw new Error(`Version ${versionId} came back without a platform — cannot plan a submission for it`);
+  }
+
   const plan: SubmissionPlan = {
     appId,
     versionId,
@@ -1490,9 +1560,14 @@ export async function planSubmission(
     platform,
   };
 
-  const submissions = (await listReviewSubmissions(session, appId)).data.filter(
-    (one) => String(one.attributes?.platform ?? platform) === platform
-  );
+  // Matched strictly, and one with no platform at all is reported rather than assumed to
+  // be this one — the cost of getting that wrong is reusing another platform's submission.
+  const all = (await listReviewSubmissions(session, appId)).data;
+  const unplaced = all.filter((one) => typeof one.attributes?.platform !== 'string');
+  if (unplaced.length) {
+    log.warn('submission.platformMissing', { appId, ids: unplaced.map((one) => one.id) });
+  }
+  const submissions = all.filter((one) => one.attributes?.platform === platform);
 
   // "Not yet submitted" is the pair: still READY_FOR_REVIEW and never given a submitted
   // date. Either on its own would misread a submission Apple has already seen.

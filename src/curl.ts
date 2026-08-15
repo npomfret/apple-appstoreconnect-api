@@ -174,7 +174,7 @@ function normaliseExpiry(raw: string): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
-/** Pulls the app id out of a Referer like /apps/6761343835/distribution/... */
+/** Pulls the app id out of a Referer like /apps/{appId}/distribution/... */
 function readAppId(referer: string | undefined): string | undefined {
   if (!referer) return undefined;
   return /\/apps\/(\d+)\b/.exec(referer)?.[1];
@@ -238,7 +238,7 @@ const REQUEST_LINE = /^(GET|POST|PATCH|PUT|DELETE|HEAD|OPTIONS)\s+\S+/;
  * The cookie is the only required part:
  *
  *   Cookie: myacinfo=...; itctx=...
- *   https://appstoreconnect.apple.com/apps/6761343835/distribution/ios/version/inflight
+ *   https://appstoreconnect.apple.com/apps/1234567890/distribution/ios/version/inflight
  */
 export function sessionFromText(text: string): Session {
   let cookie = '';
