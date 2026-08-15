@@ -61,6 +61,11 @@ PATCH appStoreVersionLocalizations/{id}   {"attributes":{"description":"…"}}  
 PATCH appInfoLocalizations/{id}           {"attributes":{"subtitle":"…"}}      application/json
 ```
 
+The second was recorded from a Save on the App Information page, sending this envelope
+with `name` and `subtitle` in one body; one field at a time is a subset of it. The first
+has never been recorded and is inferred from the captured version PATCH — see
+[evidence](evidence.md).
+
 Localization ids are per-locale and never shown in the UI, so both are found by locale. A
 locale the app doesn't have is an error rather than a new one created for you.
 
@@ -73,6 +78,38 @@ edited this morning.
 
 Apple keeps no history of what a field used to say, so `set-metadata` prints the old value
 in full next to the new one and asks before overwriting. That printout is the only copy.
+
+## Categories
+
+```sh
+node dist/cli.js categories
+node dist/cli.js set-categories --primary GAMES --primary-sub-1 GAMES_TRIVIA --secondary MUSIC
+node dist/cli.js set-categories --secondary none
+```
+
+Categories sit on the app info record rather than a localization, and they are
+relationships rather than attributes — the category's name *is* the resource id:
+
+```
+PATCH appInfos/{id}
+{"data":{"type":"appInfos","id":"…","relationships":{
+  "primaryCategory":{"data":{"type":"appCategories","id":"GAMES"}},
+  "primarySubcategoryOne":{"data":{"type":"appCategories","id":"GAMES_TRIVIA"}}}}}
+```
+
+There are six slots — `--primary`, `--secondary` and two subcategory slots under each,
+which only the games categories populate. Only the slots you name are sent; the rest are
+left alone, and `none` clears one. Reading them back is the same record with the six
+relationships included.
+
+**This is app-wide and live at once.** Unlike a description, a category change doesn't wait
+for a version to ship, which is why `set-categories` prints the before and after and asks.
+The same two-`appInfo` trap applies: the write goes to the editable record, not the live
+one.
+
+The recorded Save set the primary category, the secondary category and both primary
+subcategories. `--secondary-sub-1`/`-2` and clearing a slot with `none` were not in it —
+see [evidence](evidence.md).
 
 ## Putting a rejected item back in review
 

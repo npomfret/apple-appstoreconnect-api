@@ -36,6 +36,7 @@ document):
 | `versions [appId]` | `apps/{appId}/appStoreVersions?filter[platform]=` |
 | `version [versionId]` | `appStoreVersions/{id}` |
 | `metadata [versionId]` | `apps/{appId}/appInfos` + `appStoreVersions/{id}/appStoreVersionLocalizations` |
+| `categories [appId]` | `apps/{appId}/appInfos` → `appInfos/{id}?include=primaryCategory,…` |
 | `screenshots [versionId]` | `appStoreVersionLocalizations?filter[appStoreVersion]={id}&include=appScreenshotSets,appPreviewSets` |
 | `previews <localizationId>` | `appPreviewSets?filter[appStoreVersionLocalization]={id}&include=appPreviews` |
 | `review-details [versionId]` | `appStoreVersions/{id}` → `appStoreReviewDetails/{id}` |

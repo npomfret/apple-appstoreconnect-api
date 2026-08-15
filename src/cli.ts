@@ -36,6 +36,8 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
                               current one marked "*" — the version page's build picker
   asc metadata [versionId]    Per-locale name, subtitle, description and keywords (defaults
                               to the version under review)
+  asc categories [appId]      The app's App Store categories: primary and secondary, each
+                              with the two subcategory slots only games use
   asc screenshots [versionId] Every locale of a version with its screenshot and preview
                               sets, in one request (defaults to the version under review)
   asc previews <locId>        App preview videos in one locale's preview sets. The
@@ -73,6 +75,13 @@ Writes (these change your live App Store Connect data):
                               promotionalText, whatsNew, marketingUrl and supportUrl belong
                               to the version. Shows you the old value and asks
 
+  asc set-categories [--primary X] [--primary-sub-1 X] [--primary-sub-2 X]
+                     [--secondary X] [--secondary-sub-1 X] [--secondary-sub-2 X] [appId]
+                              Change the app's App Store categories. Only the slots you
+                              name are touched; "none" clears one. Categories belong to the
+                              app, so a change is live at once, not when a version ships.
+                              Shows the before and after and asks
+
 These reach Apple and cannot be undone. Each shows what it is about to do and asks first;
 --yes answers for you:
   asc send-reply <threadId>   Send the thread's draft to App Review. No unsend, no edit
@@ -95,6 +104,10 @@ Options:
   --force                     For "upload-screenshot": upload despite failed checks
   --reveal                    For "review-details": print the demo account password
   --attach <file>             For "save-draft": a file to attach. Repeat for several
+  --primary <category>        For "set-categories", with --primary-sub-1, --primary-sub-2,
+                              --secondary, --secondary-sub-1 and --secondary-sub-2: the
+                              category name Apple uses as the id, e.g. GAMES, GAMES_TRIVIA,
+                              MUSIC. "none" clears the slot
 
 Logging goes to stderr as one JSON object per line, so stdout stays pipeable:
   ASC_LOG=debug|info|warn|error|off   default info
@@ -303,7 +316,7 @@ function takeOption(argv: string[], name: string): { values: string[]; rest: str
       continue;
     }
     const value = argv[i + 1];
-    if (value === undefined) throw new Error(`${name} needs a value: ${name} <file>`);
+    if (value === undefined) throw new Error(`${name} needs a value`);
     values.push(value);
     i++;
   }
@@ -311,8 +324,54 @@ function takeOption(argv: string[], name: string): { values: string[]; rest: str
   return { values, rest };
 }
 
+/** The flag that sets each category slot, in the order the App Information page lists them. */
+const CATEGORY_FLAGS: ReadonlyArray<{ flag: string; slot: api.AppCategorySlot; label: string }> = [
+  { flag: '--primary', slot: 'primaryCategory', label: 'primary' },
+  { flag: '--primary-sub-1', slot: 'primarySubcategoryOne', label: '  sub 1' },
+  { flag: '--primary-sub-2', slot: 'primarySubcategoryTwo', label: '  sub 2' },
+  { flag: '--secondary', slot: 'secondaryCategory', label: 'secondary' },
+  { flag: '--secondary-sub-1', slot: 'secondarySubcategoryOne', label: '  sub 1' },
+  { flag: '--secondary-sub-2', slot: 'secondarySubcategoryTwo', label: '  sub 2' },
+];
+
+/**
+ * Reads the `--primary`/`--secondary` family out of the arguments. Unlike `--attach` these
+ * are one-shot: naming a slot twice is a typo, not two categories.
+ */
+function takeCategoryOptions(argv: string[]): { update: api.AppCategoryUpdate; rest: string[] } {
+  const update: api.AppCategoryUpdate = {};
+  let rest = argv;
+
+  for (const { flag, slot } of CATEGORY_FLAGS) {
+    const taken = takeOption(rest, flag);
+    rest = taken.rest;
+    if (taken.values.length > 1) throw new Error(`${flag} was given more than once`);
+    const value = taken.values[0];
+    if (value !== undefined) update[slot] = value === 'none' ? null : value;
+  }
+
+  return { update, rest };
+}
+
+/** The category in a slot, or undefined if the record doesn't carry that relationship. */
+function categoryIn(appInfo: Denormalized, slot: api.AppCategorySlot): string | null | undefined {
+  const value = appInfo[slot];
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return (value as Denormalized).id;
+}
+
+/** The six slots as `asc categories` prints them, and as the confirmation shows them. */
+function describeCategories(appInfo: Denormalized, update: api.AppCategoryUpdate = {}): string[] {
+  return CATEGORY_FLAGS.map(({ slot, label }) => {
+    const value = slot in update ? update[slot] : categoryIn(appInfo, slot);
+    return `  ${label.padEnd(11)} ${value ?? '—'}`;
+  });
+}
+
 async function main(argv: string[]): Promise<number> {
-  const { values: attach, rest: positional } = takeOption(argv, '--attach');
+  const { values: attach, rest: afterAttach } = takeOption(argv, '--attach');
+  const { update: categories, rest: positional } = takeCategoryOptions(afterAttach);
   const raw = positional.includes('--raw');
   const json = positional.includes('--json');
   const force = positional.includes('--force');
@@ -608,6 +667,52 @@ async function main(argv: string[]): Promise<number> {
       const appId = requireAppId(session, undefined);
       const versionId = rest[0] ?? (await versionUnderReview(session, appId));
       console.log(JSON.stringify(await fetchMetadata(session, appId, versionId), null, 2));
+      return 0;
+    }
+
+    case 'categories': {
+      const session = loadSession();
+      const appId = requireAppId(session, rest[0]);
+      const appInfo = await api.findEditableAppInfo(session, appId);
+      const document = await api.getAppInfoCategories(session, appInfo.id);
+      if (raw) {
+        emit(document, raw);
+        return 0;
+      }
+      console.log(describeCategories(denormalize(document, document.data)).join('\n'));
+      return 0;
+    }
+
+    case 'set-categories': {
+      const session = loadSession();
+      const appId = requireAppId(session, rest[0]);
+      if (!Object.keys(categories).length) {
+        throw new Error(
+          'Nothing to change. Name at least one slot: set-categories --primary GAMES --primary-sub-1 GAMES_TRIVIA'
+        );
+      }
+
+      const appInfo = await api.findEditableAppInfo(session, appId);
+      const document = await api.getAppInfoCategories(session, appInfo.id);
+      const current = denormalize(document, document.data);
+
+      await confirm({
+        question: "Change this app's App Store categories? They are live as soon as this lands.",
+        detail: [
+          '',
+          `  record:  appInfos/${appInfo.id}`,
+          '  scope:   the app itself — categories are not held back until a version ships',
+          '',
+          '  now:',
+          ...describeCategories(current),
+          '  becomes:',
+          ...describeCategories(current, categories),
+          '',
+        ],
+        yes,
+      });
+
+      emit(await api.setAppCategories(session, appInfo.id, categories), raw);
       return 0;
     }
 

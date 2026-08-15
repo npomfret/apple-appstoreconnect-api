@@ -5,15 +5,16 @@ evidenced. This page says which is which.
 
 ## What isn't captured yet
 
-The captured writes are the version PATCH behind `set-build`, the screenshot flow, the
-Resolution Center draft behind `save-draft` and `delete-draft`, sending it (`send-reply`),
-and resolving a submission item (`resolve-item`).
+The captured writes are the version PATCH behind `set-build`, the two App Information page
+PATCHes behind `set-metadata` and `set-categories`, the screenshot flow, the Resolution
+Center draft behind `save-draft` and `delete-draft`, sending it (`send-reply`), and
+resolving a submission item (`resolve-item`).
 
-Two more are implemented without a capture behind them, and are the ones to read about
-before use: **editing metadata** (`set-metadata`) and **submitting a version**
-(`submit`, `cancel-submission`). What was recorded of a submission covers resolving an item
-on one that already exists — not making a new one, and not the Submit button. Record either
-in the browser and they can be put on the same footing as the rest.
+What's left uncaptured, and so the part to read about before use: the **version half of
+`set-metadata`** — a description, keywords, promo text or what's new — and **submitting a
+version** (`submit`, `cancel-submission`). What was recorded of a submission covers
+resolving an item on one that already exists — not making a new one, and not the Submit
+button. Record either in the browser and they can be put on the same footing as the rest.
 
 ## Capturing a new endpoint
 
@@ -41,6 +42,33 @@ sends matches what the browser sent.
   and the thread read back with the new message on it.
 - From one real resolve: `resolveSubmissionItem` — the `{"resolved":true}` PATCH and the
   `READY_FOR_REVIEW` that comes back.
+- From one Save on the App Information page:
+  - the `appInfoLocalizations` PATCH behind `set-metadata`. Plain `application/json`, the
+    `{"data":{type,id,attributes}}` envelope with the id repeated inside, and only the
+    edited fields in it — which is what `setMetadataField` sends. The browser put `name`
+    and `subtitle` in one body where this client writes one field per call; a
+    single-attribute body is a subset of the recorded one, not a different shape.
+  - `PATCH appInfos/{id}`, same `application/json`, setting categories through
+    **relationships** rather than attributes: `primaryCategory`, `secondaryCategory`,
+    `primarySubcategoryOne`, `primarySubcategoryTwo`, each a
+    `{"type":"appCategories","id":"GAMES"}` linkage where the id is the category's name.
+    Only the relationships being changed are sent.
+    Behind `set-categories`.
+  - `GET appInfos/{id}` read back with
+    `include=primaryCategory,primarySubcategoryOne,primarySubcategoryTwo,secondaryCategory,secondarySubcategoryOne,secondarySubcategoryTwo`
+    — verbatim what `categories` sends.
+  - `PATCH apps/{appId}` setting the `contentRightsDeclaration` attribute, `PATCH
+    ageRatingDeclarations/{id}` sending the whole age-rating questionnaire back in one
+    body, and the page's own two reads: `GET apps/{appId}/appInfos` with the category
+    includes plus `ageRatingDeclaration,app` and `fields[apps]=isOrEverWasMadeForKids`, and
+    `GET appInfos/{id}/territoryAgeRatings?include=territory&limit=500`. **Captured but not
+    mapped** — nothing in this client sends or reads them yet.
+
+  Two details of `set-categories` are *not* in that recording: the browser set
+  `primaryCategory`, `secondaryCategory` and both primary subcategories, so
+  `secondarySubcategoryOne`/`Two` are taken on the symmetry of the include list, and
+  clearing a slot borrows the `{"data":null}` form that `set-build none` was captured
+  using. Both are labelled in `setAppCategories`.
 - From one draft reply with an attachment: `createDraftMessage`, `updateDraftMessage`,
   `reserveMessageAttachment` and `completeMessageAttachment` — all four bodies replayed
   offline against the recording and match the browser's byte for byte. Editing an existing
@@ -51,10 +79,13 @@ sends matches what the browser sent.
 
 - `listVersionLocalizations` (the path form — the browser uses a filter on the collection
   instead) and `listAppInfoLocalizations`.
-- `setMetadataField` was never captured, but **it has been run**: both halves were PATCHed
-  with the value they already held — a real request that changed nothing — and both
-  returned 200 with the record intact. The envelope is the captured version PATCH's, down
-  to the `application/json`, and the field names were read off captured responses. The one
+- `setMetadataField` is captured on its app info half (above) but **not on its version
+  half**: no recording of a `appStoreVersionLocalizations` PATCH exists. That one still
+  rests on the captured version PATCH's envelope, down to the `application/json`, with
+  field names read off captured responses — now with the app info capture showing the same
+  envelope on a localization, which is the closest thing to a witness it has. **Both halves
+  have been run**: each was PATCHed with the value it already held — a real request that
+  changed nothing — and both returned 200 with the record intact. The one
   thing that test flushed out is worth knowing: the *first* `appInfos` record is the live
   one, and writing to it is refused with `409
   ENTITY_ERROR.ATTRIBUTE.INVALID.INVALID_STATE`. `findEditableAppInfo` picks by state now.

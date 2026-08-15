@@ -68,6 +68,16 @@ const INCLUDES = {
     'gameCenterConfiguration',
     'appClipDefaultExperience',
   ],
+  // Also the six relationship names a category change writes to — the App Information
+  // page asks for exactly this list and PATCHes back into the same names.
+  appInfoCategories: [
+    'primaryCategory',
+    'primarySubcategoryOne',
+    'primarySubcategoryTwo',
+    'secondaryCategory',
+    'secondarySubcategoryOne',
+    'secondarySubcategoryTwo',
+  ],
 } as const;
 
 export const OPEN_SUBMISSION_STATES = [
@@ -482,6 +492,62 @@ export async function findEditableAppInfo(session: Session, appId: string): Prom
 }
 
 /**
+ * The six category slots on an app info record: a primary and a secondary App Store
+ * category, each with two subcategory slots that only the games categories populate.
+ */
+export const APP_CATEGORY_SLOTS = INCLUDES.appInfoCategories;
+
+export type AppCategorySlot = (typeof APP_CATEGORY_SLOTS)[number];
+
+/**
+ * Categories are relationships, not attributes, and the category's name *is* the resource
+ * id — `{"type":"appCategories","id":"GAMES_TRIVIA"}`. Omitted slots are left alone; a
+ * `null` clears one.
+ */
+export type AppCategoryUpdate = Partial<Record<AppCategorySlot, string | null>>;
+
+/**
+ * One app info record with its categories resolved, as the App Information page reads
+ * them. Point it at `findEditableAppInfo`: the live record answers with the categories the
+ * store shows, not the ones being prepared.
+ */
+export function getAppInfoCategories(session: Session, appInfoId: string): Promise<Document<Resource>> {
+  return get(session, `appInfos/${appInfoId}`, { include: [...APP_CATEGORY_SLOTS] });
+}
+
+/**
+ * Changes an app's App Store categories — the App Information page's Save button, which
+ * was recorded sending this PATCH with only the slots it changed in it.
+ *
+ * Two things in here go beyond the recording and are guesses, not evidence. The capture
+ * set `primaryCategory`, `secondaryCategory` and both primary subcategories; the
+ * `secondarySubcategoryOne`/`Two` names come from the include list the same page sends,
+ * and are assumed to write the way their primary twins do. Clearing a slot with `null` was
+ * never recorded here either — it is the form `setVersionBuild` uses to detach a build,
+ * which was.
+ *
+ * Categories belong to the app, not a version, so a change is live as soon as it lands —
+ * the same `409 ENTITY_ERROR.ATTRIBUTE.INVALID.INVALID_STATE` guards the live record.
+ */
+export function setAppCategories(
+  session: Session,
+  appInfoId: string,
+  update: AppCategoryUpdate
+): Promise<Document<Resource>> {
+  const relationships: Record<string, { data: ResourceIdentifier | null }> = {};
+  for (const slot of APP_CATEGORY_SLOTS) {
+    const category = update[slot];
+    if (category === undefined) continue;
+    relationships[slot] = { data: category === null ? null : { type: 'appCategories', id: category } };
+  }
+  if (!Object.keys(relationships).length) throw new Error('No categories to change');
+
+  return audited('appInfo.categories.set', { appInfoId, ...update }, () =>
+    patch(session, `appInfos/${appInfoId}`, { data: { type: 'appInfos', id: appInfoId, relationships } })
+  );
+}
+
+/**
  * Per-locale version metadata: description, keywords, promo text, what's new.
  * Not in the captured requests — found by probing, and it's the bridge from a version to
  * its screenshot sets.
@@ -493,7 +559,7 @@ export function listVersionLocalizations(session: Session, versionId: string): P
 /**
  * The two halves of App Store metadata, and which resource each field lives on. Every
  * name here was read off a captured response, so the spelling is Apple's; what isn't
- * captured is the PATCH that writes them — see `setMetadataField`.
+ * captured is the PATCH that writes the version half — see `setMetadataField`.
  *
  * The split matters when a 4.1 rejection names a field: `name` and `subtitle` belong to
  * the app info record and change for the whole app, while a description or keyword list
@@ -581,11 +647,18 @@ export async function findMetadataField(
 /**
  * Writes one metadata field.
  *
- * **The PATCH itself is not captured.** Its shape is the captured version PATCH's — same
- * envelope, same `application/json`, same habit of sending only what changed — pointed at
- * a localization, and the field names come from real responses. The version page's Save
- * button is what sends both, which is the reason to think they match. That makes it a good
- * guess rather than a certainty; the failure mode is a 4xx, not a wrong edit.
+ * **The app info half is captured; the version half is not.** A Save on the App
+ * Information page was recorded sending exactly this: `PATCH appInfoLocalizations/{id}`,
+ * plain `application/json`, `{data:{type,id,attributes}}` carrying only the edited fields.
+ * The browser sent `name` and `subtitle` together where this writes one at a time, which
+ * is a subset of that body rather than a different shape.
+ *
+ * The `appStoreVersionLocalizations` PATCH has never been recorded. Its shape is the
+ * captured version PATCH's — same envelope, same `application/json`, same habit of sending
+ * only what changed — pointed at a localization, and the field names come from real
+ * responses. The version page's Save button is what sends both, and the app info capture
+ * now shows that envelope working against a localization. Still a good guess rather than a
+ * certainty; the failure mode is a 4xx, not a wrong edit.
  *
  * The old value is not recoverable from Apple once this returns, which is why the CLI
  * prints it before asking. Changing a version's metadata doesn't reach the store until the

@@ -69,6 +69,7 @@ all) works unedited.
 | `submissions`, `submission`, `items` | review submissions and what's in them |
 | `versions`, `version`, `history` | versions, and every state a version has passed through with how long it sat there |
 | `metadata`, `screenshots`, `previews` | store listing text and assets, per locale |
+| `categories` | the app's App Store categories and their game subcategories |
 | `review-details` | contact, demo account and notes given to the reviewer |
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
 | `privacy` | App Privacy declarations, and whether they're live |
@@ -83,14 +84,15 @@ all) works unedited.
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
 | `send-reply` | send it — [docs/replying.md](docs/replying.md) |
 | `set-metadata` | one field, one locale: description, keywords, name, subtitle… — [docs/writing.md](docs/writing.md) |
+| `set-categories` | the app's App Store categories, live at once — [docs/writing.md](docs/writing.md) |
 | `resolve-item` | tell App Review an issue is fixed and put it back in the queue — [docs/writing.md](docs/writing.md) |
 | `submit`, `cancel-submission` | submit a version for review, or withdraw it — [docs/writing.md](docs/writing.md) |
 | `patch` | any PATCH, for anything not mapped |
 
 **`send-reply`, `resolve-item` and `submit` can't be undone**, so they print what they are
 about to do and ask first — `send-reply` shows you the whole draft, `submit --dry-run`
-prints the steps and sends nothing. `set-metadata`, `cancel-submission` and the three
-deletes ask too. `--yes` answers for you; with no terminal to ask on, they stop rather than
+prints the steps and sends nothing. `set-metadata`, `set-categories`, `cancel-submission`
+and the three deletes ask too. `--yes` answers for you; with no terminal to ask on, they stop rather than
 assume. Nothing else asks: a bad `set-build` is one more `set-build` away from being right.
 
 The `submit` flow is the one thing here **not** taken from a capture — see
