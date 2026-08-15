@@ -582,9 +582,19 @@ export function listAppInfoPage(session: Session, appId: string): Promise<Docume
 /**
  * The ratings Apple derives from the questionnaire, one per territory. Read-only: they
  * are an output of `setAgeRating`, not something to write.
+ *
+ * The limit of 500 is the browser's own, and comfortably above the number of App Store
+ * territories — raise it if Apple ever starts returning more than one row each.
  */
-export function listTerritoryAgeRatings(session: Session, appInfoId: string): Promise<Document<Resource[]>> {
-  return get(session, `appInfos/${appInfoId}/territoryAgeRatings`, { include: ['territory'], limit: 500 });
+export function listTerritoryAgeRatings(
+  session: Session,
+  appInfoId: string,
+  options: { limit?: number } = {}
+): Promise<Document<Resource[]>> {
+  return get(session, `appInfos/${appInfoId}/territoryAgeRatings`, {
+    include: ['territory'],
+    limit: options.limit ?? 500,
+  });
 }
 
 /**
