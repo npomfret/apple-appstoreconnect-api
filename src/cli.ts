@@ -36,8 +36,15 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
                               current one marked "*" — the version page's build picker
   asc metadata [versionId]    Per-locale name, subtitle, description and keywords (defaults
                               to the version under review)
+  asc app-info [appId]        The whole App Information page in one request: both app info
+                              records with their categories and age-rating declarations
   asc categories [appId]      The app's App Store categories: primary and secondary, each
                               with the two subcategory slots only games use
+  asc age-rating [appId]      The age-rating questionnaire as JSON, in the shape
+                              "set-age-rating" reads back — pipe it to a file and edit it
+  asc territory-ratings [appId]
+                              The rating Apple worked out for each territory from that
+                              questionnaire
   asc screenshots [versionId] Every locale of a version with its screenshot and preview
                               sets, in one request (defaults to the version under review)
   asc previews <locId>        App preview videos in one locale's preview sets. The
@@ -81,6 +88,17 @@ Writes (these change your live App Store Connect data):
                               name are touched; "none" clears one. Categories belong to the
                               app, so a change is live at once, not when a version ships.
                               Shows the before and after and asks
+
+  asc set-age-rating <file|-> [appId]
+                              Replace the age-rating questionnaire from a JSON object of
+                              answers. Every question has to be present — start from
+                              "asc age-rating". Shows which answers change and asks. Apple
+                              recomputes every territory's rating from it
+  asc set-content-rights <declaration> [appId]
+                              Answer the third-party content question.
+                              DOES_NOT_USE_THIRD_PARTY_CONTENT is the captured value;
+                              USES_THIRD_PARTY_CONTENT comes from Apple's public API docs
+                              and is unproven here. Shows the old answer and asks
 
 These reach Apple and cannot be undone. Each shows what it is about to do and asks first;
 --yes answers for you:
@@ -351,6 +369,47 @@ function takeCategoryOptions(argv: string[]): { update: api.AppCategoryUpdate; r
   }
 
   return { update, rest };
+}
+
+/**
+ * The App Information page in one request, narrowed to the record that can be edited and
+ * with its categories and age-rating declaration spliced in. Everything on that page
+ * — categories, age rating, and the ids the writes need — comes out of this.
+ */
+async function readAppInfoPage(session: Session, appId: string): Promise<Denormalized> {
+  const document = await api.listAppInfoPage(session, appId);
+  return denormalize(document, api.pickEditableAppInfo(document.data, appId));
+}
+
+/**
+ * The age-rating declaration hanging off an app info record: the id a write goes to, and
+ * the questionnaire as `age-rating` prints it and `set-age-rating` reads it back in.
+ *
+ * Apple's own answers go through the same check as a hand-written file, minus the two
+ * JSON:API keys. That is deliberate: a question this client doesn't know about would
+ * otherwise be dropped from the body it resends, quietly unanswering it.
+ */
+function ageRatingOn(appInfo: Denormalized): { id: string; answers: api.AgeRatingAnswers } {
+  const declaration = appInfo['ageRatingDeclaration'];
+  if (declaration === null || typeof declaration !== 'object') {
+    throw new Error('This app info record came back without its age-rating declaration');
+  }
+
+  const { type: _type, id, ...answers } = declaration as Denormalized;
+  return { id, answers: api.parseAgeRatingAnswers(answers) };
+}
+
+/** Only the questions whose answers differ, as the confirmation lists them. */
+function describeAgeRatingChange(before: api.AgeRatingAnswers, after: api.AgeRatingAnswers): string[] {
+  const changed = api.AGE_RATING_QUESTIONS.filter((question) => before[question] !== after[question]);
+  const width = Math.max(0, ...changed.map((question) => question.length));
+
+  return [
+    ...changed.map((q) => `  ${q.padEnd(width)}  ${JSON.stringify(before[q])} -> ${JSON.stringify(after[q])}`),
+    ...(changed.length ? [] : ['  (no answer differs from what is there now)']),
+    '',
+    `  All ${api.AGE_RATING_QUESTIONS.length} answers are resent, as the browser sends them.`,
+  ];
 }
 
 /** The category in a slot, or undefined if the record doesn't carry that relationship. */
@@ -670,16 +729,18 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
-    case 'categories': {
+    case 'app-info': {
       const session = loadSession();
       const appId = requireAppId(session, rest[0]);
-      const appInfo = await api.findEditableAppInfo(session, appId);
-      const document = await api.getAppInfoCategories(session, appInfo.id);
-      if (raw) {
-        emit(document, raw);
-        return 0;
-      }
-      console.log(describeCategories(denormalize(document, document.data)).join('\n'));
+      const document = await api.listAppInfoPage(session, appId);
+      emit(document, raw);
+      return 0;
+    }
+
+    case 'categories': {
+      const session = loadSession();
+      const appInfo = await readAppInfoPage(session, requireAppId(session, rest[0]));
+      console.log(describeCategories(appInfo).join('\n'));
       return 0;
     }
 
@@ -692,15 +753,13 @@ async function main(argv: string[]): Promise<number> {
         );
       }
 
-      const appInfo = await api.findEditableAppInfo(session, appId);
-      const document = await api.getAppInfoCategories(session, appInfo.id);
-      const current = denormalize(document, document.data);
+      const current = await readAppInfoPage(session, appId);
 
       await confirm({
         question: "Change this app's App Store categories? They are live as soon as this lands.",
         detail: [
           '',
-          `  record:  appInfos/${appInfo.id}`,
+          `  record:  appInfos/${current.id}`,
           '  scope:   the app itself — categories are not held back until a version ships',
           '',
           '  now:',
@@ -712,7 +771,76 @@ async function main(argv: string[]): Promise<number> {
         yes,
       });
 
-      emit(await api.setAppCategories(session, appInfo.id, categories), raw);
+      await api.setAppCategories(session, current.id, categories);
+      // Read back rather than trust the PATCH's own echo — the browser does the same.
+      emit(await api.getAppInfoCategories(session, current.id), raw);
+      return 0;
+    }
+
+    case 'age-rating': {
+      const session = loadSession();
+      const appInfo = await readAppInfoPage(session, requireAppId(session, rest[0]));
+      console.log(JSON.stringify(ageRatingOn(appInfo).answers, null, 2));
+      return 0;
+    }
+
+    case 'territory-ratings': {
+      const session = loadSession();
+      const appInfo = await readAppInfoPage(session, requireAppId(session, rest[0]));
+      emit(await api.listTerritoryAgeRatings(session, appInfo.id), raw);
+      return 0;
+    }
+
+    case 'set-age-rating': {
+      const session = loadSession();
+      const source = requireArg(rest[0], 'file|-', 'set-age-rating answers.json');
+      const appId = requireAppId(session, rest[1]);
+      const text = source === '-' ? readStdin() : readFileSync(source, 'utf8');
+      const answers = api.parseAgeRatingAnswers(JSON.parse(text));
+
+      const current = ageRatingOn(await readAppInfoPage(session, appId));
+
+      await confirm({
+        question: "Replace this app's age-rating answers?",
+        detail: [
+          '',
+          `  record:  ageRatingDeclarations/${current.id}`,
+          '  scope:   the app itself — Apple recomputes every territory rating from this',
+          '',
+          ...describeAgeRatingChange(current.answers, answers),
+          '',
+        ],
+        yes,
+      });
+
+      emit(await api.setAgeRating(session, current.id, answers), raw);
+      return 0;
+    }
+
+    case 'set-content-rights': {
+      const session = loadSession();
+      const declaration = requireArg(
+        rest[0],
+        'declaration',
+        'set-content-rights DOES_NOT_USE_THIRD_PARTY_CONTENT'
+      );
+      const appId = requireAppId(session, rest[1]);
+      const document = await api.getApp(session, appId);
+      const app = denormalize(document, document.data);
+
+      await confirm({
+        question: "Change this app's third-party content declaration?",
+        detail: [
+          '',
+          `  record:  apps/${appId}`,
+          `  now:     ${String(app['contentRightsDeclaration'] ?? '(unanswered)')}`,
+          `  becomes: ${declaration}`,
+          '',
+        ],
+        yes,
+      });
+
+      emit(await api.setContentRights(session, appId, declaration), raw);
       return 0;
     }
 

@@ -78,6 +78,18 @@ const INCLUDES = {
     'secondarySubcategoryOne',
     'secondarySubcategoryTwo',
   ],
+  // What the App Information page asks for on load: the categories plus the age-rating
+  // declaration. Paired with fields[apps]=isOrEverWasMadeForKids — see listAppInfoPage.
+  appInfoPage: [
+    'ageRatingDeclaration',
+    'app',
+    'primaryCategory',
+    'primarySubcategoryOne',
+    'primarySubcategoryTwo',
+    'secondaryCategory',
+    'secondarySubcategoryOne',
+    'secondarySubcategoryTwo',
+  ],
 } as const;
 
 export const OPEN_SUBMISSION_STATES = [
@@ -479,7 +491,15 @@ const LIVE_APP_INFO_STATE = 'READY_FOR_DISTRIBUTION';
  * An app that has never shipped has one record, in an editable state, and it is returned.
  */
 export async function findEditableAppInfo(session: Session, appId: string): Promise<Resource> {
-  const appInfos = (await listAppInfos(session, appId)).data;
+  return pickEditableAppInfo((await listAppInfos(session, appId)).data, appId);
+}
+
+/**
+ * The same choice made against records already in hand — `listAppInfoPage` returns both
+ * with everything hanging off them, and re-fetching to pick between them would be a
+ * second request for an answer already on the table.
+ */
+export function pickEditableAppInfo(appInfos: readonly Resource[], appId: string): Resource {
   if (!appInfos.length) throw new Error(`App ${appId} has no appInfo record`);
 
   const editable = appInfos.filter((one) => one.attributes?.state !== LIVE_APP_INFO_STATE);
@@ -544,6 +564,163 @@ export function setAppCategories(
 
   return audited('appInfo.categories.set', { appInfoId, ...update }, () =>
     patch(session, `appInfos/${appInfoId}`, { data: { type: 'appInfos', id: appInfoId, relationships } })
+  );
+}
+
+/**
+ * Everything the App Information page loads in one request: both app info records with
+ * their categories and their age-rating declarations, and the app narrowed to the one
+ * field that page reads off it.
+ */
+export function listAppInfoPage(session: Session, appId: string): Promise<Document<Resource[]>> {
+  return get(session, `apps/${appId}/appInfos`, {
+    include: [...INCLUDES.appInfoPage],
+    'fields[apps]': 'isOrEverWasMadeForKids',
+  });
+}
+
+/**
+ * The ratings Apple derives from the questionnaire, one per territory. Read-only: they
+ * are an output of `setAgeRating`, not something to write.
+ */
+export function listTerritoryAgeRatings(session: Session, appInfoId: string): Promise<Document<Resource[]>> {
+  return get(session, `appInfos/${appInfoId}/territoryAgeRatings`, { include: ['territory'], limit: 500 });
+}
+
+/**
+ * Every question on the age-rating questionnaire, in the order the browser sent them.
+ *
+ * The names are captured; the *values* mostly are not. Every one of the frequency
+ * questions came back `"NONE"` in the recording, so the scale the public App Store Connect
+ * API documents — `INFREQUENT_OR_MILD`, `FREQUENT_OR_INTENSE` — is inferred here, not
+ * proven. `setAgeRating` checks the names and lets the values through: a value Apple
+ * doesn't like is a 4xx, which is a better failure than this client refusing a legitimate
+ * answer because it has never seen one.
+ */
+export const AGE_RATING_QUESTIONS = [
+  'messagingAndChat',
+  'sexualContentGraphicAndNudity',
+  'gambling',
+  'horrorOrFearThemes',
+  'parentalControls',
+  'advertising',
+  'ageRatingOverrideV2',
+  'violenceRealisticProlongedGraphicOrSadistic',
+  'matureOrSuggestiveThemes',
+  'healthOrWellnessTopics',
+  'unrestrictedWebAccess',
+  'violenceCartoonOrFantasy',
+  'kidsAgeBand',
+  'medicalOrTreatmentInformation',
+  'lootBox',
+  'alcoholTobaccoOrDrugUseOrReferences',
+  'gamblingSimulated',
+  'violenceRealistic',
+  'profanityOrCrudeHumor',
+  'socialMedia',
+  'contests',
+  'koreaAgeRatingOverride',
+  'ageAssurance',
+  'userGeneratedContent',
+  'gunsOrOtherWeapons',
+  'socialMediaAgeRestricted',
+  'gracRatingClassificationNumber',
+  'developerAgeRatingInfoUrl',
+  'sexualContentOrNudity',
+] as const;
+
+export type AgeRatingQuestion = (typeof AGE_RATING_QUESTIONS)[number];
+
+/** One complete set of answers — every question, as the browser sends it. */
+export type AgeRatingAnswers = Record<AgeRatingQuestion, string | boolean | number | null>;
+
+function isAnswer(value: unknown): value is string | boolean | number | null {
+  return value === null || ['string', 'boolean', 'number'].includes(typeof value);
+}
+
+/**
+ * Narrows a hand-written or piped-in questionnaire.
+ *
+ * Every question has to be present. The browser resends all of them on every save and
+ * there is no recording of a partial body, so whether an omitted answer is left alone or
+ * cleared is unknown — refusing an incomplete object is the only reading that can't
+ * silently wipe an answer. Unknown names are refused too: on a private API a typo would
+ * otherwise be sent and, at best, ignored.
+ */
+export function parseAgeRatingAnswers(input: unknown): AgeRatingAnswers {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new Error('Expected a JSON object of age-rating answers');
+  }
+
+  const given = input as Record<string, unknown>;
+  const known = new Set<string>(AGE_RATING_QUESTIONS);
+  const unknownNames = Object.keys(given).filter((name) => !known.has(name));
+  if (unknownNames.length) {
+    throw new Error(`Not age-rating questions: ${unknownNames.join(', ')}`);
+  }
+
+  const answers = {} as AgeRatingAnswers;
+  const missing: string[] = [];
+  for (const question of AGE_RATING_QUESTIONS) {
+    const value = given[question];
+    if (value === undefined) {
+      missing.push(question);
+      continue;
+    }
+    if (!isAnswer(value)) {
+      throw new Error(`${question} must be a string, boolean, number or null`);
+    }
+    answers[question] = value;
+  }
+
+  if (missing.length) {
+    throw new Error(
+      `Every question has to be answered — missing ${missing.length}: ${missing.join(', ')}. ` +
+        'Start from "asc age-rating", which prints the current answers in this shape.'
+    );
+  }
+
+  return answers;
+}
+
+/**
+ * Saves the age-rating questionnaire — the App Information page's Save button, recorded
+ * sending all of these attributes in one body whether they changed or not.
+ *
+ * The declaration hangs off the app info record, so the editable record's declaration is
+ * the one to write to. Apple recomputes the per-territory ratings from it; read them back
+ * with `listTerritoryAgeRatings`.
+ */
+export function setAgeRating(
+  session: Session,
+  declarationId: string,
+  answers: AgeRatingAnswers
+): Promise<Document<Resource>> {
+  return audited('ageRating.set', { declarationId }, () =>
+    patch(session, `ageRatingDeclarations/${declarationId}`, {
+      data: { type: 'ageRatingDeclarations', id: declarationId, attributes: answers },
+    })
+  );
+}
+
+/**
+ * Whether the app uses third-party content its publisher has the rights to. This one sits
+ * on the app itself rather than an app info record, so there is no editable-versus-live
+ * choice to make.
+ *
+ * Only `DOES_NOT_USE_THIRD_PARTY_CONTENT` was captured. `USES_THIRD_PARTY_CONTENT` is the
+ * public App Store Connect API's other value and is not proven here, so the declaration is
+ * passed through as given rather than checked against a list.
+ */
+export function setContentRights(
+  session: Session,
+  appId: string,
+  declaration: string
+): Promise<Document<Resource>> {
+  return audited('app.contentRights.set', { appId, declaration }, () =>
+    patch(session, `apps/${appId}`, {
+      data: { type: 'apps', id: appId, attributes: { contentRightsDeclaration: declaration } },
+    })
   );
 }
 

@@ -5,10 +5,10 @@ evidenced. This page says which is which.
 
 ## What isn't captured yet
 
-The captured writes are the version PATCH behind `set-build`, the two App Information page
-PATCHes behind `set-metadata` and `set-categories`, the screenshot flow, the Resolution
-Center draft behind `save-draft` and `delete-draft`, sending it (`send-reply`), and
-resolving a submission item (`resolve-item`).
+The captured writes are the version PATCH behind `set-build`, all four App Information page
+PATCHes — `set-metadata`, `set-categories`, `set-age-rating`, `set-content-rights` — the
+screenshot flow, the Resolution Center draft behind `save-draft` and `delete-draft`,
+sending it (`send-reply`), and resolving a submission item (`resolve-item`).
 
 What's left uncaptured, and so the part to read about before use: the **version half of
 `set-metadata`** — a description, keywords, promo text or what's new — and **submitting a
@@ -57,18 +57,32 @@ sends matches what the browser sent.
   - `GET appInfos/{id}` read back with
     `include=primaryCategory,primarySubcategoryOne,primarySubcategoryTwo,secondaryCategory,secondarySubcategoryOne,secondarySubcategoryTwo`
     — verbatim what `categories` sends.
-  - `PATCH apps/{appId}` setting the `contentRightsDeclaration` attribute, `PATCH
-    ageRatingDeclarations/{id}` sending the whole age-rating questionnaire back in one
-    body, and the page's own two reads: `GET apps/{appId}/appInfos` with the category
-    includes plus `ageRatingDeclaration,app` and `fields[apps]=isOrEverWasMadeForKids`, and
-    `GET appInfos/{id}/territoryAgeRatings?include=territory&limit=500`. **Captured but not
-    mapped** — nothing in this client sends or reads them yet.
+  - `PATCH apps/{appId}` setting the `contentRightsDeclaration` attribute, behind
+    `set-content-rights`.
+  - `PATCH ageRatingDeclarations/{id}` sending all 29 questionnaire answers in one body,
+    behind `set-age-rating`. The body this client builds was replayed offline against the
+    recording and is **identical to it byte for byte**, key order included — the question
+    list in `AGE_RATING_QUESTIONS` is that body's own order.
+  - the page's own two reads, behind `app-info`/`categories`/`age-rating` and
+    `territory-ratings`: `GET apps/{appId}/appInfos` with the category includes plus
+    `ageRatingDeclaration,app` and `fields[apps]=isOrEverWasMadeForKids`, and `GET
+    appInfos/{id}/territoryAgeRatings?include=territory&limit=500`.
 
   Two details of `set-categories` are *not* in that recording: the browser set
   `primaryCategory`, `secondaryCategory` and both primary subcategories, so
   `secondarySubcategoryOne`/`Two` are taken on the symmetry of the include list, and
   clearing a slot borrows the `{"data":null}` form that `set-build none` was captured
   using. Both are labelled in `setAppCategories`.
+
+  What the recording covers is the request *shapes*, not the range of answers. Every
+  frequency question came back `"NONE"` and content rights came back
+  `DOES_NOT_USE_THIRD_PARTY_CONTENT`, so the values on the other side of those questions —
+  `INFREQUENT_OR_MILD`, `FREQUENT_OR_INTENSE`, `USES_THIRD_PARTY_CONTENT` — are Apple's
+  public API documentation, not evidence from here. Both commands check the field names and
+  pass the values through: a value iris won't take is a 4xx, which beats this client
+  refusing a legitimate answer it has never seen. `set-age-rating` insists on a complete
+  questionnaire for the same reason in reverse — no partial body was ever recorded, so
+  whether an omitted answer is left alone or cleared is simply unknown.
 - From one draft reply with an attachment: `createDraftMessage`, `updateDraftMessage`,
   `reserveMessageAttachment` and `completeMessageAttachment` — all four bodies replayed
   offline against the recording and match the browser's byte for byte. Editing an existing

@@ -111,6 +111,54 @@ The recorded Save set the primary category, the secondary category and both prim
 subcategories. `--secondary-sub-1`/`-2` and clearing a slot with `none` were not in it —
 see [evidence](evidence.md).
 
+## Age rating
+
+```sh
+node dist/cli.js age-rating > answers.json     # the questionnaire, as JSON
+$EDITOR answers.json
+node dist/cli.js set-age-rating answers.json   # shows what changed, then asks
+node dist/cli.js territory-ratings             # what Apple made of it, per country
+```
+
+The declaration hangs off the app info record, and the browser resends **every** answer on
+every save whether it changed or not:
+
+```
+PATCH ageRatingDeclarations/{id}
+{"data":{"type":"ageRatingDeclarations","id":"…","attributes":{
+  "messagingAndChat":false,"sexualContentGraphicAndNudity":"NONE", … 29 in all}}}
+```
+
+So `set-age-rating` is read-modify-write and takes the whole object. It refuses an
+incomplete one: no partial body was ever recorded, so whether an omitted answer would be
+left alone or cleared is unknown, and refusing is the only reading that can't quietly
+unanswer a question. It refuses names it doesn't know for the same reason — including on
+the way *in*, so a question Apple adds later fails loudly instead of being dropped from the
+body sent back.
+
+The answers are typed loosely on purpose. Every frequency question in the recording said
+`NONE`, so the rest of Apple's scale (`INFREQUENT_OR_MILD`, `FREQUENT_OR_INTENSE`) is taken
+from the public API docs and isn't proven here — the names are checked, the values are
+passed through, and a value iris won't take comes back as a 4xx.
+
+Apple recomputes every territory's rating from this, which is what `territory-ratings`
+reads back. Like categories, it is app-wide and live at once.
+
+## Third-party content
+
+```sh
+node dist/cli.js set-content-rights DOES_NOT_USE_THIRD_PARTY_CONTENT
+```
+
+```
+PATCH apps/{appId}   {"attributes":{"contentRightsDeclaration":"…"}}   application/json
+```
+
+The one App Information answer that lives on the app rather than an app info record, so
+there is no editable-versus-live record to pick between.
+`DOES_NOT_USE_THIRD_PARTY_CONTENT` is the captured value; `USES_THIRD_PARTY_CONTENT` is the
+public API's other one and unproven here.
+
 ## Putting a rejected item back in review
 
 A rejected submission sits in `UNRESOLVED_ISSUES` with one item per thing under review.

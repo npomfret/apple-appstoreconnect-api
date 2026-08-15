@@ -36,7 +36,10 @@ document):
 | `versions [appId]` | `apps/{appId}/appStoreVersions?filter[platform]=` |
 | `version [versionId]` | `appStoreVersions/{id}` |
 | `metadata [versionId]` | `apps/{appId}/appInfos` + `appStoreVersions/{id}/appStoreVersionLocalizations` |
-| `categories [appId]` | `apps/{appId}/appInfos` → `appInfos/{id}?include=primaryCategory,…` |
+| `app-info [appId]` | `apps/{appId}/appInfos?include=ageRatingDeclaration,app,primaryCategory,…&fields[apps]=isOrEverWasMadeForKids` |
+| `categories [appId]` | the same request, narrowed to the six category slots |
+| `age-rating [appId]` | the same request, narrowed to the age-rating questionnaire |
+| `territory-ratings [appId]` | `appInfos/{id}/territoryAgeRatings?include=territory&limit=500` |
 | `screenshots [versionId]` | `appStoreVersionLocalizations?filter[appStoreVersion]={id}&include=appScreenshotSets,appPreviewSets` |
 | `previews <localizationId>` | `appPreviewSets?filter[appStoreVersionLocalization]={id}&include=appPreviews` |
 | `review-details [versionId]` | `appStoreVersions/{id}` → `appStoreReviewDetails/{id}` |
