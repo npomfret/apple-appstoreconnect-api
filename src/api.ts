@@ -4,7 +4,7 @@ import { Session } from './session';
 import { del, get, patch, post, uploadPart, Query, UploadOperation } from './http';
 import { Document, Resource, ResourceIdentifier } from './jsonapi';
 import { checkScreenshot, readImageSize } from './screenshots';
-import { audited, log } from './log';
+import { audited, log, REVIEW_DETAIL_SECRETS } from './log';
 
 /**
  * Include lists lifted verbatim from the browser's own requests — every one of them, so
@@ -265,14 +265,26 @@ export function listSubmissionItems(
   });
 }
 
-/** The Resolution Center conversation: Apple's messages and yours, oldest first. */
+/**
+ * The Resolution Center conversation: Apple's messages and yours, oldest first.
+ *
+ * The browser sends no top-level `limit` on this one and takes iris's default page, so
+ * neither does this by default — but a thread that outlives that page comes back clipped
+ * from the *end*, which is where the message you care about is. `read.atLimit` and
+ * `read.clipped` in the log say when that may have happened; `limit` is how to see past it.
+ */
 export function listMessages(
   session: Session,
   threadId: string,
-  options: { include?: readonly string[]; sideloads?: SideloadLimits<typeof SIDELOADS.messages> } = {}
+  options: {
+    include?: readonly string[];
+    limit?: number;
+    sideloads?: SideloadLimits<typeof SIDELOADS.messages>;
+  } = {}
 ): Promise<Document<Resource[]>> {
   return get(session, `resolutionCenterThreads/${threadId}/resolutionCenterMessages`, {
     include: includeList(INCLUDES.messages, options.include),
+    limit: options.limit,
     ...sideloadLimits(SIDELOADS.messages, options.sideloads),
   });
 }
@@ -505,14 +517,14 @@ export async function findReviewDetails(
   return getReviewDetails(session, related.id);
 }
 
-/** What `redactReviewDetails` blanks, and what `--reveal` keeps. */
-export const REVIEW_DETAIL_SECRETS = ['demoAccountPassword'] as const;
-
 /**
  * Blanks the demo account password. Every command here prints to stdout, and a live
  * credential sitting in terminal scrollback is a worse problem than having to ask for it.
  * The account name is left alone — it's the pair that's the credential, and knowing which
  * account Apple was given is usually the point.
+ *
+ * What counts as a secret is `REVIEW_DETAIL_SECRETS` in `log.ts`, so that hiding it from a
+ * command's output and hiding it from the log can't drift apart.
  */
 export function redactReviewDetails(document: Document<Resource>): Document<Resource> {
   const attributes = document.data?.attributes;
@@ -658,6 +670,34 @@ export function pickEditableAppInfo(appInfos: readonly Resource[], appId: string
   }
 
   return editable[0] ?? appInfos[0]!;
+}
+
+/**
+ * The age-rating declaration hanging off an app info record, as iris returned it.
+ *
+ * Taken out of the document's own `included` rather than off a denormalized view of the
+ * record, and the distinction matters more here than anywhere else in this file:
+ * denormalizing merges a resource's relationships in among its attributes, and on *this*
+ * resource the attributes are the questionnaire. A relationship would arrive looking like a
+ * question — `asc age-rating` would print it as one, and `set-age-rating` would send it back
+ * to Apple as an answer. Reading the record itself keeps the two apart.
+ */
+export function findAgeRatingDeclaration(document: Document<Resource[]>, appInfo: Resource): Resource {
+  const link = appInfo.relationships?.ageRatingDeclaration?.data;
+  if (!link || Array.isArray(link)) {
+    throw new Error(`App info record ${appInfo.id} came back without an age-rating declaration`);
+  }
+
+  const declaration = (document.included ?? []).find(
+    (one) => one.type === link.type && one.id === link.id
+  );
+  if (!declaration) {
+    throw new Error(
+      `App info ${appInfo.id} names age-rating declaration ${link.id}, but it was not included in the response`
+    );
+  }
+
+  return declaration;
 }
 
 /**

@@ -36,7 +36,13 @@ reason: an unrecognised relationship name is a `400` on the whole request, so th
 list is the tested one and an override is not.
 
 - `listMessages` and `getDraftMessage` — includes and the `limit[rejections]=2000` /
-  `limit[resolutionCenterMessageAttachments]=1000` pair match exactly.
+  `limit[resolutionCenterMessageAttachments]=1000` pair match exactly. The browser sends no
+  top-level `limit` on the messages call and neither does this by default, so a thread
+  longer than iris's own page comes back clipped at the end; `read.clipped` and
+  `read.atLimit` in the log say when that may have happened, and `listMessages`'s `limit`
+  option is how to look further. Whether iris reports a total to check against is per
+  endpoint, and not something any recording here settles — the warning uses one when it is
+  offered and falls back to "the page is exactly as long as we asked for" when it isn't.
 - `listAppInfos`, `getReviewDetails`, and the localizations-with-assets call behind
   `screenshots`.
 - From one attach-a-build-and-save: `listBuilds`, `listBuildCandidates`, `listPreviewSets`
@@ -71,7 +77,9 @@ list is the tested one and an override is not.
     list in `AGE_RATING_QUESTIONS` is that body's own order. Note what that list is *not*:
     those 29 are one app's questionnaire on one account, and nothing seen here says every
     app is asked the same set. So they only order a body; which questions exist comes from
-    the declaration Apple returns for the app being edited.
+    the attributes of the declaration Apple returns for the app being edited — its
+    attributes and not a denormalized view of it, since that would fold the record's
+    relationships in among the answers.
   - the page's own two reads, behind `app-info`/`categories`/`age-rating` and
     `territory-ratings`: `GET apps/{appId}/appInfos` with the category includes plus
     `ageRatingDeclaration,app` and `fields[apps]=isOrEverWasMadeForKids`, and `GET

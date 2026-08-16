@@ -1,6 +1,6 @@
 import { Session, timeToExpiry } from './session';
 import { Document } from './jsonapi';
-import { audit, log } from './log';
+import { audit, log, redactSignedUrls } from './log';
 
 export const BASE_URL = 'https://appstoreconnect.apple.com/iris/v1';
 
@@ -132,11 +132,54 @@ export async function request<T = unknown>(
   if (!response.ok) throw new ApiError(response.status, target, text);
   if (!text) return undefined as T;
 
+  let parsed: T;
   try {
-    return JSON.parse(text) as T;
+    parsed = JSON.parse(text) as T;
   } catch {
     throw new ApiError(response.status, target, `Expected JSON, got:\n${text.slice(0, 500)}`);
   }
+
+  if (!mutating) reportShortPage(target, options.query, parsed);
+  return parsed;
+}
+
+/**
+ * Says so when a collection may have come back incomplete.
+ *
+ * Nothing here reads a second page — iris is asked for one page and given one, and this
+ * client's page sizes are the browser's own. What it can do is stop a clipped list from
+ * looking like a whole one, which is the failure worth catching: a digest built on the
+ * first 50 of 60 messages reports the wrong "latest message from Apple" without saying so.
+ *
+ * Two signals, because they are separately available. If iris returns a total it is
+ * believed; that is the definite one, and whether it does depends on the endpoint. Failing
+ * that, a page that came back exactly as long as the limit asked for is suspicious rather
+ * than proven — raise the call's `limit` to find out.
+ */
+function reportShortPage(url: string, query: Query | undefined, document: unknown): void {
+  if (typeof document !== 'object' || document === null) return;
+  const { data, meta } = document as { data?: unknown; meta?: unknown };
+  if (!Array.isArray(data)) return;
+
+  const total = pagingTotal(meta);
+  if (total !== undefined && total > data.length) {
+    log.warn('read.clipped', { url, returned: data.length, total });
+    return;
+  }
+
+  const limit = query?.limit;
+  if (typeof limit === 'number' && data.length === limit && limit > 0) {
+    log.warn('read.atLimit', { url, returned: data.length, limit });
+  }
+}
+
+/** JSON:API puts a collection's size under `meta.paging.total`, where the endpoint reports one. */
+function pagingTotal(meta: unknown): number | undefined {
+  if (typeof meta !== 'object' || meta === null) return undefined;
+  const paging = (meta as { paging?: unknown }).paging;
+  if (typeof paging !== 'object' || paging === null) return undefined;
+  const total = (paging as { total?: unknown }).total;
+  return typeof total === 'number' ? total : undefined;
 }
 
 export function get<T extends Document>(session: Session, path: string, query?: Query): Promise<T> {
@@ -214,7 +257,12 @@ export async function uploadPart(operation: UploadOperation, file: Buffer): Prom
   });
 
   if (!response.ok) {
-    throw new ApiError(response.status, operation.url, await response.text());
+    // Named by host and path, never by the presigned URL itself. An error message ends up
+    // in the audit trail — `audited` logs it, and so does the CLI — and the signature in
+    // that query string is the whole of the authorisation to write to Apple's storage.
+    // The response body goes the same way, since a storage host will happily quote the
+    // request it refused back at you.
+    throw new ApiError(response.status, safeHost(operation.url), redactSignedUrls(await response.text()));
   }
 }
 

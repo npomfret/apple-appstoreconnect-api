@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { CURL_PATH, describeSession, loadSession, Session } from './session';
 import { Cancelled, confirm } from './confirm';
-import { denormalize, denormalizeAll, Denormalized, Document } from './jsonapi';
+import { denormalize, denormalizeAll, Denormalized, Document, Resource } from './jsonapi';
 import { Query } from './http';
 import {
   buildReport,
@@ -181,6 +181,18 @@ async function versionUnderReview(session: Session, appId: string): Promise<stri
 
   log.debug('no open submission, using the version in progress', { versionId: drafts[0]!.id });
   return drafts[0]!.id;
+}
+
+/**
+ * The version to act on: the one named on the command line, or else the one under review.
+ *
+ * The app id is only looked up when that fallback is actually needed. Asking for it up
+ * front refuses `asc version <versionId>` on a capture that carries no app — a bare
+ * `Cookie:` line makes one of those, and it is a supported way to do it — and refuses it
+ * with advice there is no argument to follow.
+ */
+async function requireVersionId(session: Session, given: string | undefined): Promise<string> {
+  return given ?? versionUnderReview(session, requireAppId(session, undefined));
 }
 
 /**
@@ -372,30 +384,40 @@ function takeCategoryOptions(argv: string[]): { update: api.AppCategoryUpdate; r
 }
 
 /**
- * The App Information page in one request, narrowed to the record that can be edited and
- * with its categories and age-rating declaration spliced in. Everything on that page
- * — categories, age rating, and the ids the writes need — comes out of this.
+ * The App Information page in one request, narrowed to the record that can be edited.
+ * Everything on that page — categories, age rating, and the ids the writes need — comes
+ * out of this.
+ *
+ * The document is kept alongside the record because the two commands built on it want
+ * different things. Categories are relationships and read best spliced in; the age-rating
+ * declaration is a record in its own right, and splicing it into anything would mix its
+ * relationships in among the answers.
  */
-async function readAppInfoPage(session: Session, appId: string): Promise<Denormalized> {
+interface AppInfoPage {
+  document: Document<Resource[]>;
+  appInfo: Resource;
+}
+
+async function readAppInfoPage(session: Session, appId: string): Promise<AppInfoPage> {
   const document = await api.listAppInfoPage(session, appId);
-  return denormalize(document, api.pickEditableAppInfo(document.data, appId));
+  return { document, appInfo: api.pickEditableAppInfo(document.data, appId) };
+}
+
+/** The editable record with its six category relationships resolved, ready to print. */
+function withCategories(page: AppInfoPage): Denormalized {
+  return denormalize(page.document, page.appInfo);
 }
 
 /**
- * The age-rating declaration hanging off an app info record: the id a write goes to, and
- * the questionnaire as `age-rating` prints it and `set-age-rating` reads it back in.
+ * The age-rating declaration on that page: the id a write goes to, and the questionnaire as
+ * `age-rating` prints it and `set-age-rating` reads it back in.
  *
- * The questions are whatever this record carries, less the two JSON:API keys — the recorded
- * set is one app's, so reading it back is the only way to know what this app was asked.
+ * The questions are whatever the declaration's own attributes are — the recorded set is one
+ * app's, so reading them back is the only way to know what this app was asked.
  */
-function ageRatingOn(appInfo: Denormalized): { id: string; answers: api.AgeRatingAnswers } {
-  const declaration = appInfo['ageRatingDeclaration'];
-  if (declaration === null || typeof declaration !== 'object') {
-    throw new Error('This app info record came back without its age-rating declaration');
-  }
-
-  const { type: _type, id, ...attributes } = declaration as Denormalized;
-  return { id, answers: api.ageRatingAnswersFrom(attributes) };
+function ageRatingOn(page: AppInfoPage): { id: string; answers: api.AgeRatingAnswers } {
+  const declaration = api.findAgeRatingDeclaration(page.document, page.appInfo);
+  return { id: declaration.id, answers: api.ageRatingAnswersFrom(declaration.attributes ?? {}) };
 }
 
 /** Only the questions whose answers differ, as the confirmation lists them. */
@@ -499,26 +521,21 @@ async function main(argv: string[]): Promise<number> {
 
     case 'version': {
       const session = loadSession();
-      const appId = requireAppId(session, undefined);
-      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
+      const versionId = await requireVersionId(session, rest[0]);
       emit(await api.getVersion(session, versionId) as Document, raw);
       return 0;
     }
 
     case 'builds': {
       const session = loadSession();
-      const appId = requireAppId(session, undefined);
-      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
-      const builds = await fetchBuilds(session, versionId);
+      const builds = await fetchBuilds(session, await requireVersionId(session, rest[0]));
       console.log(json ? JSON.stringify(builds, null, 2) : formatBuilds(builds));
       return 0;
     }
 
     case 'history': {
       const session = loadSession();
-      const appId = requireAppId(session, undefined);
-      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
-      const changes = await fetchHistory(session, versionId);
+      const changes = await fetchHistory(session, await requireVersionId(session, rest[0]));
       console.log(json ? JSON.stringify(changes, null, 2) : formatHistory(changes));
       return 0;
     }
@@ -735,8 +752,8 @@ async function main(argv: string[]): Promise<number> {
 
     case 'categories': {
       const session = loadSession();
-      const appInfo = await readAppInfoPage(session, requireAppId(session, rest[0]));
-      console.log(describeCategories(appInfo).join('\n'));
+      const page = await readAppInfoPage(session, requireAppId(session, rest[0]));
+      console.log(describeCategories(withCategories(page)).join('\n'));
       return 0;
     }
 
@@ -749,7 +766,7 @@ async function main(argv: string[]): Promise<number> {
         );
       }
 
-      const current = await readAppInfoPage(session, appId);
+      const current = withCategories(await readAppInfoPage(session, appId));
 
       await confirm({
         question: "Change this app's App Store categories? They are live as soon as this lands.",
@@ -775,15 +792,15 @@ async function main(argv: string[]): Promise<number> {
 
     case 'age-rating': {
       const session = loadSession();
-      const appInfo = await readAppInfoPage(session, requireAppId(session, rest[0]));
-      console.log(JSON.stringify(ageRatingOn(appInfo).answers, null, 2));
+      const page = await readAppInfoPage(session, requireAppId(session, rest[0]));
+      console.log(JSON.stringify(ageRatingOn(page).answers, null, 2));
       return 0;
     }
 
     case 'territory-ratings': {
       const session = loadSession();
-      const appInfo = await readAppInfoPage(session, requireAppId(session, rest[0]));
-      emit(await api.listTerritoryAgeRatings(session, appInfo.id), raw);
+      const page = await readAppInfoPage(session, requireAppId(session, rest[0]));
+      emit(await api.listTerritoryAgeRatings(session, page.appInfo.id), raw);
       return 0;
     }
 
@@ -844,8 +861,7 @@ async function main(argv: string[]): Promise<number> {
 
     case 'screenshots': {
       const session = loadSession();
-      const appId = requireAppId(session, undefined);
-      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
+      const versionId = await requireVersionId(session, rest[0]);
       emit(await api.listVersionLocalizationsWithAssets(session, versionId), raw);
       return 0;
     }
@@ -859,8 +875,7 @@ async function main(argv: string[]): Promise<number> {
 
     case 'review-details': {
       const session = loadSession();
-      const appId = requireAppId(session, undefined);
-      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
+      const versionId = await requireVersionId(session, rest[0]);
       const document = await api.findReviewDetails(session, versionId);
       if (!document) {
         log.error('reviewDetails.notFound', { versionId });

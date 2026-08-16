@@ -45,8 +45,8 @@ the body and its attachments across:
 
 Which means whatever is in the box at that moment is what Apple gets — there is no version
 of the text in the request to check against. `send-reply` therefore reads the draft, prints
-it in full, and asks before posting. `--yes` skips the question; a run with no terminal
-refuses rather than assuming.
+it in full, and asks before posting. `--yes` skips the question but still prints the draft;
+a run with no terminal to ask on refuses rather than assuming.
 
 It comes back `201` with the new message, its `createdDate`, and no relationships. The
 draft is gone: the thread's draft box reads `{"data": null}` again, and the message is on

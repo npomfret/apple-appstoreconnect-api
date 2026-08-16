@@ -137,7 +137,9 @@ typo would otherwise be sent and, at best, ignored.
 
 Which questions those are is read off the app's own declaration, not a list baked into this
 client. The 29 in the recording are one app's; an app asked a different set — a question
-Apple adds, one only a made-for-kids app gets — reads and writes on its own terms.
+Apple adds, one only a made-for-kids app gets — reads and writes on its own terms. It is
+read off that record's *attributes* specifically: a declaration's relationships would
+otherwise arrive looking like questions, and get sent back as answers.
 
 The answers are typed loosely on purpose. Every frequency question in the recording said
 `NONE`, so the rest of Apple's scale (`INFREQUENT_OR_MILD`, `FREQUENT_OR_INTENSE`) is taken
@@ -230,9 +232,17 @@ publish it, `set-metadata`, which overwrites text Apple keeps no copy of, and
 `cancel-submission`. Everything else writes without asking — `set-build` and the screenshot
 upload are undone by doing them again.
 
-`--yes` answers for you. With no terminal — cron, a pipe, CI — the answer can't be asked
-for, so the command prints what it would have done and stops; add `--yes` if that's what
-you meant. Declining exits 1, so a script notices.
+What is about to happen is printed either way, `--yes` included. That flag says the answer
+is already decided, not that there is nothing worth recording — `set-metadata` prints the
+text it is about to overwrite, and Apple keeps no other copy of it.
+
+A command reading its input from stdin is still asked. `cat description.txt | asc
+set-metadata en-GB description -` has no stdin left to answer on, so the question goes to
+the terminal itself (`/dev/tty`) rather than being refused; needing `--yes` to get through
+a pipe would mean putting the flag on exactly the writes that most want a human. Where
+there is no terminal at all — cron, CI, a container without one — the answer genuinely
+can't be asked for, so the command prints what it would have done and stops. Declining
+exits 1, so a script notices.
 
 The guard is in the CLI, not the library. `sendDraftMessage()`, `sendDraftReply()`,
 `resolveSubmissionItem()` and `submitReviewSubmission()` called from code go straight to

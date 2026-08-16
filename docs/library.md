@@ -22,7 +22,9 @@ the package root.
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()`,
 `sendDraftReply()`, `resolveSubmissionItem()` and `submitReviewSubmission()` called from
 code go straight to Apple, and none of them can be undone. `confirm()` from
-`src/confirm.ts` is there if you want the same guard. `planSubmission()` works out what
+`src/confirm.ts` is there if you want the same guard — it asks on the terminal even when
+stdin is carrying something else, and refuses when there is no terminal to ask on.
+`planSubmission()` works out what
 `submit` would do and writes nothing, so it's a safe thing to call first — and
 `findSendableDraft()` is the read half of `sendDraftReply()`, so you can show a draft and
 ask before sending the thing you just showed. That is all `send-reply` does.
@@ -41,6 +43,12 @@ ask before sending the thing you just showed. That is all `send-reply` does.
   `limit[items]=0`, which asks for a submission's items to be identified rather than
   expanded. Raise one when a thread, an app list or a version has outgrown the number the
   UI was built for.
+- Nothing pages. One request gets one page, and a list that came back short is reported
+  rather than followed: `read.clipped` in the log when iris gives a total bigger than what
+  it sent, `read.atLimit` when the page is exactly as long as the limit asked for. Worth
+  knowing because a clipped list is not obviously one — `listMessages` sends no top-level
+  limit by default, as the browser doesn't, so a long thread comes back cut off at the end,
+  which is the end you wanted. Pass `{ limit }` to see past it.
 - So are the fieldsets. `{ fields }` is keyed by resource type and replaces one
   `fields[type]` list, again defaulting to the captured one:
   `getVersion(session, versionId, { fields: { appStoreReviewDetails: ['contactEmail'] } })`

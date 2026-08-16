@@ -92,8 +92,10 @@ all) works unedited.
 **`send-reply`, `resolve-item` and `submit` can't be undone**, so they print what they are
 about to do and ask first — `send-reply` shows you the whole draft, `submit --dry-run`
 prints the steps and sends nothing. `set-metadata`, the three App Information writes,
-`cancel-submission` and the three deletes ask too. `--yes` answers for you; with no terminal to ask on, they stop rather than
-assume. Nothing else asks: a bad `set-build` is one more `set-build` away from being right.
+`cancel-submission` and the three deletes ask too. `--yes` answers for you, and still prints
+what it answered for; a command whose own input is a pipe is asked on the terminal rather
+than refused, and with no terminal at all they stop rather than assume. Nothing else asks: a
+bad `set-build` is one more `set-build` away from being right.
 
 The `submit` flow is the one thing here **not** taken from a capture — see
 [docs/evidence.md](docs/evidence.md) before the first real run.

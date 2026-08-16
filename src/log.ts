@@ -15,8 +15,36 @@ export type Fields = Record<string, unknown>;
 
 const ORDER: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
+/**
+ * Fields on a review detail record that must not be printed. Named here rather than beside
+ * the read that fetches them because both places that hide a secret should agree on what
+ * one is: `redactReviewDetails` keeps the password out of a command's output, and this
+ * keeps the same field out of the log when it arrives some other way — through `asc patch`,
+ * say, whose body is audited verbatim.
+ */
+export const REVIEW_DETAIL_SECRETS = ['demoAccountPassword'] as const;
+
 /** Keys whose values never get written out, wherever they turn up in a record. */
-const SENSITIVE = /^(cookie|set-cookie|authorization|x-csrf-itc|myacinfo|itctx|dqsid|wosid)$/i;
+const SENSITIVE = new RegExp(
+  `^(cookie|set-cookie|authorization|x-csrf-itc|myacinfo|itctx|dqsid|wosid|${REVIEW_DETAIL_SECRETS.join('|')})$`,
+  'i'
+);
+
+/**
+ * The query parameters that carry the authorisation on a presigned upload URL — both the
+ * older `AWSAccessKeyId`/`Signature` pair and the SigV4 names. Which of them Apple's
+ * storage hosts actually use isn't the point: a signed URL is a bearer credential, and one
+ * that reaches the log is one anybody reading the log can upload with until it expires.
+ *
+ * Applied to every string logged, not just to URLs, because storage hosts quote the request
+ * they refused back inside their error bodies.
+ */
+const SIGNED_PARAMS =
+  /([?&](?:awsaccesskeyid|signature|x-amz-signature|x-amz-credential|x-amz-security-token)=)[^&\s"']+/gi;
+
+export function redactSignedUrls(text: string): string {
+  return text.replace(SIGNED_PARAMS, '$1[redacted]');
+}
 
 /** Long strings are trimmed so one fat body can't bury the rest of the log. */
 const MAX_STRING = 2000;
@@ -29,10 +57,12 @@ function level(): number {
 
 function scrub(key: string, value: unknown): unknown {
   if (SENSITIVE.test(key)) return '[redacted]';
-  if (typeof value === 'string' && value.length > MAX_STRING) {
-    return `${value.slice(0, MAX_STRING)}… (${value.length} chars)`;
+  if (typeof value === 'string') {
+    const safe = redactSignedUrls(value);
+    return safe.length > MAX_STRING ? `${safe.slice(0, MAX_STRING)}… (${safe.length} chars)` : safe;
   }
-  if (value instanceof Error) return { name: value.name, message: value.message };
+  // Errors are replaced before their message is reached, so redact it here too.
+  if (value instanceof Error) return { name: value.name, message: redactSignedUrls(value.message) };
   return value;
 }
 
