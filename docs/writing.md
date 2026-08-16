@@ -234,8 +234,10 @@ upload are undone by doing them again.
 for, so the command prints what it would have done and stops; add `--yes` if that's what
 you meant. Declining exits 1, so a script notices.
 
-The guard is in the CLI, not the library. `sendDraftMessage()`, `resolveSubmissionItem()`
-and `submitReviewSubmission()` called from code go straight to Apple.
+The guard is in the CLI, not the library. `sendDraftMessage()`, `sendDraftReply()`,
+`resolveSubmissionItem()` and `submitReviewSubmission()` called from code go straight to
+Apple. What is *not* only in the CLI is the check that a draft is worth sending: an absent
+or empty one is refused in `findSendableDraft()`, which both routes go through.
 
 ## Headers on a write
 

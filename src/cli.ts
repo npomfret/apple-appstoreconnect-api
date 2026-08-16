@@ -597,14 +597,11 @@ async function main(argv: string[]): Promise<number> {
       const session = loadSession();
       const threadId = requireArg(rest[0], 'threadId', 'send-reply <threadId>');
 
-      // Read the draft here rather than letting the API call do it, because what's in the
-      // box is the whole of what the confirmation is about.
-      const document = await api.getDraftMessage(session, threadId);
-      if (!document.data) throw new Error(`Thread ${threadId} has no draft to send`);
-      const draft = denormalize(document as Document, document.data);
-      if (!String(draft['messageBody'] ?? '').trim()) {
-        throw new Error(`The draft on thread ${threadId} is empty — nothing to send`);
-      }
+      // Read the draft here rather than letting `sendDraftReply` do it in one call, because
+      // what's in the box is the whole of what the confirmation is about. Same check either
+      // way — `findSendableDraft` is what both go through.
+      const document = await api.findSendableDraft(session, threadId);
+      const draft = denormalize(document, document.data);
 
       await confirm({
         question: 'Send this to App Review? It cannot be edited or taken back.',

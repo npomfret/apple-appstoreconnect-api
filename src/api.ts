@@ -72,7 +72,6 @@ const INCLUDES = {
     'build',
     'betaBackgroundAssetReviewSubmission',
   ],
-  threadsForVersion: ['appMessageThreadDetail'],
   appVersions: ['alternativeDistributionPackage'],
   dataUsages: ['category', 'purpose', 'grouping', 'dataProtection'],
   versionAssets: ['appScreenshotSets', 'appPreviewSets'],
@@ -222,8 +221,6 @@ export const OPEN_SUBMISSION_STATES = [
   'CANCELING',
   'COMPLETING',
 ] as const;
-
-export type SubmissionState = (typeof OPEN_SUBMISSION_STATES)[number];
 
 /** Review submissions for an app. Defaults to the states the review-centre UI shows. */
 export function listReviewSubmissions(
@@ -375,18 +372,6 @@ export function listThreads(
     ...sideloadLimits(SIDELOADS.threads, options.sideloads),
     'filter[threadType]': [...(options.threadTypes ?? THREAD_TYPES)],
     'filter[appStoreVersion]': options.appStoreVersionId,
-  });
-}
-
-/** Threads attached to one App Store version, across apps. */
-export function listThreadsForVersion(
-  session: Session,
-  versionId: string,
-  options: { include?: readonly string[] } = {}
-): Promise<Document<Resource[]>> {
-  return get(session, 'resolutionCenterThreads', {
-    include: includeList(INCLUDES.threadsForVersion, options.include),
-    'filter[appStoreVersion]': versionId,
   });
 }
 
@@ -1549,16 +1534,37 @@ export function sendDraftMessage(session: Session, draftId: string): Promise<Doc
 }
 
 /**
- * Sends whatever is in the thread's draft box, addressed by thread because that is the id
- * you have. Refuses an empty one: the browser disables Send until there's text, and an
- * empty message to App Review helps nobody.
+ * The thread's draft, having established there is something there worth sending: a box
+ * with no draft in it and a draft with no text in it are both errors here rather than at
+ * the point of no return. The browser disables Send until there's text, and an empty
+ * message to App Review helps nobody.
+ *
+ * This is where "sendable" is decided, for both the one-call `sendDraftReply` and the CLI,
+ * which needs the draft in its hands to show you before it asks. The whole document comes
+ * back rather than the draft alone because the attachments are sideloaded beside it, and
+ * showing a reply without them would be showing half of it.
  */
-export async function sendDraftReply(session: Session, threadId: string): Promise<Resource> {
-  const draft = (await getDraftMessage(session, threadId)).data;
+export async function findSendableDraft(session: Session, threadId: string): Promise<Document<Resource>> {
+  const document = await getDraftMessage(session, threadId);
+  const draft = document.data;
+
   if (!draft) throw new Error(`Thread ${threadId} has no draft to send`);
   if (!String(draft.attributes?.messageBody ?? '').trim()) {
-    throw new Error(`Draft ${draft.id} on thread ${threadId} is empty — nothing to send`);
+    throw new Error(`The draft on thread ${threadId} is empty — nothing to send`);
   }
+
+  return { ...document, data: draft };
+}
+
+/**
+ * Sends whatever is in the thread's draft box, addressed by thread because that is the id
+ * you have.
+ *
+ * **No confirmation and no undo** — this reaches Apple the moment it is called. The CLI's
+ * `send-reply` is the same two steps with the draft shown and a question in between.
+ */
+export async function sendDraftReply(session: Session, threadId: string): Promise<Resource> {
+  const draft = (await findSendableDraft(session, threadId)).data;
   return (await sendDraftMessage(session, draft.id)).data;
 }
 

@@ -20,10 +20,12 @@ already have, if the capture reaches you some other way.
 the package root.
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()`,
-`resolveSubmissionItem()` and `submitReviewSubmission()` called from code go straight to
-Apple, and none of them can be undone. `confirm()` from `src/confirm.ts` is there if you
-want the same guard. `planSubmission()` works out what `submit` would do and writes
-nothing, so it's a safe thing to call first.
+`sendDraftReply()`, `resolveSubmissionItem()` and `submitReviewSubmission()` called from
+code go straight to Apple, and none of them can be undone. `confirm()` from
+`src/confirm.ts` is there if you want the same guard. `planSubmission()` works out what
+`submit` would do and writes nothing, so it's a safe thing to call first — and
+`findSendableDraft()` is the read half of `sendDraftReply()`, so you can show a draft and
+ask before sending the thing you just showed. That is all `send-reply` does.
 
 ## Conventions worth knowing before editing
 
