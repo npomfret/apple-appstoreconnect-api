@@ -3,6 +3,7 @@
   "defaultMode": "default",
   "permissions": {
     "allow": [
+      "Bash(git commit *)",
       "Bash(npm run *)"
     ],
     "ask": [
