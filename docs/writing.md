@@ -74,10 +74,18 @@ prepared — and the live one is listed first. Writing to it fails with `409
 ENTITY_ERROR.ATTRIBUTE.INVALID.INVALID_STATE`, "The field 'subtitle' can not be modified in
 the current state". `findEditableAppInfo` picks by state instead of position. Reading is
 worth the same care: the live record still says what the store says, which is not what you
-edited this morning.
+edited this morning. An app between versions may have only that live record; the read still
+answers from it, with an `appInfo.noneEditable` warning saying a write there will be
+refused.
 
 Apple keeps no history of what a field used to say, so `set-metadata` prints the old value
 in full next to the new one and asks before overwriting. That printout is the only copy.
+
+Empty text is refused, from an argument or from stdin. Nothing arriving on stdin looks
+exactly like text that was deliberately blank — a here-doc that expanded to nothing, a
+variable that was never set — and with `--yes` that would overwrite a description with
+nothing. Clearing a field isn't in any capture, so it isn't offered here by accident; `asc
+patch` is the way to try it deliberately.
 
 ## Categories
 

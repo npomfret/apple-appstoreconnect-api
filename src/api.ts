@@ -650,6 +650,9 @@ const LIVE_APP_INFO_STATE = 'READY_FOR_DISTRIBUTION';
  * not the name you edited this morning.
  *
  * An app that has never shipped has one record, in an editable state, and it is returned.
+ * An app between versions can have only the live one, and then there is no editable record
+ * to find: that one comes back, with an `appInfo.noneEditable` warning, since it is the
+ * right answer for a read and the one Apple will refuse for a write.
  */
 export async function findEditableAppInfo(session: Session, appId: string): Promise<Resource> {
   return pickEditableAppInfo((await listAppInfos(session, appId)).data, appId);
@@ -669,7 +672,21 @@ export function pickEditableAppInfo(appInfos: readonly Resource[], appId: string
     log.warn('appInfo.ambiguous', { appId, candidates: states });
   }
 
-  return editable[0] ?? appInfos[0]!;
+  if (!editable.length) {
+    // Every record is the live one, which happens between versions: nothing is being
+    // prepared, so there is nothing editable to find. Reading it is still right — it is
+    // what the store says — so this returns it rather than refusing, and says so, because
+    // the alternative is a write coming back 409 from Apple with no warning it was aimed
+    // at the record that always refuses.
+    log.warn('appInfo.noneEditable', {
+      appId,
+      state: LIVE_APP_INFO_STATE,
+      records: appInfos.map((one) => one.id),
+    });
+    return appInfos[0]!;
+  }
+
+  return editable[0]!;
 }
 
 /**

@@ -63,8 +63,31 @@ function isAppleActor(message: Denormalized): boolean {
   return false;
 }
 
+/**
+ * A timestamp as a moment in time, or `-Infinity` for one that is missing or won't parse.
+ *
+ * Apple stamps these with a local UTC offset — `2026-11-01T01:00:00-08:00` — so the text
+ * and the instant it names do not sort the same way. Around a daylight-saving change they
+ * invert: `01:30:00-07:00` is 08:30Z and `01:00:00-08:00` is 09:00Z, so comparing the
+ * strings puts the later one first. That is not a curiosity here — it decides which message
+ * is "the latest from Apple" in the digest, and it makes `heldForSeconds` negative.
+ *
+ * An unusable date sorts to the far past, which is where comparing empty strings put one.
+ */
+function instant(value: unknown): number {
+  const at = Date.parse(String(value ?? ''));
+  return Number.isNaN(at) ? -Infinity : at;
+}
+
+/** Oldest first. Subtraction won't do: two unusable dates are both `-Infinity`. */
+function byInstant(left: unknown, right: unknown): number {
+  const a = instant(left);
+  const b = instant(right);
+  return a === b ? 0 : a < b ? -1 : 1;
+}
+
 function sortByDateDesc(items: Denormalized[], field: string): Denormalized[] {
-  return [...items].sort((a, b) => String(b[field] ?? '').localeCompare(String(a[field] ?? '')));
+  return [...items].sort((a, b) => byInstant(b[field], a[field]));
 }
 
 function collectGuidelines(rejections: Denormalized[]): Guideline[] {
@@ -296,12 +319,12 @@ export async function fetchHistory(session: Session, versionId: string): Promise
         byApple: initiator === 'Apple',
       } as StateChange;
     })
-    .sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')));
+    .sort((a, b) => byInstant(a.date, b.date));
 
   for (let i = 0; i < changes.length - 1; i++) {
-    const from = Date.parse(changes[i]!.date ?? '');
-    const to = Date.parse(changes[i + 1]!.date ?? '');
-    if (!Number.isNaN(from) && !Number.isNaN(to)) {
+    const from = instant(changes[i]!.date);
+    const to = instant(changes[i + 1]!.date);
+    if (Number.isFinite(from) && Number.isFinite(to)) {
       changes[i]!.heldForSeconds = Math.round((to - from) / 1000);
     }
   }

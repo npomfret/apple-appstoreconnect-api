@@ -50,7 +50,9 @@ document):
 | `rejections <threadId>` | `reviewRejections?filter[resolutionCenterMessage.resolutionCenterThread]={id}` |
 
 `appId` defaults to the one scraped from the captured request's `Referer`; `versionId`
-defaults to the version attached to the first open submission.
+defaults to the version attached to the first open submission — one extra request, the
+app's submissions, which name their version. With no open submission it falls back to the
+version being edited, and refuses to choose between two of them.
 
 App Store metadata is split across two records and `metadata` merges them per locale:
 **name** and **subtitle** hang off `appInfos`, while description, keywords, promotional
@@ -60,7 +62,9 @@ are usually the point, so don't read only the version half.
 A shipped app has *two* `appInfos` records — the live one and the one being prepared — and
 the live one comes back first. `metadata` reads the editable one, so what it shows is what
 you last edited rather than what the store currently says. Ask for `appInfos` through `get`
-and you'll see both, with a `state` telling them apart.
+and you'll see both, with a `state` telling them apart. Between versions there may be only
+the live record, and then reads answer from it and log an `appInfo.noneEditable` warning —
+a write aimed there is the one Apple refuses with a `409`.
 
 The ids chain together, which is what makes scripting possible:
 
@@ -110,6 +114,12 @@ The last column is how long the version sat in that state, which is the part wor
 it's the only record of how long a past review actually took, and it survives rejections
 and resubmissions. `initiator` separates Apple's moves from your own — that's what tells a
 `REJECTED` apart from a `DEVELOPER_REJECTED` you did yourself.
+
+Note the offsets in those timestamps: Apple stamps them in local time, so the text and the
+moment it names don't sort alike. Ordering is by the instant — across a daylight-saving
+change, comparing the text would put two states in the wrong order and show one of them
+held for a negative length of time. The same applies to picking Apple's latest message in
+`report`.
 
 ## Privacy
 

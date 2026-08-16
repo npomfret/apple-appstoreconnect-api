@@ -141,9 +141,34 @@ credential.`;
 function readStdin(): string {
   try {
     return readFileSync(0, 'utf8');
-  } catch {
-    return '';
+  } catch (error) {
+    // Not swallowed: "-" means the text is arriving on stdin, and a read that failed is
+    // not the same thing as text that was empty. Treating them alike is how a write ends
+    // up sending nothing at all.
+    throw new Error(
+      `Could not read from stdin, which is where "-" expects the text: ` +
+        `${error instanceof Error ? error.message : String(error)}`
+    );
   }
+}
+
+/**
+ * The text behind a `<text|->` argument — typed, or piped in — and never empty.
+ *
+ * Empty is refused from either source. An empty reply is refused by App Store Connect
+ * itself, and an empty metadata value is the destructive case: a here-doc that expanded to
+ * nothing looks exactly like deliberately blank text, and with `--yes` it would overwrite a
+ * description Apple keeps no copy of. Clearing a field is not an operation any capture
+ * covers, so it isn't one this offers by accident — `asc patch` is there for that.
+ */
+function requireText(given: string, what: string): string {
+  const text = given === '-' ? readStdin() : given;
+  if (text.trim()) return text;
+
+  throw new Error(
+    `Refusing to write an empty ${what}. Pass the text as an argument, or "-" to read it ` +
+      'from stdin — where nothing arriving reads as empty text, not as "leave it alone".'
+  );
 }
 
 function emit(document: Document, raw: boolean): void {
@@ -158,10 +183,33 @@ function requireAppId(session: Session, given: string | undefined): string {
   return appId;
 }
 
+/**
+ * The version attached to an open review submission, read off the submission's own
+ * relationship.
+ *
+ * Not through `buildReport`: the digest walks the whole Resolution Center — a thread
+ * lookup plus messages, rejections and the draft for every open submission — and all that
+ * is wanted here is one id, which the submissions call already carries. It also stops a
+ * thread that won't read from failing a command that has nothing to do with threads.
+ *
+ * The linkage is used rather than a sideloaded record, so this doesn't depend on the
+ * version being included in the response.
+ */
+async function versionInReview(session: Session, appId: string): Promise<string | undefined> {
+  const submissions = await api.listReviewSubmissions(session, appId);
+
+  for (const submission of submissions.data) {
+    const version = submission.relationships?.appStoreVersionForReview?.data;
+    if (version && !Array.isArray(version)) return version.id;
+  }
+
+  return undefined;
+}
+
 /** Falls back to the version attached to the first open review submission. */
 async function versionUnderReview(session: Session, appId: string): Promise<string> {
-  const [report] = await buildReport(session, appId);
-  if (report?.versionId) return report.versionId;
+  const inReview = await versionInReview(session, appId);
+  if (inReview) return inReview;
 
   // Nothing open — the app is between rounds, so fall back to the version being edited.
   // Live versions come back from this call too, and on a multi-platform app so does one
@@ -596,13 +644,9 @@ async function main(argv: string[]): Promise<number> {
       const session = loadSession();
       const example = 'save-draft <threadId> "We have fixed..." --attach shot.png';
       const threadId = requireArg(rest[0], 'threadId', example);
-      const text = requireArg(rest[1], 'text', example);
       // "-" for stdin: a reply to App Review runs to paragraphs, and quoting all of that
       // into a shell argument is how newlines get lost.
-      const body = text === '-' ? readStdin() : text;
-      if (!body.trim()) {
-        throw new Error('Refusing to save an empty draft — pass the reply text, or "-" to read it from stdin');
-      }
+      const body = requireText(requireArg(rest[1], 'text', example), 'draft');
 
       const document = await api.saveDraftReply(session, { threadId, body, attach });
       emit(document, raw);
@@ -637,9 +681,8 @@ async function main(argv: string[]): Promise<number> {
       const example = 'set-metadata en-GB subtitle "Race weekend times"';
       const locale = requireArg(rest[0], 'locale', example);
       const field = requireArg(rest[1], 'field', example);
-      const given = requireArg(rest[2], 'value', example);
       // Descriptions run to paragraphs, same as a reply — "-" keeps their newlines intact.
-      const value = given === '-' ? readStdin() : given;
+      const value = requireText(requireArg(rest[2], 'value', example), `${field} (${locale})`);
 
       const appId = requireAppId(session, undefined);
       const versionId = rest[3] ?? (await versionUnderReview(session, appId));

@@ -14,9 +14,10 @@ App Store Connect keeps one unsent message per thread and autosaves it as you ty
 
 The text replaces the draft's contents rather than appending, and newlines survive the
 round trip, so `-` and a here-doc are the sane way to write anything longer than a
-sentence. Attachments are added to whatever the draft already carries; `delete-attachment`
-takes one back off. Every attachment path is checked for existence *before* the text is
-saved, so a typo can't leave the reply half-written.
+sentence. Empty text is refused either way — a here-doc that expanded to nothing would
+otherwise wipe the draft it was meant to write. Attachments are added to whatever the draft
+already carries; `delete-attachment` takes one back off. Every attachment path is checked
+for existence *before* the text is saved, so a typo can't leave the reply half-written.
 
 Five endpoints, all `application/vnd.api+json`:
 
