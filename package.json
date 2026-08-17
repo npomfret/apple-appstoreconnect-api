@@ -9,6 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test out-tsc/test/*.test.js",
     "build": "tsc",
     "asc": "tsc && node dist/cli.js"
   },

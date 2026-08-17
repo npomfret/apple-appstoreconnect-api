@@ -49,6 +49,14 @@ of the text in the request to check against. `send-reply` therefore reads the dr
 it in full, and asks before posting. `--yes` skips the question but still prints the draft;
 a run with no terminal to ask on refuses rather than assuming.
 
+It also means the draft you agreed to and the draft that gets sent are two different reads,
+with however long you spent on the question in between — and App Store Connect autosaves the
+box as you type, so a browser open on the same thread moves it under you. So the draft is
+read once more after the answer, and a send whose text or attachments have changed is
+refused with nothing sent. That narrows the window rather than closing it: iris has no
+conditional write, so what this catches is an edit made while you were reading, which is the
+one that actually happens.
+
 It comes back `201` with the new message, its `createdDate`, and no relationships. The
 draft is gone: the thread's draft box reads `{"data": null}` again, and the message is on
 the thread from the next `messages` call onwards. **There is no unsend and no edit.**

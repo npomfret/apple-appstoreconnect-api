@@ -40,8 +40,19 @@ export function buildQuery(query: Query): string {
   return parts.length ? `?${parts.join('&')}` : '';
 }
 
+/**
+ * The methods this client speaks.
+ *
+ * A union rather than a bare string because one thing is read off a method — whether the
+ * request changes anything — and a value that classifies wrong is a mutation that goes out
+ * without an audit record.
+ */
+const METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] as const;
+
+export type Method = (typeof METHODS)[number];
+
 export interface RequestOptions {
-  method?: string;
+  method?: Method;
   query?: Query;
   body?: unknown;
   /**
@@ -51,17 +62,59 @@ export interface RequestOptions {
   contentType?: string;
 }
 
-const WRITE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
-
 /** Default team type for a normal App Store developer team, as the web UI sends it. */
 export const TEAM_TYPE = 'PURPLESOFTWARE';
+
+/**
+ * The method to send, in the case the rest of this file expects.
+ *
+ * Whether a request mutates used to be decided by comparing the caller's string against
+ * uppercase names, in two places. `{ method: 'patch' }` matched neither: the PATCH went to
+ * Apple classified as a read, so it carried none of the write headers and — the part that
+ * matters — left no `http.write` record, in a client whose audit trail is complete only
+ * because every mutation passes through here. The union above stops a TypeScript caller
+ * doing that; this is a security boundary, so it is also checked at runtime, where a
+ * consumer in plain JavaScript lives. A method that isn't one of the five is refused
+ * rather than guessed at.
+ */
+function methodOf(given: string | undefined): Method {
+  const wanted = (given ?? 'GET').trim().toUpperCase();
+  const method = METHODS.find((known) => known === wanted);
+  if (!method) {
+    throw new Error(`Unsupported HTTP method "${given}" — expected one of ${METHODS.join(', ')}`);
+  }
+
+  return method;
+}
+
+/**
+ * The iris URL a resource path names.
+ *
+ * Paths here are relative — `appStoreVersions/{id}` — and an absolute URL is refused rather
+ * than sent. Everything this function returns is fetched with the session cookie and the
+ * CSRF header attached, so a URL naming another host is that cookie handed to that host,
+ * and `asc get`/`asc patch` take their path straight off the command line. Nothing in this
+ * client ever asked for an absolute one: the single cross-origin request, an upload part,
+ * deliberately doesn't come through `request` at all — see `uploadPart`, which sends the
+ * presigned URL and no cookie.
+ */
+function irisUrl(path: string): string {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('//')) {
+    throw new Error(
+      `"${path}" is a URL, and this takes a path relative to ${BASE_URL}. Sending it would ` +
+        'carry the App Store Connect session cookie to whatever host it names.'
+    );
+  }
+
+  return `${BASE_URL}/${path.replace(/^\//, '')}`;
+}
 
 /**
  * Reads and writes don't send the same headers. The browser adds an Origin and the
  * X-Connect-Team-* pair only when mutating, and switches Content-Type to plain
  * application/json. Mirror that rather than sending one header set for everything.
  */
-function headersFor(session: Session, method: string, contentType?: string): Record<string, string> {
+function headersFor(session: Session, mutating: boolean, contentType?: string): Record<string, string> {
   const headers: Record<string, string> = {
     accept: 'application/vnd.api+json, application/json, text/csv',
     'content-type': 'application/vnd.api+json',
@@ -69,7 +122,7 @@ function headersFor(session: Session, method: string, contentType?: string): Rec
     cookie: session.cookie,
   };
 
-  if (WRITE_METHODS.has(method)) {
+  if (mutating) {
     headers['content-type'] = contentType ?? 'application/json';
     headers['origin'] = 'https://appstoreconnect.apple.com';
     const teamId = session.headers['x-connect-team-id'] ?? session.teamId;
@@ -91,13 +144,15 @@ export async function request<T = unknown>(
     throw new SessionExpiredError(401);
   }
 
-  const url = path.startsWith('http') ? path : `${BASE_URL}/${path.replace(/^\//, '')}`;
-  const target = `${url}${buildQuery(options.query ?? {})}`;
-  const method = options.method ?? 'GET';
+  const method = methodOf(options.method);
+  const target = `${irisUrl(path)}${buildQuery(options.query ?? {})}`;
 
   // Every mutation in this client funnels through here, so auditing at this one point is
   // what makes the trail complete — the higher-level calls add meaning, not coverage.
-  const mutating = WRITE_METHODS.has(method);
+  // Classified once, from the normalised method, and passed on from there: the headers and
+  // the audit record can't disagree about what kind of request this is. GET is the only
+  // method here that changes nothing.
+  const mutating = method !== 'GET';
   const started = Date.now();
   if (mutating) audit('http.write', 'start', { method, url: target, body: options.body });
 
@@ -106,7 +161,7 @@ export async function request<T = unknown>(
   try {
     response = await fetch(target, {
       method,
-      headers: headersFor(session, method, options.contentType),
+      headers: headersFor(session, mutating, options.contentType),
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
     text = await response.text();

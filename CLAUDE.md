@@ -27,11 +27,16 @@ more important than the smallest diff.
 
 - Install: `npm ci`
 - Type check: `npm run typecheck`
+- Test: `npm test`
 - Build: `npm run build`
 - Live CLI: `npm run asc -- <command>` (requires explicit human approval and a fresh local capture)
 
-There is no automated test suite yet. Do not claim tests passed; report the verification
-that actually ran. Propose a test runner and focused test plan before adding one.
+`npm test` runs `test/` on `node:test` — no dependency, and no network: `fetch` is replaced
+and every fixture is invented. It covers the pure boundaries only — the transport's rules
+about where a request may go and what counts as a write, redaction, JSON:API expansion,
+capture parsing, date ordering — and says nothing about remote semantics. A green suite is
+not evidence that a call Apple has never been sent works. Report the verification that
+actually ran, and never make a live write to prove a change.
 
 ## Routing
 

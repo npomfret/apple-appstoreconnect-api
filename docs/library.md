@@ -27,7 +27,10 @@ stdin is carrying something else, and refuses when there is no terminal to ask o
 `planSubmission()` works out what
 `submit` would do and writes nothing, so it's a safe thing to call first — and
 `findSendableDraft()` is the read half of `sendDraftReply()`, so you can show a draft and
-ask before sending the thing you just showed. That is all `send-reply` does.
+ask before sending the thing you just showed. That is all `send-reply` does — plus one more
+`findSendableDraft()` after the answer, since the send posts a reference to the draft rather
+than its text, and the box autosaves while your prompt is on screen. Worth copying if you
+build your own.
 
 ## Conventions worth knowing before editing
 
@@ -57,6 +60,16 @@ ask before sending the thing you just showed. That is all `send-reply` does.
   check what formats a call before trimming it.
 - Query strings are built by hand rather than with `URLSearchParams`: Apple wants literal
   `[`, `]` and `,`, which `URLSearchParams` would percent-encode.
+- A path is a path — `appStoreVersions/{id}` — always relative to
+  `https://appstoreconnect.apple.com/iris/v1`. An absolute URL is refused rather than
+  fetched: everything `request()` sends carries the session cookie and the CSRF header, so a
+  URL naming another host is your App Store Connect session handed to that host, and `get`
+  and `patch` take their path straight off the command line. The one cross-origin request
+  here, an upload part, doesn't go through `request()` at all.
+- The method is one of `GET`, `POST`, `PATCH`, `PUT` and `DELETE`, in whatever case you send
+  it. Whether a request mutates decides its headers and whether it lands in the audit trail,
+  so it's settled once from the normalised name; anything that isn't one of the five is
+  refused rather than guessed at.
 - **Nothing from the account the captures came from is baked in.** Every id, category,
   locale, platform and territory reaches a request from an argument or from the session,
   and the values in the recordings work as examples in help text and nowhere else. The

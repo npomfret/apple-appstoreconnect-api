@@ -90,7 +90,8 @@ all) works unedited.
 | `patch` | any PATCH, for anything not mapped |
 
 **`send-reply`, `resolve-item` and `submit` can't be undone**, so they print what they are
-about to do and ask first — `send-reply` shows you the whole draft, `submit --dry-run`
+about to do and ask first — `send-reply` shows you the whole draft and reads it again after
+you answer, in case the browser autosaved over it in the meantime, `submit --dry-run`
 prints the steps and sends nothing. `set-metadata`, the three App Information writes,
 `cancel-submission` and the three deletes ask too. `--yes` answers for you, and still prints
 what it answered for; a command whose own input is a pipe is asked on the terminal rather
@@ -114,6 +115,19 @@ chain between commands, which is what makes scripting it possible.
 - [As a library](docs/library.md) — importing it instead of shelling out
 - [Evidence and limits](docs/evidence.md) — which calls are confirmed, which are guesses,
   what's missing, and how to capture a new endpoint
+
+## Tests
+
+```sh
+npm test
+```
+
+`node:test`, no dependencies and no network — `fetch` is replaced and every fixture is
+invented, so the suite never needs a session and can't touch your account. It covers the
+parts that can be checked locally: where a request is allowed to go, what counts as a write
+and therefore gets audited, redaction, JSON:API expansion, capture parsing, and the date
+handling behind `history`. Nothing in it says Apple will behave as expected — that's what
+[docs/evidence.md](docs/evidence.md) is for.
 
 ## The short version of the caveats
 

@@ -267,6 +267,24 @@ function describeDraft(threadId: string, draft: Denormalized): string[] {
 }
 
 /**
+ * The part of a draft the confirmation was about: the text, and which files go with it.
+ *
+ * Ordering the attachments makes this about the set rather than the order iris happened to
+ * list it in. The draft's own id is in there because a delete-and-recreate returns the same
+ * id — see [replying](../docs/replying.md) — so it wouldn't catch that on its own, but a
+ * changed one is certainly a different draft.
+ */
+function draftState(draft: Denormalized): string {
+  const attachments = (draft['resolutionCenterMessageAttachments'] ?? []) as Denormalized[];
+
+  return JSON.stringify({
+    id: draft.id,
+    body: String(draft['messageBody'] ?? ''),
+    attachments: attachments.map((file) => `${file.id}:${String(file['fileName'] ?? '')}`).sort(),
+  });
+}
+
+/**
  * What `resolve-item` shows before it asks. Reached through the parent submission, since
  * iris answers a direct GET of an item with a 403. It's a nicety: if the id won't decode
  * or the read fails, the prompt is thinner and the command still works.
@@ -669,6 +687,22 @@ async function main(argv: string[]): Promise<number> {
         detail: describeDraft(threadId, draft),
         yes,
       });
+
+      // Send posts a *reference* to the draft, so what Apple copies is whatever is in the
+      // box when the POST lands — not the text printed above. Those are two different
+      // reads with a question in between, and App Store Connect autosaves the box as you
+      // type, so a browser open on this thread moves it under you. Read it again and
+      // refuse if it moved. That doesn't close the window — nothing here can, there is no
+      // conditional write — it shortens it from however long the prompt was on screen to
+      // the round trip below.
+      const now = await api.findSendableDraft(session, threadId);
+      if (draftState(denormalize(now, now.data)) !== draftState(draft)) {
+        throw new Error(
+          `The draft on thread ${threadId} changed while the question was on screen, so what ` +
+            'was agreed to is not what would have been sent. Nothing was sent. Check it with ' +
+            '"asc draft" and send again.'
+        );
+      }
 
       const sent = await api.sendDraftMessage(session, draft.id);
       emit(sent as Document, raw);

@@ -34,7 +34,9 @@ Records nest: the semantic action (`screenshot.upload`, `version.build.set`,
 `screenshot.delete`) brackets the transport-level `http.write` entries. The transport one
 is what makes coverage complete — every mutation in the client funnels through the single
 `request` in `src/http.ts`, so nothing can write without being recorded. The semantic ones
-add the intent.
+add the intent. What counts as a mutation is worked out once there, from the method with its
+case normalised, and the same answer decides both the headers and the record: a `patch` that
+arrived in lower case is a write, not a read that quietly slipped past the trail.
 
 `start` is written *before* the request leaves, on purpose: if a run dies mid-write, or the
 connection fails so you can't tell whether the change landed, the ambiguity is the thing
