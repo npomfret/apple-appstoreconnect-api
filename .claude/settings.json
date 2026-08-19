@@ -1,10 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "defaultMode": "default",
   "permissions": {
+    "defaultMode": "default",
     "allow": [
       "Bash(git commit *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(node dist/cli.js *)",
+      "Bash(npm run asc *)"
     ],
     "ask": [
       "Bash(git push *)",
@@ -15,10 +17,16 @@
       "Bash(curl *)"
     ],
     "deny": [
+      "Bash(* --yes *)",
+      "Bash(*--yes)",
+      "Bash(* --reveal *)",
+      "Bash(*--reveal)",
       "Read(session.json)",
       "Edit(session.json)",
       "Read(**/*.session.json)",
       "Edit(**/*.session.json)",
+      "Read(tmp/curl.txt)",
+      "Edit(tmp/curl.txt)",
       "Read(.env)",
       "Read(.env.*)",
       "Edit(dist/**)"
