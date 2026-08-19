@@ -20,8 +20,8 @@ already have, if the capture reaches you some other way.
 the package root.
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()`,
-`sendDraftReply()`, `resolveSubmissionItem()` and `submitReviewSubmission()` called from
-code go straight to Apple, and none of them can be undone. `confirm()` from
+`sendDraftReply()`, `resolveSubmissionItem()`, `submitReviewSubmission()` and `inviteUser()`
+called from code go straight to Apple, and none of them can be undone. `confirm()` from
 `src/confirm.ts` is there if you want the same guard — it asks on the terminal even when
 stdin is carrying something else, and refuses when there is no terminal to ask on.
 `planSubmission()` works out what

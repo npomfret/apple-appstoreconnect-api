@@ -112,6 +112,10 @@ const INCLUDES = {
     'secondarySubcategoryOne',
     'secondarySubcategoryTwo',
   ],
+  // The People page's pending-invitations list. `visibleApps` is the only relationship it
+  // asks for, and it pairs with `fields[apps]=` below: the apps are named by id, not
+  // expanded.
+  userInvitations: ['visibleApps'],
 } as const;
 
 /**
@@ -134,6 +138,7 @@ const SIDELOADS = {
   threads: { appStoreVersions: 2000 },
   version: { appStoreVersionLocalizations: 50 },
   versionAssets: { appScreenshotSets: 50, appPreviewSets: 50 },
+  userInvitations: { visibleApps: 3 },
 } as const;
 
 /**
@@ -196,6 +201,7 @@ const FIELDSETS = {
   },
   reviewDetails: { appStoreVersions: [] },
   appInfoPage: { apps: ['isOrEverWasMadeForKids'] },
+  userInvitations: { apps: [] },
 } as const;
 
 /** The fieldsets one call sends, as an option: any subset of them, each a new attribute list. */
@@ -1916,6 +1922,105 @@ export async function findThreadForSubmission(
     'filter[reviewSubmission]': submissionId,
   });
   return document.data[0];
+}
+
+/**
+ * Users and invitations — the People page.
+ *
+ * A different domain from the review centre: these are account-wide rather than per-app,
+ * and an invitation hands a person access to your developer account. Both calls below were
+ * recorded from the browser inviting someone and reloading the list; nothing else on that
+ * page is mapped, so revoking an invitation, listing the people already on the account and
+ * editing their roles are all still `asc get` territory.
+ */
+
+/**
+ * Invitations sent and not yet accepted, sorted by surname as the page sorts them.
+ *
+ * The apps a restricted invitee will see come back as bare ids — `fields[apps]=` asks for
+ * that type to be identified rather than expanded, which is what the page sends. `asc apps`
+ * turns the ids into names.
+ */
+export function listUserInvitations(
+  session: Session,
+  options: {
+    include?: readonly string[];
+    limit?: number;
+    sort?: string;
+    sideloads?: SideloadLimits<typeof SIDELOADS.userInvitations>;
+    fields?: Fieldsets<typeof FIELDSETS.userInvitations>;
+  } = {}
+): Promise<Document<Resource[]>> {
+  return get(session, 'userInvitations', {
+    limit: options.limit ?? 1000,
+    sort: options.sort ?? 'lastName',
+    include: includeList(INCLUDES.userInvitations, options.include),
+    ...sideloadLimits(SIDELOADS.userInvitations, options.sideloads),
+    ...fieldsets(FIELDSETS.userInvitations, options.fields),
+  });
+}
+
+/** Who is being invited and what they will be able to do. Every field was in the recording. */
+export interface UserInvite {
+  email: string;
+  firstName: string;
+  lastName: string;
+  /**
+   * What the person can do. `CUSTOMER_SUPPORT` is the one this was recorded with; the rest
+   * of the enum — `ADMIN`, `APP_MANAGER`, `DEVELOPER`, `MARKETING`, `FINANCE`,
+   * `ACCESS_TO_REPORTS`, `SALES`, `CREATE_APPS` and the key-management roles — comes from
+   * Apple's public App Store Connect API and is not evidenced here. Passed through rather
+   * than checked against that list: a role iris won't take is a 4xx, which beats refusing a
+   * legitimate one this client has never seen.
+   */
+  roles: readonly string[];
+  /** Access to certificates and provisioning profiles. `false` is the recorded value. */
+  provisioningAllowed: boolean;
+  /**
+   * Whether the person sees every app on the account. Only `true` was recorded, and it is
+   * the only value this client has a body for: restricting an invitation to named apps
+   * needs a `visibleApps` relationship the browser was not seen sending.
+   */
+  allAppsVisible: boolean;
+}
+
+/**
+ * Invites someone to the developer account. **Apple emails them, and this client cannot
+ * take that back** — no revoke call has been recorded, so as far as this code is concerned
+ * an invitation is one-way. The browser can cancel one from the People page.
+ *
+ * Copied from a recording of one real invitation: `application/vnd.api+json`, attributes in
+ * the order below, and no relationships in the body. It comes back `201` with the
+ * invitation, an `expirationDate` three days out, and an empty `visibleApps` link.
+ *
+ * The checks are up here rather than inside `audited` so that a malformed invitation is a
+ * rejected promise with nothing logged, not a write that started and failed.
+ */
+export async function inviteUser(session: Session, invite: UserInvite): Promise<Document<Resource>> {
+  const blank = (['email', 'firstName', 'lastName'] as const).filter((field) => !invite[field].trim());
+  if (blank.length) throw new Error(`An invitation needs ${blank.join(', ')}`);
+  if (!invite.roles.length) throw new Error('An invitation needs at least one role');
+
+  return audited('user.invite', { email: invite.email, roles: [...invite.roles] }, () =>
+    post<Document<Resource>>(
+      session,
+      'userInvitations',
+      {
+        data: {
+          type: 'userInvitations',
+          attributes: {
+            email: invite.email,
+            firstName: invite.firstName,
+            lastName: invite.lastName,
+            roles: [...invite.roles],
+            provisioningAllowed: invite.provisioningAllowed,
+            allAppsVisible: invite.allAppsVisible,
+          },
+        },
+      },
+      VND_API_CONTENT_TYPE
+    )
+  );
 }
 
 /** Escape hatch for probing endpoints we haven't mapped yet. */

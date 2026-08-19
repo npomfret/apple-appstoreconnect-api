@@ -8,7 +8,8 @@ evidenced. This page says which is which.
 The captured writes are the version PATCH behind `set-build`, all four App Information page
 PATCHes — `set-metadata`, `set-categories`, `set-age-rating`, `set-content-rights` — the
 screenshot flow, the Resolution Center draft behind `save-draft` and `delete-draft`,
-sending it (`send-reply`), and resolving a submission item (`resolve-item`).
+sending it (`send-reply`), resolving a submission item (`resolve-item`), and the People
+page's invitation POST behind `invite`.
 
 What's left uncaptured, and so the part to read about before use: the **version half of
 `set-metadata`** — a description, keywords, promo text or what's new — **creating a
@@ -120,6 +121,19 @@ list is the tested one and an override is not.
   refusing a legitimate answer it has never seen. `set-age-rating` insists on a complete
   questionnaire for the same reason in reverse — no partial body was ever recorded, so
   whether an omitted answer is left alone or cleared is simply unknown.
+- From one invitation sent on the People page: `listUserInvitations` — the whole query
+  including `sort=lastName` and the `fields[apps]=` that names the visible apps by id — and
+  the `inviteUser` POST, whose body is replayed against the recording by
+  `test/invite.test.ts` and matches it byte for byte, attribute order included, on
+  `application/vnd.api+json` rather than the `application/json` the App Information writes
+  use. What that recording does *not* cover
+  is the rest of the page: **no revoke call, no user list, and no app-restricted
+  invitation** — the browser sent `allAppsVisible: true` and no `visibleApps` relationship,
+  so `invite` requires `--all-apps` rather than inventing the other shape. It also only
+  witnesses one role (`CUSTOMER_SUPPORT`) and `provisioningAllowed: false`; the other role
+  names and `true` come from Apple's public API docs and are passed through unchecked, the
+  same trade as `set-content-rights`. Note the invitation is the one write here that this
+  client cannot reverse *and* that reaches a third party: Apple emails the person.
 - From one draft reply with an attachment: `createDraftMessage`, `updateDraftMessage`,
   `reserveMessageAttachment` and `completeMessageAttachment` — all four bodies replayed
   offline against the recording and match the browser's byte for byte. Editing an existing
