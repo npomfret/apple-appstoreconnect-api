@@ -48,6 +48,7 @@ document):
 | `messages <threadId>` | `resolutionCenterThreads/{id}/resolutionCenterMessages` |
 | `draft <threadId>` | `resolutionCenterThreads/{id}/resolutionCenterDraftMessage` |
 | `rejections <threadId>` | `reviewRejections?filter[resolutionCenterMessage.resolutionCenterThread]={id}` |
+| `invites` | `userInvitations?sort=lastName&include=visibleApps&fields[apps]=` — the account, not an app ([people](people.md)) |
 
 `appId` defaults to the one scraped from the captured request's `Referer`; `versionId`
 defaults to the version attached to the first open submission — one extra request, the

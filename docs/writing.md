@@ -2,8 +2,9 @@
 
 Mapped: attaching a build to a version (the version page's **Save** button), [adding a
 screenshot](screenshots.md), [writing and sending the reply to App Review](replying.md),
-editing metadata, putting a resolved item back in the review queue, and submitting a
-version.
+editing metadata, putting a resolved item back in the review queue, submitting a version,
+and [inviting someone to the account](people.md) — the one write here that isn't about an
+app at all.
 
 ```sh
 node dist/cli.js builds [versionId]                 # the picker — "*" marks the current one
@@ -246,8 +247,12 @@ the state to avoid is a half-made submission left on the account. See
 
 ## Confirmations
 
-Three commands reach Apple in a way nothing can walk back — `send-reply`, `resolve-item`
-and `submit` — and they print what they are about to do and ask. So do the three deletes
+Four commands reach Apple in a way this client cannot walk back — `send-reply`,
+`resolve-item`, `submit` and `invite` — and they print what they are about to do and ask.
+`invite` is the odd one: what it does *can* be undone, just not from here, since no revoke
+call has been recorded — so its prompt points at the browser's People page. It is also the
+only write that reaches a third party, because Apple emails the person. So do the three
+deletes
 (`delete-draft`, `delete-attachment`, `delete-screenshot`), which destroy data rather than
 publish it, `set-metadata`, which overwrites text Apple keeps no copy of, and
 `cancel-submission`. Everything else writes without asking — `set-build` and the screenshot
@@ -266,8 +271,8 @@ can't be asked for, so the command prints what it would have done and stops. Dec
 exits 1, so a script notices.
 
 The guard is in the CLI, not the library. `sendDraftMessage()`, `sendDraftReply()`,
-`resolveSubmissionItem()` and `submitReviewSubmission()` called from code go straight to
-Apple. What is *not* only in the CLI is the check that a draft is worth sending: an absent
+`resolveSubmissionItem()`, `submitReviewSubmission()` and `inviteUser()` called from code go
+straight to Apple. What is *not* only in the CLI is the check that a draft is worth sending: an absent
 or empty one is refused in `findSendableDraft()`, which both routes go through.
 
 ## Headers on a write
