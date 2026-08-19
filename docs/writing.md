@@ -176,20 +176,28 @@ public API's other one and unproven here.
 
 A rejected submission sits in `UNRESOLVED_ISSUES` with one item per thing under review.
 Once you've fixed the problem — new build, new screenshots, [a reply](replying.md) — you
-tell App Review the item is resolved, and that is what puts it back in the queue:
+tell App Review each refused item is resolved:
 
 ```sh
 node dist/cli.js items <submissionId>       # item ids live here
 node dist/cli.js resolve-item <itemId>
+node dist/cli.js submit                     # and this is what re-queues it
 ```
+
+**Resolving the item does not re-queue the submission.** That is worth saying plainly
+because the button in App Store Connect gives the opposite impression, and because getting
+it wrong is silent: on 2026-08-13 a resolve landed `200`, the item went `READY_FOR_REVIEW`,
+the version page said "Ready for Review" — and the submission sat in `UNRESOLVED_ISSUES`
+for five days and sixteen hours without ever reaching Apple. Nothing anywhere said it was
+waiting. Resolve clears the item; `submit` hands the submission over.
 
 ```
 PATCH reviewSubmissionItems/{id}   {"attributes":{"resolved":true}}   application/vnd.api+json
 ```
 
-The item comes straight back as `READY_FOR_REVIEW`. The parent submission's own state lags
-a second or two behind — a `reviewSubmissions` read taken at the same moment still said
-`UNRESOLVED_ISSUES` — so re-read it rather than believing the first answer.
+The item comes straight back as `READY_FOR_REVIEW`. The parent submission does not follow:
+it stays `UNRESOLVED_ISSUES` until `submit` hands it over. A `reviewSubmissions` read taken
+straight afterwards showing `UNRESOLVED_ISSUES` is the truth, not a stale read.
 
 **There is no un-resolve**, so `resolve-item` asks first, showing the state and version it
 found. It reaches those through the parent submission: `GET reviewSubmissionItems/{id}` on
@@ -216,8 +224,13 @@ PATCH reviewSubmissions/{id}     {"submitted":true}     ← the irreversible one
 
 An unsubmitted submission is reused rather than duplicated — App Store Connect carries one
 open submission per platform. One that has already gone to Apple stops the command instead
-of being submitted twice, and if it came back `UNRESOLVED_ISSUES` you want
-[`resolve-item`](#putting-a-rejected-item-back-in-review), not this.
+of being submitted twice.
+
+A submission in `UNRESOLVED_ISSUES` counts as reusable, not as gone: Apple looked at it,
+refused it, and sent it back. It keeps the `submittedDate` of the run that was rejected, so
+that date is no guide to where it is. If any item on it is still `REJECTED` the command
+stops and prints the [`resolve-item`](#putting-a-rejected-item-back-in-review) line for
+each; once they are resolved it submits.
 
 `cancel-submission` is the nearest thing to an undo, and only while Apple hasn't started
 looking: `PATCH reviewSubmissions/{id} {"canceled":true}`.

@@ -1650,12 +1650,15 @@ export async function findSubmissionItems(
 
 /**
  * Marks one item of a submission as fixed — the "resolved" step on a submission sitting in
- * `UNRESOLVED_ISSUES`. **Also irreversible:** the item goes straight to `READY_FOR_REVIEW`
- * and back into Apple's queue, and there is no un-resolve.
+ * `UNRESOLVED_ISSUES`. **Irreversible:** the item goes straight to `READY_FOR_REVIEW` and
+ * there is no un-resolve.
  *
- * Copied from a recording of one real resolve. The response carries the new state; the parent
- * submission's own state lags a moment behind, so re-read it rather than trusting the
- * `UNRESOLVED_ISSUES` you may still see immediately afterwards.
+ * **This does not re-queue the submission.** The parent stays `UNRESOLVED_ISSUES` until
+ * something calls `submitReviewSubmission` on it — not for a moment, indefinitely; one was
+ * found still sitting there five days later with nothing to say it was waiting. Read that
+ * lingering `UNRESOLVED_ISSUES` as work outstanding, not as a stale read.
+ *
+ * Copied from a recording of one real resolve.
  */
 export function resolveSubmissionItem(session: Session, itemId: string): Promise<Document<Resource>> {
   return audited('submission.item.resolve', { itemId }, () =>
@@ -1780,8 +1783,13 @@ export interface SubmissionPlan {
   submissionId?: string;
   /** The item for this version, if it's already on that submission. */
   itemId?: string;
-  /** A submission already in front of Apple — the reason not to make another. */
+  /** A submission genuinely in front of Apple — the reason not to make another. */
   inFlight?: { id: string; state: string };
+  /**
+   * Items on a returned submission that Apple still has open. The submit PATCH is a 409
+   * while any one of them is `REJECTED`, so these are named rather than discovered.
+   */
+  unresolvedItemIds?: string[];
 }
 
 /**
@@ -1822,10 +1830,21 @@ export async function planSubmission(
   }
   const submissions = all.filter((one) => one.attributes?.platform === platform);
 
-  // "Not yet submitted" is the pair: still READY_FOR_REVIEW and never given a submitted
-  // date. Either on its own would misread a submission Apple has already seen.
+  // Two different shapes can still be handed to Apple, and only one of them is "new".
+  //
+  // Never sent is the pair: still READY_FOR_REVIEW and never given a submitted date.
+  // Either half on its own would misread a submission Apple has already seen.
+  //
+  // UNRESOLVED_ISSUES is the other: Apple looked, refused, and sent it back. It always
+  // carries the submitted date of the run that was rejected, so the pair above would
+  // exclude it forever — which left `submit` and `resolve-item` pointing at each other
+  // with no way through once the items were resolved. It is not in front of Apple, and
+  // `{"submitted":true}` on it returns WAITING_FOR_REVIEW. Confirmed against a live
+  // rejection on 2026-08-19; see docs/evidence.md.
   const open = submissions.find(
-    (one) => one.attributes?.state === 'READY_FOR_REVIEW' && !one.attributes?.submittedDate
+    (one) =>
+      one.attributes?.state === 'UNRESOLVED_ISSUES' ||
+      (one.attributes?.state === 'READY_FOR_REVIEW' && !one.attributes?.submittedDate)
   );
   const sent = submissions.find((one) => one !== open);
 
@@ -1837,6 +1856,12 @@ export async function planSubmission(
         !Array.isArray(item.relationships.appStoreVersion.data) &&
         item.relationships.appStoreVersion.data.id === versionId
     )?.id;
+    // On a returned submission every item Apple refused has to be resolved before it can
+    // go back. Naming them lets the plan say what to do instead of the PATCH saying no.
+    const unresolved = items
+      .filter((item) => item.attributes?.state === 'REJECTED')
+      .map((item) => item.id);
+    if (unresolved.length) plan.unresolvedItemIds = unresolved;
   } else if (sent) {
     plan.inFlight = { id: sent.id, state: String(sent.attributes?.state ?? 'unknown') };
   }
@@ -1856,6 +1881,14 @@ export async function runSubmission(session: Session, plan: SubmissionPlan): Pro
     throw new Error(
       `Submission ${plan.inFlight.id} is already with Apple (${plan.inFlight.state}). ` +
         'Cancel it first if you mean to replace it.'
+    );
+  }
+
+  if (plan.unresolvedItemIds?.length) {
+    const each = plan.unresolvedItemIds.map((id) => `asc resolve-item ${id}`).join('\n  ');
+    throw new Error(
+      `Submission ${plan.submissionId} still has ${plan.unresolvedItemIds.length} item(s) ` +
+        `Apple refused, and will not go back until each is resolved:\n  ${each}`
     );
   }
 

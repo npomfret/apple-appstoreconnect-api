@@ -11,10 +11,30 @@ screenshot flow, the Resolution Center draft behind `save-draft` and `delete-dra
 sending it (`send-reply`), and resolving a submission item (`resolve-item`).
 
 What's left uncaptured, and so the part to read about before use: the **version half of
-`set-metadata`** — a description, keywords, promo text or what's new — and **submitting a
-version** (`submit`, `cancel-submission`). What was recorded of a submission covers
-resolving an item on one that already exists — not making a new one, and not the Submit
-button. Record either in the browser and they can be put on the same footing as the rest.
+`set-metadata`** — a description, keywords, promo text or what's new — **creating a
+submission and adding a version to it** (the two POSTs inside `submit`), and
+`cancel-submission`. Record any of them in the browser and they can be put on the same
+footing as the rest.
+
+The **submit PATCH itself is no longer a guess**, though it is still not a capture — see
+"Confirmed by running it" below.
+
+## Confirmed by running it
+
+Weaker than a capture and stronger than an inference: the call was made against iris and
+iris did the thing. It says the request works, not that it is the one the browser sends.
+
+- `submitReviewSubmission` — `PATCH reviewSubmissions/{id} {"submitted":true}`, run
+  2026-08-19 against a submission sitting in `UNRESOLVED_ISSUES` with its only item already
+  resolved. `200`, and the submission came back `state: WAITING_FOR_REVIEW` with
+  `submittedDate` stamped to the second. The version moved `READY_FOR_REVIEW` →
+  `WAITING_FOR_REVIEW` in its own history alongside it.
+
+  What that run also exposed: `planSubmission` had been reading "has a `submittedDate`" as
+  "is with Apple", which is wrong for a rejection — it always carries the date of the run
+  that was refused. `submit` therefore refused and pointed at `resolve-item`, which refused
+  in turn because the item was no longer `REJECTED`. Two commands pointing at each other,
+  and the only way out was `asc patch` by hand. Fixed, and pinned by `test/submission.test.ts`.
 
 ## Capturing a new endpoint
 

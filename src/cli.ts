@@ -342,18 +342,27 @@ function describePlan(plan: api.SubmissionPlan): string[] {
   const version = `${plan.versionString ?? plan.versionId} (${plan.platform})`;
 
   if (plan.inFlight) {
-    // A rejection isn't a dead submission — it's the same one, waiting on you. Sending it
-    // back is "resolve-item", and saying "cancel it" here would be the wrong advice.
-    const next =
-      plan.inFlight.state === 'UNRESOLVED_ISSUES'
-        ? '  Fix what Apple asked for, then "asc resolve-item" puts it back in the queue.'
-        : '  Cancel it first if you mean to replace it.';
-
     return [
       '',
       `  Submission ${plan.inFlight.id} is already with Apple: ${plan.inFlight.state}.`,
       '  Nothing to submit.',
-      next,
+      '  Cancel it first if you mean to replace it.',
+      '',
+    ];
+  }
+
+  // A rejection isn't a dead submission — it's the same one, waiting on you. It can go
+  // back, but not while Apple still has an item open on it.
+  if (plan.unresolvedItemIds?.length) {
+    return [
+      '',
+      `  Submission ${plan.submissionId} came back from Apple with ` +
+        `${plan.unresolvedItemIds.length} item(s) still open.`,
+      '  Fix what Apple asked for, then resolve each one:',
+      '',
+      ...plan.unresolvedItemIds.map((id) => `    asc resolve-item ${id}`),
+      '',
+      '  Then "asc submit" hands it back.',
       '',
     ];
   }
@@ -371,7 +380,8 @@ function describePlan(plan: api.SubmissionPlan): string[] {
       : '  2. POST reviewSubmissionItems — add the version to it',
     '  3. PATCH reviewSubmissions/{id} {"submitted":true} — hand it to App Review',
     '',
-    '  Steps 1-3 are not captured from the browser: see docs/evidence.md.',
+    '  Step 3 is confirmed against a live submission; steps 1-2 are not captured from the',
+    '  browser: see docs/evidence.md.',
     '',
   ];
 }
