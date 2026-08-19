@@ -12,10 +12,7 @@
       "Bash(npm install *)",
       "Bash(npm uninstall *)",
       "Bash(npm update *)",
-      "Bash(curl *)",
-      "Bash(node dist/cli.js *)",
-      "Bash(npm run asc *)",
-      "Bash(* --yes *)"
+      "Bash(curl *)"
     ],
     "deny": [
       "Read(session.json)",
