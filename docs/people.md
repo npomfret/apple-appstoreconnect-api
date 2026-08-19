@@ -61,6 +61,19 @@ write and is passed explicitly.
 body for, and an access grant should be visible at the point it is written rather than
 assumed.
 
+## Addresses Apple refuses
+
+**Plus-addressing is refused.** `you+tag@gmail.com` comes back `409
+ENTITY_ERROR.ATTRIBUTE.INVALID` — "Email format not valid." — with a `source.pointer` of
+`/data/attributes/email`. Gmail delivers a `+` tag to the base inbox, but Apple is not
+validating deliverability: the invitee's address becomes an Apple ID, and Apple is stricter
+about those than a mail server is. Invite the untagged address instead.
+
+The address is sent exactly as typed, and a `+` is not rejected locally. Stripping the tag
+would quietly invite a different address, and refusing it here would put this client's guess
+about a private API ahead of Apple's own answer — which arrives as a clear 409 naming the
+field.
+
 ## What is not here
 
 The capture is one POST and one GET, and nothing else on the People page is mapped:

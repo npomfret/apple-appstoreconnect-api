@@ -37,6 +37,27 @@ iris did the thing. It says the request works, not that it is the one the browse
   in turn because the item was no longer `REJECTED`. Two commands pointing at each other,
   and the only way out was `asc patch` by hand. Fixed, and pinned by `test/submission.test.ts`.
 
+- `listUserInvitations` and `inviteUser` — run 2026-08-19 from this client. The read
+  returned `200` and an empty collection, which is the whole of it: the account had no
+  invitation pending.
+
+  The write did **not** succeed, and what it establishes is worth being precise about.
+  `POST userInvitations` with a plus-tagged address came back `409
+  ENTITY_ERROR.ATTRIBUTE.INVALID`, "Email format not valid.", pointing at
+  `/data/attributes/email`. **Apple refuses plus-addressing** on an invitation; case is not
+  the issue. Reaching per-attribute validation means iris accepted the envelope, the
+  `userInvitations` type, the `application/vnd.api+json` content type, the session and the
+  team headers, and then objected to one value — so the request *shape* is confirmed live
+  on top of being captured. Still unproven: no invitation has been created by this client,
+  and the `DEVELOPER` role was never assessed, because the request died before anything
+  looked at it.
+
+  The client sends the address as given rather than stripping the tag, and does not refuse a
+  `+` locally. Normalising an email on the way to an account invitation would silently
+  invite a different address; refusing one would be this client second-guessing a private
+  API on the strength of a single 409. The same trade as role names and content-rights
+  values: let iris answer.
+
 ## Capturing a new endpoint
 
 Record dev tools → Network while doing the thing in the browser and export the log (a
