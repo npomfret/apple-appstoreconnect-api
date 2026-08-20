@@ -9,7 +9,6 @@
       "Bash(npm run asc *)"
     ],
     "ask": [
-      "Bash(git push *)",
       "Bash(npm publish *)",
       "Bash(npm install *)",
       "Bash(npm uninstall *)",
@@ -17,6 +16,7 @@
       "Bash(curl *)"
     ],
     "deny": [
+      "Bash(git push *)",
       "Bash(* --yes *)",
       "Bash(*--yes)",
       "Bash(* --reveal *)",
