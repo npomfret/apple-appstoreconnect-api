@@ -1,5 +1,14 @@
 # Xcode Cloud
 
+> **Legacy official overlap:** Apple officially exposes CI products, workflows,
+> repositories, build runs, actions, issues, test results and artifacts. The private
+> `/ci/api` implementation on this page — including the run-detail commands — is
+> pending removal under
+> [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md). Do not extend
+> it. This page documents the current working tree only. Use Apple's official
+> [Xcode Cloud Workflows and Builds API](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
+> instead.
+
 The Xcode Cloud tab is a **different API**. Everything else this client talks to is
 `iris/v1`: JSON:API documents, `include`, `fields[…]`, `meta.paging`. Xcode Cloud lives at
 `/ci/api` on the same host and shares none of that — plain JSON objects, snake_case field
@@ -17,6 +26,9 @@ node dist/cli.js ci-workflow <id>    # one workflow, and who last changed it whe
 node dist/cli.js ci-builds           # recent runs: state, progress, failures, the commit
 node dist/cli.js ci-repos            # which git repos Xcode Cloud can reach
 node dist/cli.js ci-capabilities     # what this account is allowed to change here
+node dist/cli.js ci-build [buildId]  # one build and its executed stages
+node dist/cli.js ci-tests [buildId]  # test cases and per-destination runs
+node dist/cli.js ci-run [buildId]    # human digest; --json for structured output
 ```
 
 | Command | Endpoint |
@@ -27,6 +39,9 @@ node dist/cli.js ci-capabilities     # what this account is allowed to change he
 | `ci-builds [appId]` | `build-groups-v4?limit=10`, then `build-summaries-v2?build_group_ids=…&limit=4` |
 | `ci-repos [appId]` | `teams/{team}/products/{product}/repos-v3` |
 | `ci-capabilities` | `teams/{team}/user-capabilities` |
+| `ci-build [buildId] [appId]` | `products/{product}/builds/{build}/details-v3` |
+| `ci-tests [buildId] [appId]` | build details, then each test stage's `test-results-v4?limit=60001` |
+| `ci-run [buildId] [appId]` | build details + current workflow + each test stage's results and issues |
 
 `--raw` does nothing here: there is no envelope to unwrap and no `included` array to splice
 in, so these print what Apple sent.
@@ -59,6 +74,10 @@ git_ref             the branch it built
 
 `state` and those counts are the whole of what "did it pass" means here; a `failed` build
 with `test_failures: 2` is the useful shape.
+
+`ci-build`, `ci-tests` and `ci-run` go one level deeper. `ci-run` compares the run with the
+workflow as saved now, counts test cases per executed destination, and groups failures by
+test and message rather than by device. With no build id they select the newest build.
 
 ## The signature this client cannot send
 

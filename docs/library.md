@@ -1,5 +1,13 @@
 # As a library
 
+> **Boundary notice:** exports for submissions, versions, builds, metadata, App Information,
+> screenshots, invitations and Xcode Cloud are legacy official overlap and will be removed.
+> New callers should use this library only for the official gaps listed in
+> [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md). For overlapping
+> functionality, use Apple's
+> [App Store Connect API reference](https://developer.apple.com/documentation/appstoreconnectapi/)
+> directly.
+
 ```ts
 import { loadSession, buildReport, listMessages, denormalizeAll } from './src';
 

@@ -1,5 +1,16 @@
 # Writing: builds and versions
 
+> **Legacy official overlap:** Apple officially supports build selection, app metadata,
+> App Information, screenshots, review submissions and submission-item updates. These
+> private implementations are scheduled for removal; see
+> [the audited removal task](../tasks/remove-official-api-overlap.md). The retained private
+> write surface is Resolution Center drafts, attachments and replies, documented in
+> [replying](replying.md). Use Apple's official
+> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
+> [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings),
+> and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
+> APIs for the overlapping writes.
+
 Mapped: attaching a build to a version (the version page's **Save** button), [adding a
 screenshot](screenshots.md), [writing and sending the reply to App Review](replying.md),
 editing metadata, putting a resolved item back in the review queue, submitting a version,

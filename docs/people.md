@@ -1,5 +1,14 @@
 # People and invitations
 
+> **Legacy official overlap:** Apple's App Store Connect API officially supports users,
+> invitations, visible-app access, role changes and revocation. This less-complete private
+> implementation is pending removal under
+> [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md). This page
+> documents the current code only. Use Apple's official
+> [Users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
+> [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
+> APIs instead.
+
 ```sh
 node dist/cli.js invites                                   # who has been invited and not yet joined
 node dist/cli.js invite ada@example.com Ada Lovelace \

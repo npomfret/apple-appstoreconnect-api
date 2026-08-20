@@ -1,5 +1,11 @@
 # Replying to App Review
 
+Apple's official App Store Connect OpenAPI specification 4.4.1, audited 2026-08-20, has no
+Resolution Center thread, message, rejection, draft-message, or message-attachment
+resources. This is therefore part of the private gap this project is intended to cover.
+Recheck the current [official API](https://developer.apple.com/app-store-connect/api/)
+before adding or materially extending it.
+
 ```sh
 node dist/cli.js draft <threadId>                              # what's in the box now
 node dist/cli.js save-draft <threadId> "We have fixed…" --attach shot.png

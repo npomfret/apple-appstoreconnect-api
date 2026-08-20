@@ -1,5 +1,14 @@
 # Adding a screenshot
 
+> **Legacy official overlap:** Apple's App Store Connect API officially supports screenshot
+> and preview sets, asset reservation/upload completion, reads and deletion. This private
+> implementation is pending removal under
+> [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md). This page
+> documents the current code only. Use Apple's official
+> [App Metadata API](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
+> specifically its App Screenshot Sets, App Screenshots, App Preview Sets and App Previews
+> resources.
+
 ```sh
 node dist/cli.js screenshots                         # -> localizationIds, sets, display types
 node dist/cli.js upload-screenshot <locId> APP_IPHONE_65 shot.png

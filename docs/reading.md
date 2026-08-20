@@ -1,5 +1,18 @@
 # Reading
 
+> **Boundary notice (audited 2026-08-20, Apple OpenAPI 4.4.1):** the current CLI includes
+> legacy private reads for capabilities Apple now exposes officially. Only Resolution
+> Center threads/messages/rejections/drafts, unread review-message counts, version
+> state-change history, and App Privacy questionnaire data were confirmed as official API
+> gaps. See [the removal task](../tasks/remove-official-api-overlap.md). Until it lands, the
+> command table documents current behavior; it is not a recommendation to use private APIs
+> for official capabilities. Use Apple's official
+> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
+> [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
+> [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
+> and [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
+> APIs for the overlapping reads.
+
 ```sh
 node dist/cli.js report                 # the useful one — digest of every open submission
 node dist/cli.js report --json
@@ -61,6 +74,9 @@ reads have their own page and their own `ci-` prefix: [xcode cloud](xcode-cloud.
 | `ci-builds [appId]` | `build-groups-v4`, then `build-summaries-v2` for those groups |
 | `ci-repos [appId]` | `teams/{team}/products/{product}/repos-v3` |
 | `ci-capabilities` | `teams/{team}/user-capabilities` |
+| `ci-build [buildId] [appId]` | one build and its stages from `details-v3` |
+| `ci-tests [buildId] [appId]` | build details, then every test stage's `test-results-v4` |
+| `ci-run [buildId] [appId]` | build details + current workflow + test results and issues |
 
 `appId` defaults to the one scraped from the captured request's `Referer`; `versionId`
 defaults to the version attached to the first open submission — one extra request, the
