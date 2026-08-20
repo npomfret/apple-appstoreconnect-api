@@ -74,6 +74,7 @@ all) works unedited.
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
 | `privacy` | App Privacy declarations, and whether they're live |
 | `invites` | pending invitations to the developer account — [docs/people.md](docs/people.md) |
+| `ci-product`, `ci-workflows`, `ci-workflow`, `ci-builds`, `ci-repos`, `ci-capabilities` | Xcode Cloud — a second API, not the review centre — [docs/xcode-cloud.md](docs/xcode-cloud.md) |
 | `get` | any endpoint at all, mapped or not |
 
 **Writing** — most of these are copied from a capture of the browser doing it:
@@ -115,6 +116,7 @@ chain between commands, which is what makes scripting it possible.
 - [Screenshots](docs/screenshots.md) — the upload flow and the pre-flight checks
 - [Replying to App Review](docs/replying.md) — Resolution Center drafts, attachments, and sending
 - [People](docs/people.md) — inviting someone to the developer account, and what isn't mapped
+- [Xcode Cloud](docs/xcode-cloud.md) — workflows and builds, on a second API with its own rules
 - [Logging and the audit trail](docs/logging.md) — structured logs, and why every write is recorded
 - [As a library](docs/library.md) — importing it instead of shelling out
 - [Evidence and limits](docs/evidence.md) — which calls are confirmed, which are guesses,

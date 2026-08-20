@@ -50,6 +50,18 @@ document):
 | `rejections <threadId>` | `reviewRejections?filter[resolutionCenterMessage.resolutionCenterThread]={id}` |
 | `invites` | `userInvitations?sort=lastName&include=visibleApps&fields[apps]=` — the account, not an app ([people](people.md)) |
 
+Xcode Cloud is a **different API** — `/ci/api`, plain JSON, no JSON:API envelope — so its
+reads have their own page and their own `ci-` prefix: [xcode cloud](xcode-cloud.md).
+
+| Command | Endpoint |
+| --- | --- |
+| `ci-product [appId]` | `teams/{team}/asc-products/{appId}` |
+| `ci-workflows [appId]` | `teams/{team}/products/{product}/workflows-v15` |
+| `ci-workflow <id> [appId]` | `teams/{team}/products/{product}/workflows-v15/{id}` |
+| `ci-builds [appId]` | `build-groups-v4`, then `build-summaries-v2` for those groups |
+| `ci-repos [appId]` | `teams/{team}/products/{product}/repos-v3` |
+| `ci-capabilities` | `teams/{team}/user-capabilities` |
+
 `appId` defaults to the one scraped from the captured request's `Referer`; `versionId`
 defaults to the version attached to the first open submission — one extra request, the
 app's submissions, which name their version. With no open submission it falls back to the

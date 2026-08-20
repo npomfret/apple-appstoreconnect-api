@@ -16,6 +16,7 @@ import {
 } from './report';
 import { log } from './log';
 import * as api from './api';
+import * as ci from './ci';
 
 const USAGE = `App Store Connect review-centre client (unofficial, session-scraped).
 
@@ -58,6 +59,19 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc draft <threadId>        Show the thread's unsent draft reply, with its attachments
   asc rejections <threadId>   List guideline rejections for a thread
   asc invites                 Pending invitations to the developer account, by surname
+
+Xcode Cloud (a separate API — plain JSON under /ci/api, not the review centre's JSON:API):
+  asc ci-product [appId]      The Xcode Cloud product for an app: its UUID, which every
+                              other ci- command needs, plus bundle id and creation date
+  asc ci-workflows [appId]    Every workflow on the product, with its full definition
+  asc ci-workflow <id> [appId]
+                              One workflow, and who last changed it when
+  asc ci-builds [appId]       The ten most recent build groups with their builds: number,
+                              state, progress, warning and test-failure counts, and the
+                              commit each one came from
+  asc ci-repos [appId]        The git repositories Xcode Cloud can reach for this product
+  asc ci-capabilities         What this account is allowed to change in Xcode Cloud
+
   asc get <path> [k=v ...]    Raw GET against /iris/v1 for probing unmapped endpoints
 
 Writes (these change your live App Store Connect data):
@@ -186,6 +200,26 @@ function requireText(given: string, what: string): string {
 
 function emit(document: Document, raw: boolean): void {
   console.log(JSON.stringify(raw ? document : denormalizeAll(document), null, 2));
+}
+
+/**
+ * Prints a plain-JSON response. The Xcode Cloud API has no `included` array and no
+ * relationships, so there is nothing to denormalize and `--raw` says nothing about it.
+ */
+function emitPlain(value: unknown): void {
+  console.log(JSON.stringify(value, null, 2));
+}
+
+/**
+ * The Xcode Cloud product id for an app.
+ *
+ * Every product-scoped call is keyed by a UUID that nothing in the review centre knows, so
+ * these commands take the App Store id you already have and spend one request turning it
+ * into one. `asc ci-product` is that request on its own, if you want to hold on to the id.
+ */
+async function requireProductId(session: Session, given: string | undefined): Promise<string> {
+  const product = await ci.getProductForApp(session, requireAppId(session, given));
+  return product.id;
 }
 
 function requireAppId(session: Session, given: string | undefined): string {
@@ -1088,6 +1122,52 @@ async function main(argv: string[]): Promise<number> {
     case 'invites': {
       const session = loadSession();
       emit(await api.listUserInvitations(session), raw);
+      return 0;
+    }
+
+    case 'ci-product': {
+      const session = loadSession();
+      emitPlain(await ci.getProductForApp(session, requireAppId(session, rest[0])));
+      return 0;
+    }
+
+    case 'ci-workflows': {
+      const session = loadSession();
+      emitPlain(await ci.listWorkflows(session, await requireProductId(session, rest[0])));
+      return 0;
+    }
+
+    case 'ci-workflow': {
+      const session = loadSession();
+      const workflowId = requireArg(rest[0], 'workflowId', 'ci-workflow <workflowId> [appId]');
+      const productId = await requireProductId(session, rest[1]);
+      emitPlain(await ci.getWorkflow(session, productId, workflowId));
+      return 0;
+    }
+
+    case 'ci-builds': {
+      const session = loadSession();
+      const productId = await requireProductId(session, rest[0]);
+      const groups = await ci.listBuildGroups(session, productId);
+      // The builds hang off the groups, and asking for the builds of no groups is an error
+      // rather than an empty answer — so a product that has never run stops here.
+      if (!groups.items.length) {
+        emitPlain({ items: [] });
+        return 0;
+      }
+      emitPlain(await ci.listBuildSummaries(session, productId, groups.items.map((group) => group.id)));
+      return 0;
+    }
+
+    case 'ci-repos': {
+      const session = loadSession();
+      emitPlain(await ci.listRepos(session, await requireProductId(session, rest[0])));
+      return 0;
+    }
+
+    case 'ci-capabilities': {
+      const session = loadSession();
+      emitPlain(await ci.getUserCapabilities(session));
       return 0;
     }
 

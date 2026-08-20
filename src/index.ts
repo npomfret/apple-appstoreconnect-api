@@ -1,4 +1,5 @@
 export * from './api';
+export * from './ci';
 export * from './confirm';
 export * from './curl';
 export * from './http';

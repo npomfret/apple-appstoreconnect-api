@@ -20,6 +20,10 @@ footing as the rest.
 The **submit PATCH itself is no longer a guess**, though it is still not a capture — see
 "Confirmed by running it" below.
 
+Recorded but **deliberately not mapped**: the Xcode Cloud workflow replace,
+`PUT /ci/api/teams/{team}/products/{product}/workflows-v15/{id}`. The shape is fully known;
+the reasons for leaving it are in [xcode cloud](xcode-cloud.md).
+
 ## Confirmed by running it
 
 Weaker than a capture and stronger than an inference: the call was made against iris and
@@ -155,6 +159,29 @@ list is the tested one and an override is not.
   names and `true` come from Apple's public API docs and are passed through unchecked, the
   same trade as `set-content-rights`. Note the invitation is the one write here that this
   client cannot reverse *and* that reaches a third party: Apple emails the person.
+- From one Xcode Cloud session — opening the tab and editing a workflow — every read in
+  `src/ci.ts`: `getProductForApp`, `getProduct`, `listWorkflows` (`limit=100`,
+  `include_deleted=false`), `getWorkflow`, `listBuildGroups` (`limit=10`),
+  `listBuildSummaries` (`build_group_ids` comma-separated, `limit=4`), `listRepos` and
+  `getUserCapabilities`. `test/ci.test.ts` asserts each URL whole against the recording.
+
+  This is a **second API**, not a corner of iris: `/ci/api`, plain JSON, snake_case fields,
+  `{ "items": [...] }` pages, no `include`, no `meta.paging`. The transport learned a closed
+  set of two bases for it rather than a caller-supplied one.
+
+  Two things the recording establishes that matter more than the URLs. The browser sends
+  **`x-apple-signature`** — 64 base64 bytes, with an `x-apple-signed-at` timestamp — on
+  every `/ci/api` call, and 21 calls carried 21 different values, so the page signs each
+  request itself and this client cannot. One recorded call went out *without* the pair and
+  came back `404 "Product does not exist"` — routed and answered rather than refused —
+  which is why the cookie is treated as the authentication. That is one request's worth of
+  evidence, not a guarantee. And the workflow write is a **full-document replace**: the
+  browser resent the entire workflow to change one test destination, so anything omitted
+  from that body is dropped.
+
+  What the recording does not cover: a build's actions, and any per-test result. No capture
+  here contains either — `test-destinations-v3` is the *picker* of available destinations,
+  not what a run executed. Nothing in this client reports what a build actually ran.
 - From one draft reply with an attachment: `createDraftMessage`, `updateDraftMessage`,
   `reserveMessageAttachment` and `completeMessageAttachment` — all four bodies replayed
   offline against the recording and match the browser's byte for byte. Editing an existing
@@ -200,6 +227,13 @@ list is the tested one and an override is not.
   aftermath](replying.md) is what was observed after the browser did it.
 
 ## Seen but deliberately not mapped
+
+From the Xcode Cloud tab: the pickers behind the workflow editor —
+`test-destinations-v3`, `configuration-options-v10`, `product-configuration-options-v4`,
+`schemes`, `version-aliases-v3`, `scm-providers-v2`, `notices-v2`,
+`testflight/information-v2`, `repos/{id}/branch`, `product-environment-variables` — all
+recorded, none mapped: they exist to fill in a form this client does not render. Note
+`asc get` does not reach them, being `iris/v1` only.
 
 Recordings of the Monetization, Growth & Marketing and Trust & Safety tabs turn up about 40
 further endpoints. Pricing is the substantial one — `appPriceSchedules/{appId}/automaticPrices`

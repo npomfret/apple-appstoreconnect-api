@@ -17,7 +17,9 @@ rather than per request. `sessionFromCapture(text)` does the same parse on a str
 already have, if the capture reaches you some other way.
 
 `src/index.ts` re-exports everything, so any function in `src/api.ts` is importable from
-the package root.
+the package root. `src/ci.ts` is there too — the Xcode Cloud reads. Nothing it returns is
+a JSON:API document, so `denormalize` has no business with it; see
+[xcode cloud](xcode-cloud.md).
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()`,
 `sendDraftReply()`, `resolveSubmissionItem()`, `submitReviewSubmission()` and `inviteUser()`

@@ -2,7 +2,28 @@ import { Session, timeToExpiry } from './session';
 import { Document } from './jsonapi';
 import { audit, log, redactSignedUrls } from './log';
 
-export const BASE_URL = 'https://appstoreconnect.apple.com/iris/v1';
+/** The one host this client will send the session cookie to. */
+const HOST = 'https://appstoreconnect.apple.com';
+
+/**
+ * The App Store Connect APIs this client speaks, as base paths on that host.
+ *
+ * Two, because the web UI is two. The review centre is JSON:API under `iris/v1`. The Xcode
+ * Cloud tab is plain JSON under `ci/api` — no envelope, no `include`, no `meta.paging`,
+ * pages that come back as `items` — and shares nothing with iris but the cookie.
+ *
+ * A closed set rather than a base a caller hands in: everything built here goes out with
+ * the session cookie attached, so which prefixes exist is a decision this file makes.
+ */
+export const API_BASES = {
+  iris: `${HOST}/iris/v1`,
+  ci: `${HOST}/ci/api`,
+} as const;
+
+export type Api = keyof typeof API_BASES;
+
+/** The review-centre base, under the name it has always had. Part of the library contract. */
+export const BASE_URL = API_BASES.iris;
 
 export class SessionExpiredError extends Error {
   constructor(status: number) {
@@ -52,6 +73,8 @@ const METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] as const;
 export type Method = (typeof METHODS)[number];
 
 export interface RequestOptions {
+  /** Which API the path is relative to. Defaults to the review centre. */
+  api?: Api;
   method?: Method;
   query?: Query;
   body?: unknown;
@@ -88,25 +111,29 @@ function methodOf(given: string | undefined): Method {
 }
 
 /**
- * The iris URL a resource path names.
+ * The URL a resource path names, under one of the two bases above.
  *
- * Paths here are relative — `appStoreVersions/{id}` — and an absolute URL is refused rather
- * than sent. Everything this function returns is fetched with the session cookie and the
- * CSRF header attached, so a URL naming another host is that cookie handed to that host,
- * and `asc get`/`asc patch` take their path straight off the command line. Nothing in this
- * client ever asked for an absolute one: the single cross-origin request, an upload part,
- * deliberately doesn't come through `request` at all — see `uploadPart`, which sends the
- * presigned URL and no cookie.
+ * Paths here are relative — `appStoreVersions/{id}`, `teams/{id}/products-v3/{id}` — and an
+ * absolute URL is refused rather than sent. Everything this function returns is fetched
+ * with the session cookie and the CSRF header attached, so a URL naming another host is
+ * that cookie handed to that host, and `asc get`/`asc patch` take their path straight off
+ * the command line. Nothing in this client ever asked for an absolute one: the single
+ * cross-origin request, an upload part, deliberately doesn't come through `request` at all
+ * — see `uploadPart`, which sends the presigned URL and no cookie.
+ *
+ * Which base is in play is chosen from the `Api` union, never from the path, so a caller
+ * cannot walk out of one API and into the other by writing `../`-anything.
  */
-function irisUrl(path: string): string {
+function apiUrl(api: Api, path: string): string {
+  const base = API_BASES[api];
   if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('//')) {
     throw new Error(
-      `"${path}" is a URL, and this takes a path relative to ${BASE_URL}. Sending it would ` +
+      `"${path}" is a URL, and this takes a path relative to ${base}. Sending it would ` +
         'carry the App Store Connect session cookie to whatever host it names.'
     );
   }
 
-  return `${BASE_URL}/${path.replace(/^\//, '')}`;
+  return `${base}/${path.replace(/^\//, '')}`;
 }
 
 /**
@@ -114,13 +141,32 @@ function irisUrl(path: string): string {
  * X-Connect-Team-* pair only when mutating, and switches Content-Type to plain
  * application/json. Mirror that rather than sending one header set for everything.
  */
-function headersFor(session: Session, mutating: boolean, contentType?: string): Record<string, string> {
+function headersFor(
+  session: Session,
+  api: Api,
+  mutating: boolean,
+  contentType?: string
+): Record<string, string> {
   const headers: Record<string, string> = {
     accept: 'application/vnd.api+json, application/json, text/csv',
     'content-type': 'application/vnd.api+json',
     ...session.headers,
     cookie: session.cookie,
   };
+
+  if (api === 'ci') {
+    // The Xcode Cloud tab negotiates nothing and carries no CSRF header. The session's own
+    // Accept was captured from an iris request, so it is overwritten rather than passed on.
+    //
+    // What the browser sends there and this cannot: `x-apple-signature`, 64 signed bytes,
+    // with an `x-apple-signed-at` timestamp beside it — recomputed for every single
+    // request by the page's own JavaScript. Recorded from the browser, one call went out
+    // without the pair and came back with a routed 404 rather than a refusal, so the cookie
+    // looks like what authenticates; that is an observation, not a guarantee. If Apple ever
+    // enforces the signature these calls stop working and there is no fix from here.
+    headers['accept'] = '*/*';
+    delete headers['x-csrf-itc'];
+  }
 
   if (mutating) {
     headers['content-type'] = contentType ?? 'application/json';
@@ -145,7 +191,8 @@ export async function request<T = unknown>(
   }
 
   const method = methodOf(options.method);
-  const target = `${irisUrl(path)}${buildQuery(options.query ?? {})}`;
+  const api = options.api ?? 'iris';
+  const target = `${apiUrl(api, path)}${buildQuery(options.query ?? {})}`;
 
   // Every mutation in this client funnels through here, so auditing at this one point is
   // what makes the trail complete — the higher-level calls add meaning, not coverage.
@@ -161,7 +208,7 @@ export async function request<T = unknown>(
   try {
     response = await fetch(target, {
       method,
-      headers: headersFor(session, mutating, options.contentType),
+      headers: headersFor(session, api, mutating, options.contentType),
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
     text = await response.text();
@@ -213,18 +260,21 @@ export async function request<T = unknown>(
  */
 function reportShortPage(url: string, query: Query | undefined, document: unknown): void {
   if (typeof document !== 'object' || document === null) return;
-  const { data, meta } = document as { data?: unknown; meta?: unknown };
-  if (!Array.isArray(data)) return;
+  const { data, items, meta } = document as { data?: unknown; items?: unknown; meta?: unknown };
+  // iris hands a page back as `data`, the Xcode Cloud API as `items`. Both take a `limit`,
+  // and both clip in silence, so both get the same check.
+  const page = Array.isArray(data) ? data : Array.isArray(items) ? items : undefined;
+  if (!page) return;
 
   const total = pagingTotal(meta);
-  if (total !== undefined && total > data.length) {
-    log.warn('read.clipped', { url, returned: data.length, total });
+  if (total !== undefined && total > page.length) {
+    log.warn('read.clipped', { url, returned: page.length, total });
     return;
   }
 
   const limit = query?.limit;
-  if (typeof limit === 'number' && data.length === limit && limit > 0) {
-    log.warn('read.atLimit', { url, returned: data.length, limit });
+  if (typeof limit === 'number' && page.length === limit && limit > 0) {
+    log.warn('read.atLimit', { url, returned: page.length, limit });
   }
 }
 
@@ -239,6 +289,15 @@ function pagingTotal(meta: unknown): number | undefined {
 
 export function get<T extends Document>(session: Session, path: string, query?: Query): Promise<T> {
   return request<T>(session, path, { query });
+}
+
+/**
+ * A read against the Xcode Cloud API, which answers with plain JSON rather than a JSON:API
+ * document — hence its own helper instead of a flag on `get`, whose return type promises
+ * an envelope this one never has.
+ */
+export function getCi<T>(session: Session, path: string, query?: Query): Promise<T> {
+  return request<T>(session, path, { api: 'ci', query });
 }
 
 export function patch<T = unknown>(
