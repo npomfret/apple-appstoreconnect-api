@@ -6,6 +6,9 @@ Proposed. This task defines the product boundary; it does not authorize live App
 Connect writes. It supersedes [xcode-cloud-evidence.md](xcode-cloud-evidence.md): Xcode
 Cloud has an official API and therefore does not belong in this project.
 
+The order this should be carried out in, and two corrections to the inventory below, are in
+[gap-boundary-next-steps.md](gap-boundary-next-steps.md).
+
 ## Decision
 
 This project exists only for App Store Connect capabilities that Apple does **not** expose

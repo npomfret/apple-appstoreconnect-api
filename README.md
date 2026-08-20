@@ -1,18 +1,27 @@
 # Apple appstoreconnect API
 
-An unofficial client for the App Store Connect **review centre** — the Resolution Center
-threads, rejections and review submissions that Apple's public App Store Connect API does
-not expose. Use this project to bring automation to your Apple App Store submissions.
+An unofficial client for the parts of App Store Connect that Apple does not expose through
+the official App Store Connect API: Resolution Center threads, messages, rejections, drafts
+and replies, plus unread review-message counts, version state-change history and the App
+Privacy questionnaire.
+
+The repository currently also contains older private implementations of capabilities that
+Apple **does** officially expose, including review submissions, metadata, screenshots,
+users and invitations, and Xcode Cloud. Those are legacy overlap, not the intended product
+surface, and are scheduled for removal in
+[tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md). The boundary
+was last audited on 2026-08-20 against Apple's OpenAPI specification 4.4.1.
 
 It talks to the same private `https://appstoreconnect.apple.com/iris/v1` service the web UI
 uses, reusing a session you capture from your browser.
 
 ## First: you need a cookie
 
-**There is no API key for this, and no way to get one.** `iris` authenticates with the
-browser session cookie and nothing else. Apple gates that behind an interactive login —
-passkey, 2FA — so every session starts with you in a browser. It's clunky. There's no
-alternative.
+Apple's official API supports API-key authentication and should be used wherever it covers
+the job. There is no API key for the private `iris` Resolution Center endpoints used by
+this client: they authenticate with a browser session cookie. Apple gates that session
+behind an interactive login — passkey, 2FA — so every private-API session starts in a
+browser.
 
 Sessions last a few hours. When one lapses you do this again.
 
@@ -60,24 +69,46 @@ all) works unedited.
 
 ## What it can do
 
+The tables below describe the code as it exists today, not the desired boundary. Commands
+for official capabilities are marked **legacy official overlap** and should not be used as
+the basis for new work; use [Apple's official API](https://developer.apple.com/app-store-connect/api/)
+instead. The removal task has the function-by-function mapping.
+
+Official replacements:
+
+- [Apps and app metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
+  — apps, versions, localizations, categories, age ratings, screenshots and previews.
+- [Review submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
+  — creating, reading, updating and submitting review submissions and their items.
+- [Users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
+  [user invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
+  — team access, roles, app visibility, invitations and revocation.
+- [Xcode Cloud workflows and builds](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
+  — products, workflows, repositories, builds, actions, issues and test results.
+
 **Reading** — [docs/reading.md](docs/reading.md)
 
 | | |
 | --- | --- |
-| `report` | submissions → thread → messages + rejections + draft, stitched into one digest |
-| `apps`, `inbox`, `app` | the app list, with unread message counts |
-| `submissions`, `submission`, `items` | review submissions and what's in them |
-| `versions`, `version`, `history` | versions, and every state a version has passed through with how long it sat there |
-| `metadata`, `screenshots`, `previews` | store listing text and assets, per locale |
-| `app-info`, `categories`, `age-rating`, `territory-ratings` | the App Information page: categories, the age-rating questionnaire, and the rating each territory ends up with |
-| `review-details` | contact, demo account and notes given to the reviewer |
+| `report` | currently mixes official submission reads with private thread/messages/rejections/draft; to be made gap-only |
+| `apps`, `app` | **legacy official overlap** — app records |
+| `inbox` | private unread App Review/Resolution Center message counts |
+| `submissions`, `submission`, `items` | **legacy official overlap** — review submissions and their items |
+| `versions`, `version` | **legacy official overlap** — app versions |
+| `history` | private version state-change history, including initiator and time in state |
+| `metadata`, `screenshots`, `previews` | **legacy official overlap** — store listing text and assets |
+| `app-info`, `categories`, `age-rating`, `territory-ratings` | **legacy official overlap** — App Information |
+| `review-details` | **legacy official overlap** — App Review Information |
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
 | `privacy` | App Privacy declarations, and whether they're live |
-| `invites` | pending invitations to the developer account — [docs/people.md](docs/people.md) |
-| `ci-product`, `ci-workflows`, `ci-workflow`, `ci-builds`, `ci-repos`, `ci-capabilities` | Xcode Cloud — a second API, not the review centre — [docs/xcode-cloud.md](docs/xcode-cloud.md) |
+| `invites` | **legacy official overlap** — pending invitations — [docs/people.md](docs/people.md) |
+| `ci-*` | **legacy official overlap** — Xcode Cloud — [docs/xcode-cloud.md](docs/xcode-cloud.md) |
 | `get` | any endpoint at all, mapped or not |
 
 **Writing** — most of these are copied from a capture of the browser doing it:
+
+Only the Resolution Center draft/attachment/reply commands below are within the intended
+gap-only boundary. The other writes duplicate official operations and are pending removal.
 
 | | |
 | --- | --- |

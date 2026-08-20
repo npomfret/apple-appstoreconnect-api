@@ -1,5 +1,11 @@
 # Xcode Cloud evidence: saved intent and executed reality
 
+> **Superseded 2026-08-20.** Do not implement or finish this task. Xcode Cloud is exposed
+> by Apple's official App Store Connect API, so it is outside this project's gap-only
+> boundary. Use Apple's
+> [Xcode Cloud Workflows and Builds API](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
+> instead, and see [remove-official-api-overlap.md](remove-official-api-overlap.md).
+
 ## Problem
 
 An Xcode Cloud workflow summary can look correct while hiding the setting that

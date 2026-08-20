@@ -1,13 +1,22 @@
 # App Store Connect Bot — Operating Contract
 
-This is a TypeScript CLI and library for App Store Connect's undocumented `iris/v1`
-review-centre API. It handles a browser-derived live session and can change or publish
-real App Store data. Correctness, evidence, auditability, and credential safety are
-more important than the smallest diff.
+This is a TypeScript CLI and library for capabilities missing from Apple's official App
+Store Connect API, principally the undocumented `iris/v1` Resolution Center surface. It
+handles a browser-derived live session and can change or publish real App Store data.
+Correctness, evidence, auditability, and credential safety are more important than the
+smallest diff.
+
+The current tree still contains legacy private implementations of official capabilities.
+Do not extend them. The removal inventory and the dated official-API comparison are in
+`tasks/remove-official-api-overlap.md`.
 
 ## Non-negotiables
 
-- Always check official Apple APIs (https://developer.apple.com/app-store-connect/api/ for example) before implementing something. We don't want to duplicate existing working implementations.
+- Always check the [official App Store Connect API](https://developer.apple.com/app-store-connect/api/)
+  and its [API reference](https://developer.apple.com/documentation/appstoreconnectapi/)
+  before implementing something. We don't want to duplicate existing working implementations.
+- If Apple exposes the underlying capability officially, it is out of scope here even when
+  the private endpoint is more convenient or uses the existing cookie.
 - Before a non-trivial change: inspect callers, implementations, analogous functions,
   tests, and user-facing CLI/docs; then audit → refactor for readiness → implement → verify.
 - Do not add a dependency, new API convention, abstraction, command shape, request body,
