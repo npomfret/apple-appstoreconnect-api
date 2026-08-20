@@ -79,6 +79,16 @@ export interface RequestOptions {
   query?: Query;
   body?: unknown;
   /**
+   * Says this request deliberately asks for less than everything, so the "this page may be
+   * clipped" warnings are not about it.
+   *
+   * Only for a caller that wants the top of a list and knows there is more — "the newest
+   * build". Not a way to quieten a read that really might be missing rows: those warnings
+   * are the only thing standing between a truncated list and a wrong answer, and one that
+   * cries wolf on every run teaches people to ignore the ones that matter.
+   */
+  partial?: boolean;
+  /**
    * Overrides the Content-Type a write would otherwise send. Not every write agrees:
    * the version PATCH uses application/json, the asset endpoints application/vnd.api+json.
    */
@@ -241,7 +251,7 @@ export async function request<T = unknown>(
     throw new ApiError(response.status, target, `Expected JSON, got:\n${text.slice(0, 500)}`);
   }
 
-  if (!mutating) reportShortPage(target, options.query, parsed);
+  if (!mutating && !options.partial) reportShortPage(target, options.query, parsed);
   return parsed;
 }
 
@@ -296,8 +306,13 @@ export function get<T extends Document>(session: Session, path: string, query?: 
  * document — hence its own helper instead of a flag on `get`, whose return type promises
  * an envelope this one never has.
  */
-export function getCi<T>(session: Session, path: string, query?: Query): Promise<T> {
-  return request<T>(session, path, { api: 'ci', query });
+export function getCi<T>(
+  session: Session,
+  path: string,
+  query?: Query,
+  options: { partial?: boolean } = {}
+): Promise<T> {
+  return request<T>(session, path, { api: 'ci', query, partial: options.partial });
 }
 
 export function patch<T = unknown>(

@@ -147,3 +147,72 @@ describe('a clipped page', () => {
     assert.equal(warning['limit'], 3);
   });
 });
+
+describe('the newest build', () => {
+  test('asks for one row twice and does not call that a clipped page', async () => {
+    const records = await withStderr(async (captured) => {
+      const stub = stubFetch((call) =>
+        call.url.includes('build-groups')
+          ? { body: { items: [{ id: 'g-1' }] } }
+          : { body: { items: [{ group_id: 'g-1', builds: [{ id: 'b-1', number: 48 }] }] } }
+      );
+      try {
+        const build = await ci.getLatestBuild(SESSION, PRODUCT);
+        assert.equal(build?.id, 'b-1');
+        assert.equal(stub.calls.length, 2);
+      } finally {
+        stub.restore();
+      }
+      return captured.records();
+    });
+
+    assert.equal(records.some((record) => String(record['event']).startsWith('read.')), false);
+  });
+
+  test('a product that has never built comes back undefined, not an error', async () => {
+    const stub = stubFetch(() => ({ body: { items: [] } }));
+    try {
+      assert.equal(await ci.getLatestBuild(SESSION, PRODUCT), undefined);
+      // No point asking which builds are in no groups.
+      assert.equal(stub.calls.length, 1);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('an ordinary read is still warned about when it comes back at its limit', async () => {
+    const records = await withStderr(async (captured) => {
+      const stub = stubFetch(() => ({ body: { items: [{ id: 'g' }] } }));
+      try {
+        await ci.listBuildGroups(SESSION, PRODUCT, { limit: 1 });
+      } finally {
+        stub.restore();
+      }
+      return captured.records();
+    });
+
+    assert.ok(records.some((record) => record['event'] === 'read.atLimit'));
+  });
+});
+
+describe('a build and what it ran', () => {
+  test('the recorded build-status paths', async () => {
+    const BUILD = 'f6cc711d-0335-4fb7-bba3-10f54602412e';
+    const STAGE = 'a97cd3e5-ae44-4fab-ae71-48f7914d81e0';
+    const base = `${TEAM}/products/${PRODUCT}/builds/${BUILD}`;
+
+    const detail = await sent({ build: {} }, () => ci.getBuild(SESSION, PRODUCT, BUILD));
+    assert.equal(detail[0]!.url, `${base}/details-v3`);
+
+    const group = await sent({ id: 'g' }, () => ci.getBuildGroup(SESSION, PRODUCT, 'g-1'));
+    assert.equal(group[0]!.url, `${TEAM}/products/${PRODUCT}/build-groups-v2/g-1`);
+
+    // 60001 is the browser's own "give me the lot" — the response carries no total and no
+    // cursor, so this is the whole of the pagination story and it is pinned deliberately.
+    const results = await sent({ items: [] }, () => ci.listTestResults(SESSION, PRODUCT, BUILD, STAGE));
+    assert.equal(results[0]!.url, `${base}/stages/${STAGE}/test-results-v4?limit=60001`);
+
+    const issues = await sent({ items: [] }, () => ci.listStageIssues(SESSION, PRODUCT, BUILD, STAGE));
+    assert.equal(issues[0]!.url, `${base}/stages/${STAGE}/issues?limit=2000`);
+  });
+});

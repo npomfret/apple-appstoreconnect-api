@@ -1,5 +1,6 @@
 import { Session } from './session';
 import * as api from './api';
+import * as ci from './ci';
 import { denormalizeAll, Denormalized } from './jsonapi';
 
 export interface Guideline {
@@ -561,4 +562,316 @@ export function formatReport(reports: SubmissionReport[]): string {
       return lines.join('\n');
     })
     .join('\n\n');
+}
+
+// ---------------------------------------------------------------------------
+// Xcode Cloud
+//
+// A digest of one build run, and the reason it exists: a workflow's *saved*
+// configuration and what a build *executed* are two different facts, and the
+// build page shows them a screen apart. A run that predates an edit will happily
+// report "succeeded" while having tested something else entirely, so anything
+// here that reports one always reports the other beside it.
+// ---------------------------------------------------------------------------
+
+/** A destination the run actually used, with what happened on it. */
+export interface RunDestination {
+  device: string;
+  runtime: string;
+  executed: number;
+  passed: number;
+  failed: number;
+}
+
+/** One failing test, gathered across every destination that failed it. */
+export interface RunFailure {
+  test: string;
+  message: string;
+  file?: string;
+  line?: number;
+  devices: string[];
+}
+
+export interface RunStage {
+  name: string;
+  type: string;
+  state: string;
+  required: boolean;
+  warnings: number;
+  errors: number;
+  testFailures: number;
+  seconds: number;
+}
+
+/** What a test stage did, once its results are counted. */
+export interface RunTests {
+  stageId: string;
+  stageName: string;
+  cases: number;
+  destinations: RunDestination[];
+  failures: RunFailure[];
+  /** Warnings from the stage's issue list, deduplicated by message. */
+  warnings: number;
+}
+
+export interface RunReport {
+  buildId: string;
+  number: number;
+  state: string;
+  startedAt?: string;
+  finishedAt?: string;
+  branch: string;
+  commit: { sha: string; message: string; author: string };
+  triggeredFrom: string;
+  triggeredBy: string;
+  builder: string;
+  os: string;
+  stages: RunStage[];
+  tests: RunTests[];
+  /** The workflow as it stands *now* — not necessarily what this build ran. */
+  saved: {
+    workflowId: string;
+    name: string;
+    testPlans: string[];
+    destinations: string[];
+    modifiedAt: string;
+    modifiedBy: string;
+  };
+  /**
+   * True when the workflow was saved after this build started, so its current
+   * configuration cannot be what ran. Distinct from the destinations differing:
+   * either one on its own is enough to make the run stale evidence.
+   */
+  savedAfterRun: boolean;
+}
+
+/** `class.name()`, which is how a test is named in an issue and how people say it. */
+function testName(result: ci.CiTestResult): string {
+  return result.class_name ? `${result.class_name}.${result.name}` : result.name;
+}
+
+/** Counts per destination, and the failures gathered by test rather than by device. */
+function countTests(results: readonly ci.CiTestResult[]): {
+  destinations: RunDestination[];
+  failures: RunFailure[];
+} {
+  const destinations = new Map<string, RunDestination>();
+  const failures = new Map<string, RunFailure>();
+
+  for (const result of results) {
+    for (const run of result.device_runs) {
+      const key = `${run.device_name}\u0000${run.os_version}`;
+      const seen = destinations.get(key) ?? {
+        device: run.device_name,
+        runtime: run.os_version,
+        executed: 0,
+        passed: 0,
+        failed: 0,
+      };
+      seen.executed += 1;
+      if (run.status === 'success') seen.passed += 1;
+      else seen.failed += 1;
+      destinations.set(key, seen);
+
+      if (run.status === 'success') continue;
+      // Keyed by test and message, not by device: the same assertion failing on four
+      // simulators is one thing to fix, and listing it four times buries the others.
+      const name = testName(result);
+      const failureKey = `${name}\u0000${run.message}`;
+      const failure = failures.get(failureKey) ?? {
+        test: name,
+        message: run.message || result.message || '',
+        file: result.location?.file_path,
+        line: result.location?.line_number,
+        devices: [],
+      };
+      failure.devices.push(run.device_name);
+      failures.set(failureKey, failure);
+    }
+  }
+
+  const byDevice = [...destinations.values()].sort((a, b) => a.device.localeCompare(b.device));
+  return { destinations: byDevice, failures: [...failures.values()] };
+}
+
+/** Every destination the workflow names today, across its test actions. */
+function savedDestinations(content: ci.CiWorkflowContent): string[] {
+  const names = new Set<string>();
+  for (const action of content.actions) {
+    for (const destination of action.test_config?.test_destinations ?? []) names.add(destination.name);
+  }
+  return [...names];
+}
+
+/**
+ * One build run, with the workflow it belongs to read alongside it.
+ *
+ * Test results are fetched per stage, and only for a stage whose sections say it has any —
+ * asking an archive stage for test results is a request with a knowable answer.
+ */
+export async function fetchRun(
+  session: Session,
+  productId: string,
+  buildId: string
+): Promise<RunReport> {
+  const detail = await ci.getBuild(session, productId, buildId);
+  const workflow = await ci.getWorkflow(session, productId, detail.build.workflow_id);
+
+  const testStages = detail.build_stages.filter(
+    (stage) => stage.stage_type === 'test' || (stage.stage_sections?.sections ?? []).includes('tests')
+  );
+
+  const tests = await Promise.all(
+    testStages.map(async (stage): Promise<RunTests> => {
+      const [results, issues] = await Promise.all([
+        ci.listTestResults(session, productId, buildId, stage.id),
+        ci.listStageIssues(session, productId, buildId, stage.id),
+      ]);
+      const { destinations, failures } = countTests(results.items);
+
+      return {
+        stageId: stage.id,
+        stageName: stage.name,
+        cases: results.items.length,
+        destinations,
+        failures,
+        warnings: issues.items.filter((issue) => issue.issue_type === 'warning').length,
+      };
+    })
+  );
+
+  const started = detail.build.started_at ?? detail.build.created_at;
+
+  return {
+    buildId,
+    number: detail.build.number,
+    state: detail.build.state,
+    startedAt: detail.build.started_at,
+    finishedAt: detail.build.finished_at,
+    branch: detail.build.git_ref.display_name,
+    commit: {
+      sha: detail.build.commit.commit_sha,
+      message: detail.build.commit.message,
+      author: detail.build.commit.author.display_name,
+    },
+    triggeredFrom: detail.triggered_from,
+    triggeredBy: detail.triggered_by_user,
+    builder: detail.builder_name,
+    os: detail.os_name,
+    stages: detail.build_stages.map((stage) => ({
+      name: stage.name,
+      type: stage.stage_type,
+      state: stage.state,
+      required: stage.is_required,
+      warnings: stage.metadata_summary.warnings,
+      errors: stage.metadata_summary.errors,
+      testFailures: stage.metadata_summary.test_failures,
+      seconds: stage.usage_time,
+    })),
+    tests,
+    saved: {
+      workflowId: workflow.id,
+      name: workflow.content.name,
+      testPlans: workflow.content.actions
+        .map((action) => action.test_config?.test_plan_name)
+        .filter((plan): plan is string => Boolean(plan)),
+      destinations: savedDestinations(workflow.content),
+      modifiedAt: workflow.metadata.last_modified_at,
+      modifiedBy: workflow.metadata.last_modified_by,
+    },
+    savedAfterRun: workflow.metadata.last_modified_at > started,
+  };
+}
+
+/** "1 warning", "2 warnings" — enough of a plural for counts that are always regular. */
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? '' : 's'}`;
+}
+
+/** Renders one run for a terminal. */
+export function formatRun(run: RunReport): string {
+  const lines = [
+    `build ${run.number}  ${run.state}`,
+    `  id         ${run.buildId}`,
+    `  branch     ${run.branch}`,
+    `  commit     ${run.commit.sha.slice(0, 12)}  ${run.commit.message.split('\n')[0]}`,
+    `  author     ${run.commit.author}  (${run.triggeredFrom}, ${run.triggeredBy})`,
+    `  started    ${run.startedAt ?? 'not yet'}`,
+    `  finished   ${run.finishedAt ?? 'still running'}`,
+    `  ran on     ${run.builder} / ${run.os}`,
+    '  stages',
+  ];
+
+  for (const stage of run.stages) {
+    const notes = [
+      stage.testFailures ? plural(stage.testFailures, 'test failure') : undefined,
+      stage.errors ? plural(stage.errors, 'error') : undefined,
+      stage.warnings ? plural(stage.warnings, 'warning') : undefined,
+      stage.required ? undefined : 'not required to pass',
+    ].filter(Boolean);
+    lines.push(
+      `    ${stage.state.padEnd(10)} ${stage.name.padEnd(20)} ${String(stage.seconds).padStart(5)}s` +
+        (notes.length ? `  [${notes.join(', ')}]` : '')
+    );
+  }
+
+  for (const stage of run.tests) {
+    lines.push(`  tests (${stage.stageName})`);
+    if (stage.cases === 0) {
+      // Not "all green". A stage that reports no cases has told us nothing about the code,
+      // and a report that renders that as a pass is the failure this command exists to stop.
+      lines.push('    NO TESTS REPORTED — this run proves nothing about the suite.');
+      lines.push('    A stage that ran zero cases is not a passing stage.');
+      continue;
+    }
+
+    lines.push(
+      `    ${plural(stage.cases, 'test case')}, executed on ${plural(stage.destinations.length, 'destination')}`
+    );
+    for (const destination of stage.destinations) {
+      const failed = destination.failed ? `${destination.failed} failed` : 'all passed';
+      lines.push(
+        `      ${destination.device.padEnd(28)} ${destination.runtime.padEnd(6)} ` +
+          `${String(destination.executed).padStart(5)} run  ${failed}`
+      );
+    }
+
+    for (const failure of stage.failures) {
+      lines.push(`    ${failure.test}`);
+      lines.push(`      ${failure.message}`);
+      if (failure.file) {
+        lines.push(`      ${failure.file}${failure.line === undefined ? '' : `:${failure.line}`}`);
+      }
+      lines.push(`      failed on ${failure.devices.join(', ')}`);
+    }
+  }
+
+  const executed = [...new Set(run.tests.flatMap((stage) => stage.destinations.map((d) => d.device)))];
+  lines.push('  workflow now');
+  lines.push(`    ${run.saved.name}  (${run.saved.workflowId})`);
+  lines.push(`    saved ${run.saved.modifiedAt} by ${run.saved.modifiedBy}`);
+  lines.push(`    test plans   ${run.saved.testPlans.join(', ') || 'none'}`);
+  lines.push(`    destinations ${run.saved.destinations.join(', ') || 'none'}`);
+
+  const sameDestinations =
+    executed.length === run.saved.destinations.length &&
+    executed.every((device) => run.saved.destinations.includes(device));
+
+  if (run.savedAfterRun || !sameDestinations) {
+    lines.push('');
+    lines.push('  THIS RUN IS NOT EVIDENCE FOR THE WORKFLOW AS IT STANDS.');
+    if (run.savedAfterRun) {
+      lines.push(`    The workflow was saved at ${run.saved.modifiedAt}, after this build started`);
+      lines.push(`    at ${run.startedAt ?? 'an unknown time'}.`);
+    }
+    if (!sameDestinations) {
+      lines.push(`    It executed on:  ${executed.join(', ') || 'nothing'}`);
+      lines.push(`    It now names:    ${run.saved.destinations.join(', ') || 'nothing'}`);
+      lines.push('    A named group such as "Recommended iPhones" expands to several devices,');
+      lines.push('    so a difference here is not always a change — but it is never proof.');
+    }
+    lines.push('    Trigger a build on the current configuration to prove it.');
+  }
+
+  return lines.join('\n');
 }

@@ -112,6 +112,14 @@ export interface CiBuildGroup {
   expires_at: string;
 }
 
+/** Counts Xcode Cloud keeps on a build and on each of its stages. */
+export interface CiMetadataSummary {
+  warnings: number;
+  errors: number;
+  test_failures: number;
+  analyzer_warnings: number;
+}
+
 export interface CiBuild {
   id: string;
   number: number;
@@ -129,12 +137,7 @@ export interface CiBuild {
   expires_at: string;
   is_clean_build: boolean;
   is_merge_commit_build: boolean;
-  metadata_summary: {
-    warnings: number;
-    errors: number;
-    test_failures: number;
-    analyzer_warnings: number;
-  };
+  metadata_summary: CiMetadataSummary;
   git_ref: { id: string; display_name: string; kind: string; repo_id: string; is_deleted: boolean };
   commit: {
     commit_sha: string;
@@ -169,6 +172,95 @@ export interface CiRepos {
   additional_repos: unknown[];
   unauthorized_repos: unknown[];
   revoked_repos: unknown[];
+}
+
+/**
+ * One step of a build, as it actually ran — the executed counterpart of a `CiAction`.
+ *
+ * Its `id` is what the test-result and issue reads are keyed by, so a caller wanting to
+ * know why a build failed starts here and not at the build. `stage_sections.sections` is
+ * the browser's own guide to which of those reads apply: only a stage listing "tests" has
+ * test results to fetch.
+ */
+export interface CiBuildStage {
+  id: string;
+  name: string;
+  /** "action" is the only value recorded. */
+  kind: string;
+  /** "archive" and "test" recorded. */
+  stage_type: string;
+  /** "succeeded" and "failed" recorded. */
+  state: string;
+  is_required: boolean;
+  scheme: string;
+  platform: { name: string };
+  /** Empty string on a stage that runs no test plan. */
+  testplan_name: string;
+  /** Billed machine seconds. */
+  usage_time: number;
+  started_at?: string;
+  finished_at?: string;
+  metadata_summary: CiMetadataSummary;
+  stage_sections?: { sections: string[]; available_code_coverage_types: unknown[] };
+}
+
+/** A build with everything the build page shows about it, stages included. */
+export interface CiBuildDetail {
+  build: CiBuild;
+  build_stages: CiBuildStage[];
+  /** "push" recorded. */
+  triggered_from: string;
+  triggered_by_user: string;
+  container_file_path: string;
+  /** The Xcode that ran it, e.g. "Xcode 26.6 (17F113)" — resolved, not the workflow's alias. */
+  builder_name: string;
+  os_name: string;
+  total_usage_time: number;
+}
+
+/** One test case on one destination. */
+export interface CiDeviceRun {
+  device_name: string;
+  os_version: string;
+  /** "success" and "failure" recorded. */
+  status: string;
+  duration: number;
+  /** The failure text, empty when it passed. */
+  message: string;
+  uuid: string;
+}
+
+/**
+ * One test case, with a run per destination underneath it.
+ *
+ * This is where "what did the build actually execute on" lives, and it is the reason a
+ * build report cannot be assembled from the workflow: `device_runs` is the record of the
+ * destinations in force *when the build started*, which is not necessarily what the
+ * workflow says now. A `status` of "mixed" is a case that passed on some and failed on
+ * others — so a per-case pass/fail is not enough to describe one either.
+ */
+export interface CiTestResult {
+  name: string;
+  class_name: string;
+  target: string;
+  /** "success" and "mixed" recorded. */
+  status: string;
+  device_runs: CiDeviceRun[];
+  location?: { file_path: string; line_number?: number };
+  message?: string;
+}
+
+/** A warning or failure Xcode reported during a stage. */
+export interface CiIssue {
+  message: string;
+  /** "warning" and "testFailure" recorded. */
+  issue_type: string;
+  group?: string;
+  group_type: string;
+  /** Only on a test failure. */
+  test_case_name?: string;
+  /** `file_path` is the literal string "undefined" on some warnings — Apple's, not ours. */
+  location?: { file_path: string; line_number?: number };
 }
 
 /** One page of anything under `ci/api`. */
@@ -232,11 +324,14 @@ export async function getWorkflow(session: Session, productId: string, workflowI
 export async function listBuildGroups(
   session: Session,
   productId: string,
-  options: { limit?: number } = {}
+  options: { limit?: number; partial?: boolean } = {}
 ): Promise<CiPage<CiBuildGroup>> {
-  return getCi<CiPage<CiBuildGroup>>(session, teamPath(session, `products/${productId}/build-groups-v4`), {
-    limit: options.limit ?? 10,
-  });
+  return getCi<CiPage<CiBuildGroup>>(
+    session,
+    teamPath(session, `products/${productId}/build-groups-v4`),
+    { limit: options.limit ?? 10 },
+    { partial: options.partial }
+  );
 }
 
 /**
@@ -247,16 +342,18 @@ export async function listBuildSummaries(
   session: Session,
   productId: string,
   groupIds: readonly string[],
-  options: { limit?: number } = {}
+  options: { limit?: number; partial?: boolean } = {}
 ): Promise<CiPage<CiBuildSummary>> {
   if (!groupIds.length) {
     throw new Error('listBuildSummaries needs at least one build group id');
   }
 
-  return getCi<CiPage<CiBuildSummary>>(session, teamPath(session, `products/${productId}/build-summaries-v2`), {
-    build_group_ids: [...groupIds],
-    limit: options.limit ?? 4,
-  });
+  return getCi<CiPage<CiBuildSummary>>(
+    session,
+    teamPath(session, `products/${productId}/build-summaries-v2`),
+    { build_group_ids: [...groupIds], limit: options.limit ?? 4 },
+    { partial: options.partial }
+  );
 }
 
 /** Which repositories Xcode Cloud can reach, and whether its access still works. */
@@ -270,4 +367,77 @@ export async function listRepos(session: Session, productId: string): Promise<Ci
  */
 export async function getUserCapabilities(session: Session): Promise<Record<string, boolean>> {
   return getCi<Record<string, boolean>>(session, teamPath(session, 'user-capabilities'));
+}
+
+/** One build group by id, as the build page reloads it. */
+export async function getBuildGroup(
+  session: Session,
+  productId: string,
+  groupId: string
+): Promise<CiBuildGroup> {
+  return getCi<CiBuildGroup>(session, teamPath(session, `products/${productId}/build-groups-v2/${groupId}`));
+}
+
+/** A build and its stages. The stage ids in here key the two reads below. */
+export async function getBuild(
+  session: Session,
+  productId: string,
+  buildId: string
+): Promise<CiBuildDetail> {
+  return getCi<CiBuildDetail>(session, teamPath(session, `products/${productId}/builds/${buildId}/details-v3`));
+}
+
+/**
+ * Every test case a stage ran, with its per-destination runs.
+ *
+ * The limit is the browser's own, and it is not a page size in any useful sense: 60001 is
+ * the web UI asking for the lot in one request, and the response carries no total and no
+ * cursor to follow. Nothing here pages, because nothing was recorded paging. If a response
+ * ever comes back exactly this long the transport says so as `read.atLimit`, which is the
+ * only warning available.
+ */
+export async function listTestResults(
+  session: Session,
+  productId: string,
+  buildId: string,
+  stageId: string,
+  options: { limit?: number } = {}
+): Promise<CiPage<CiTestResult>> {
+  return getCi<CiPage<CiTestResult>>(
+    session,
+    teamPath(session, `products/${productId}/builds/${buildId}/stages/${stageId}/test-results-v4`),
+    { limit: options.limit ?? 60001 }
+  );
+}
+
+/** The warnings and failures Xcode reported in a stage. */
+export async function listStageIssues(
+  session: Session,
+  productId: string,
+  buildId: string,
+  stageId: string,
+  options: { limit?: number } = {}
+): Promise<CiPage<CiIssue>> {
+  return getCi<CiPage<CiIssue>>(
+    session,
+    teamPath(session, `products/${productId}/builds/${buildId}/stages/${stageId}/issues`),
+    { limit: options.limit ?? 2000 }
+  );
+}
+
+/**
+ * The last thing Xcode Cloud ran, or undefined if it never has.
+ *
+ * Two requests, because the build list is grouped: groups come back newest first and so do
+ * the builds inside one, so the first build of the first group is the newest. Both ask for
+ * a single row and both say so — the list really is clipped, and being told that on every
+ * run would be noise about the one thing this function is certain of.
+ */
+export async function getLatestBuild(session: Session, productId: string): Promise<CiBuild | undefined> {
+  const groups = await listBuildGroups(session, productId, { limit: 1, partial: true });
+  const group = groups.items[0];
+  if (!group) return undefined;
+
+  const summaries = await listBuildSummaries(session, productId, [group.id], { limit: 1, partial: true });
+  return summaries.items[0]?.builds[0];
 }
