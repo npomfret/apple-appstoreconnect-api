@@ -7,7 +7,7 @@ more important than the smallest diff.
 
 ## Non-negotiables
 
-- Always check official Apple APIs before implementing something. We don't want to duplicate existing working implementations.
+- Always check official Apple APIs (https://developer.apple.com/app-store-connect/api/ for example) before implementing something. We don't want to duplicate existing working implementations.
 - Before a non-trivial change: inspect callers, implementations, analogous functions,
   tests, and user-facing CLI/docs; then audit → refactor for readiness → implement → verify.
 - Do not add a dependency, new API convention, abstraction, command shape, request body,
