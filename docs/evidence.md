@@ -250,6 +250,36 @@ list is the tested one and an override is not.
   take a scratch draft to practise on. Its [documented
   aftermath](replying.md) is what was observed after the browser did it.
 
+## Queries narrowed away from the capture
+
+One query here is deliberately *not* what the browser sends.
+
+`listAppMetrics` — the `inbox` command — is a request to `apps`, which Apple serves
+officially. It is retained for two counts the official API has no schema for:
+`appStoreVersionMetrics.messageCount` and `betaReviewMetrics.messageCount`. Re-checked on
+2026-08-20 against the current OpenAPI specification **4.4.1** (generated 2026-07-15, 966
+paths, 1,393 schemas, downloaded from
+`https://developer.apple.com/sample-code/app-store-connect/app-store-connect-openapi-specification.zip`):
+`appStoreVersionMetrics`, `betaReviewMetrics` and `messageCount` occur zero times in the
+whole document.
+
+The browser's version of that request also sideloads `reviewSubmissions` with
+`fields[reviewSubmissions]=state` and `limit[reviewSubmissions]=10`. Apple serves that at
+`GET /v1/apps/{id}/reviewSubmissions`, `state` and its seven-value enum included, so this
+client does not send it. **The shortened query has not been recorded from the browser.**
+Dropping a relationship is the safe direction to differ — iris 400s an include name it does
+not recognise and cannot 400 one that is no longer asked for — but it is a difference, and
+if the counts ever stop arriving this is the first thing to put back.
+
+`fields[apps]` naming only those two relationships is the rest of what makes this a gap
+read: the apps come back as bare ids, with none of the attributes Apple's own `App`
+resource already carries. Widening it turns the call back into a duplicate app listing.
+
+The same reasoning governs `report`'s starting point. `--thread` and `--submission` reach
+the Resolution Center through private routes only; an app id lists the app's review
+submissions first, which is an official read, and that route is what the sequencing task
+replaces. Nothing about the requests themselves changed.
+
 ## Seen but deliberately not mapped
 
 From the Xcode Cloud tab: the pickers behind the workflow editor —

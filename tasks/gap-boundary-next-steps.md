@@ -103,15 +103,41 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
    `/ci/api`, which is slice 4.1, and not one retained Resolution Center, inbox, history or
    privacy call was named anywhere in `test/`. The suite protected what is leaving.
 
-2. **Narrow the retained duplicates.** `listAppMetrics` becomes an explicitly gap-only read
-   — the `apps` collection asked for nothing but the private metric fieldset, documented as
-   retained *for that field*. Thread discovery stops depending on a submissions read: accept
-   an app id or thread id and say so.
+2. **Narrow the retained duplicates.** *Done.* `listAppMetrics` becomes an explicitly
+   gap-only read — the `apps` collection asked for nothing but the private metric fieldset,
+   documented as retained *for that field*. Thread discovery stops depending on a
+   submissions read: accept an app id or thread id and say so.
 
-3. **Refactor `report` to be thread-first.** Today it stitches submissions → thread →
-   messages + rejections + draft, and the head of that chain is a duplicate. Rebuild it on
-   `apps/{appId}/resolutionCenterThreads`, taking an explicit app, submission or thread id
-   where discovery would otherwise need an official read. `report` is the single most
+   The `reviewSubmissions` sideload is gone from `listAppMetrics`: Apple serves it at
+   `GET /v1/apps/{id}/reviewSubmissions` with `state` and its enum. What is left is
+   `include` and `fields[apps]` naming the two private metric relationships and nothing
+   else, so the apps come back as bare ids. The shortened query is not itself a recording
+   and is labelled as such in `docs/evidence.md` and in the function.
+
+   Re-checked on 2026-08-20 against specification 4.4.1 (generated 2026-07-15, 966 paths,
+   1,393 schemas): `appStoreVersionMetrics`, `betaReviewMetrics`, `messageCount`,
+   `resolutionCenterThread`, `dataUsages` and any state-change schema occur **zero** times
+   in the document; `ReviewSubmission` is present with `platform`, `state`, `submittedDate`.
+   The keep list and the remove list both hold.
+
+   `buildReport` now takes a `ReportTarget` — `{ threadId }`, `{ submissionId }` or
+   `{ appId }` — instead of an app id, and `asc report` takes `--thread` / `--submission`.
+   The first two reach the Resolution Center through private routes only; `{ appId }` is
+   the one route that reads an official resource, and it logs `report.viaSubmissions`
+   saying so. `SubmissionReport.submissionId` and `.state` became optional, because a
+   report built from a thread has neither and inventing them would mean an official read.
+
+3. **Refactor `report` to be thread-first.** Step 2 gave it the explicit ids; what is left
+   is the `{ appId }` route, which still stitches submissions → thread → messages +
+   rejections + draft with a duplicate at the head of the chain. Rebuild that route on
+   `apps/{appId}/resolutionCenterThreads`.
+
+   **Open question, and the thing to settle first:** whether a thread from that list can be
+   tied back to its submission and version without an official read. `filter[reviewSubmission]`
+   proves the relationship exists on the resource; whether `include=reviewSubmission` is
+   accepted on the threads list is *not* recorded, and an include name iris does not
+   recognise 400s the whole request. That needs a browser capture or an approved probe
+   before the rebuild, not a guess. `report` is the single most
    valuable thing here and the most entangled; if it cannot be made to stand on gaps alone,
    that finding changes the whole plan and is worth knowing before anything is deleted.
 

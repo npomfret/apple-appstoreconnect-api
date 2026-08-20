@@ -10,6 +10,11 @@ import { audited, log, REVIEW_DETAIL_SECRETS } from './log';
  * Include lists lifted verbatim from the browser's own requests — every one of them, so
  * this is the whole inventory of what this client asks iris to sideload.
  *
+ * One exception, marked where it sits: `appMetrics` is the browser's list with a
+ * relationship *removed*, because that relationship is officially available. Narrowing is
+ * the safe direction — iris 400s a name it does not recognise and cannot 400 one that is
+ * no longer asked for — but the shortened list is this client's, not a recording.
+ *
  * Each is the default for its call, and each call takes an `include` option to replace it.
  * Treat that option with more care than `sideloads` or `fields`: iris is undocumented and
  * picky, and **a relationship name it doesn't recognise 400s the whole request** rather
@@ -63,7 +68,9 @@ const INCLUDES = {
   ],
   builds: ['icons', 'preReleaseVersion', 'buildBundles'],
   apps: ['appStoreIcon', 'displayableVersions'],
-  appMetrics: ['appStoreVersionMetrics', 'betaReviewMetrics', 'reviewSubmissions'],
+  // Narrowed from the capture: the browser also asks for `reviewSubmissions`, which Apple
+  // serves officially at GET /v1/apps/{id}/reviewSubmissions. See listAppMetrics.
+  appMetrics: ['appStoreVersionMetrics', 'betaReviewMetrics'],
   app: ['gameCenterDetail'],
   threads: [
     'appStoreVersions',
@@ -134,7 +141,6 @@ const SIDELOADS = {
   draftMessage: { resolutionCenterMessageAttachments: 1000 },
   rejections: { rejectionAttachments: 1000 },
   apps: { displayableVersions: 20 },
-  appMetrics: { reviewSubmissions: 10 },
   threads: { appStoreVersions: 2000 },
   version: { appStoreVersionLocalizations: 50 },
   versionAssets: { appScreenshotSets: 50, appPreviewSets: 50 },
@@ -177,11 +183,13 @@ function sideloadLimits<D extends Readonly<Record<string, number>>>(
  * formatting reads, so `report.ts` is the thing to check before trimming.
  */
 const FIELDSETS = {
+  // `fields[apps]` naming only relationships is what makes this a gap read rather than an
+  // app list: the apps come back as bare ids carrying the two private metric records and
+  // none of the attributes Apple's official App resource already has.
   appMetrics: {
-    apps: ['appStoreVersionMetrics', 'betaReviewMetrics', 'reviewSubmissions'],
+    apps: ['appStoreVersionMetrics', 'betaReviewMetrics'],
     appStoreVersionMetrics: ['messageCount'],
     betaReviewMetrics: ['messageCount', 'platform'],
-    reviewSubmissions: ['state'],
   },
   appVersions: {
     appStoreVersions: [
@@ -347,13 +355,28 @@ export function listApps(
 /**
  * Unread-message counts per app — what the App Store Connect home page badges with.
  * The cheapest way to ask "has Apple said anything anywhere?" without walking threads.
+ *
+ * This is a request to `apps`, which Apple serves officially, and it is kept for one
+ * reason: `appStoreVersionMetrics.messageCount` and `betaReviewMetrics.messageCount` are
+ * counts the official API has no schema for. Checked against Apple's OpenAPI specification
+ * 4.4.1 (generated 2026-07-15): `appStoreVersionMetrics`, `betaReviewMetrics` and
+ * `messageCount` appear in none of its 966 paths or 1,393 schemas.
+ *
+ * So the query asks for those counts and nothing else. `fields[apps]` names only the two
+ * metric relationships, which means the apps themselves come back as bare ids: no name, no
+ * bundle id, no state. Read those from `GET /v1/apps` on the official API. Widening this
+ * back into an app listing puts the duplication back.
+ *
+ * The browser also sideloads `reviewSubmissions` here; that is
+ * `GET /v1/apps/{id}/reviewSubmissions` officially, `state` included, so it is not sent.
+ * Dropping a relationship from an include list is safe in the way adding one is not, but
+ * the shortened query is this client's own and has not been recorded from the browser.
  */
 export function listAppMetrics(
   session: Session,
   options: {
     include?: readonly string[];
     limit?: number;
-    sideloads?: SideloadLimits<typeof SIDELOADS.appMetrics>;
     fields?: Fieldsets<typeof FIELDSETS.appMetrics>;
   } = {}
 ): Promise<Document<Resource[]>> {
@@ -362,7 +385,6 @@ export function listAppMetrics(
     limit: options.limit ?? 200,
     'filter[removed]': false,
     ...fieldsets(FIELDSETS.appMetrics, options.fields),
-    ...sideloadLimits(SIDELOADS.appMetrics, options.sideloads),
   });
 }
 

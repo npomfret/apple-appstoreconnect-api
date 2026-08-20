@@ -16,8 +16,18 @@ export interface Attachment {
 }
 
 export interface SubmissionReport {
-  submissionId: string;
-  state: string;
+  /**
+   * The submission the thread hangs off, where the report started from one. A report built
+   * straight from a thread id has no submission and leaves this out — reading a submission
+   * to fill it in would be a call to `apps/{id}/reviewSubmissions`, which Apple serves
+   * officially.
+   */
+  submissionId?: string;
+  /**
+   * The submission's own state. Absent for the same reason as `submissionId`: reading it
+   * would mean an official call.
+   */
+  state?: string;
   platform?: string;
   version?: string;
   /** Id of the version under review — feed it to `fetchMetadata` or `listBuilds`. */
@@ -131,17 +141,52 @@ function collectAttachments(messages: Denormalized[]): Attachment[] {
   return [...byName.values()];
 }
 
-/** Builds one report per open submission, resolving each submission's thread as it goes. */
-export async function buildReport(session: Session, appId: string): Promise<SubmissionReport[]> {
-  const submissionsDoc = await api.listReviewSubmissions(session, appId);
-  const submissions = denormalizeAll(submissionsDoc);
+/**
+ * Where a report starts, and how much of an official read it costs to get there.
+ *
+ * - `threadId` — nothing is discovered. Every call the report then makes is one Apple has
+ *   no official equivalent for.
+ * - `submissionId` — the thread is found by `resolutionCenterThreads?filter[reviewSubmission]`,
+ *   a private filter, so this route reads no official resource either. The submission's own
+ *   state and version are not fetched; the id you passed is reported back as given.
+ * - `appId` — every open submission on the app, which means `apps/{id}/reviewSubmissions`.
+ *   **That read is officially available** and is the one thing here that duplicates Apple's
+ *   API. It buys the state, platform, version and dates that the other two routes have no
+ *   source for.
+ */
+export type ReportTarget =
+  | { readonly appId: string }
+  | { readonly submissionId: string }
+  | { readonly threadId: string };
 
+/**
+ * Digests a review conversation: one report per open submission when given an app, or the
+ * single one behind a submission or thread id.
+ */
+export async function buildReport(session: Session, target: ReportTarget): Promise<SubmissionReport[]> {
+  if ('threadId' in target) {
+    return [await addThread(session, blankReport(), target.threadId)];
+  }
+
+  if ('submissionId' in target) {
+    const thread = await api.findThreadForSubmission(session, target.submissionId);
+    const report = { ...blankReport(), submissionId: target.submissionId };
+    return [thread ? await addThread(session, report, thread.id) : report];
+  }
+
+  const submissions = denormalizeAll(await api.listReviewSubmissions(session, target.appId));
   return Promise.all(submissions.map((submission) => reportForSubmission(session, submission)));
+}
+
+/** A report with nothing in it yet — everything a thread cannot tell you is left unsaid. */
+function blankReport(): SubmissionReport {
+  return { guidelines: [], attachments: [], hasDraftReply: false };
 }
 
 async function reportForSubmission(session: Session, submission: Denormalized): Promise<SubmissionReport> {
   const version = submission['appStoreVersionForReview'];
   const report: SubmissionReport = {
+    ...blankReport(),
     submissionId: submission.id,
     state: asString(submission['state']) ?? 'UNKNOWN',
     platform: asString(submission['platform']),
@@ -153,20 +198,28 @@ async function reportForSubmission(session: Session, submission: Denormalized): 
       version && typeof version === 'object' ? asString((version as Record<string, unknown>)['id']) : undefined,
     submittedDate: asString(submission['submittedDate']),
     lastUpdatedDate: asString(submission['lastUpdatedDate']),
-    guidelines: [],
-    attachments: [],
-    hasDraftReply: false,
   };
 
   const thread = await api.findThreadForSubmission(session, submission.id);
-  if (!thread) return report;
+  return thread ? addThread(session, report, thread.id) : report;
+}
 
-  report.threadId = thread.id;
+/**
+ * Fills in everything that comes off the thread: the conversation, the guidelines cited,
+ * what Apple attached, and whether a reply is sitting unsent. This is the whole of the
+ * report that has no official-API equivalent, and it needs no id but the thread's.
+ */
+async function addThread(
+  session: Session,
+  report: SubmissionReport,
+  threadId: string
+): Promise<SubmissionReport> {
+  report.threadId = threadId;
 
   const [messagesDoc, rejectionsDoc, draftDoc] = await Promise.all([
-    api.listMessages(session, thread.id),
-    api.listRejections(session, thread.id),
-    api.getDraftMessage(session, thread.id),
+    api.listMessages(session, threadId),
+    api.listRejections(session, threadId),
+    api.getDraftMessage(session, threadId),
   ]);
 
   const messages = sortByDateDesc(denormalizeAll(messagesDoc), 'createdDate');
@@ -527,12 +580,21 @@ export function formatReport(reports: SubmissionReport[]): string {
 
   return reports
     .map((report) => {
-      const lines = [
-        `submission ${report.submissionId}`,
-        `  state      ${report.state}${report.version ? `  (version ${report.version})` : ''}`,
-        `  submitted  ${report.submittedDate ?? 'unknown'}`,
-        `  thread     ${report.threadId ?? 'none'}`,
-      ];
+      // A report built from a thread id has no submission to head the block with, and no
+      // state or submitted date either — those come off the submission, and reading one
+      // would mean an official call. Print what is known rather than a row of "unknown".
+      const lines = report.submissionId
+        ? [`submission ${report.submissionId}`]
+        : [`thread     ${report.threadId ?? 'none'}`];
+
+      // The state and the submitted date come off the submission together, so they print
+      // together: "submitted unknown" next to a state means the submission has no date,
+      // where printing it with no state at all would read as if one had been looked for.
+      if (report.state) {
+        lines.push(`  state      ${report.state}${report.version ? `  (version ${report.version})` : ''}`);
+        lines.push(`  submitted  ${report.submittedDate ?? 'unknown'}`);
+      }
+      if (report.submissionId) lines.push(`  thread     ${report.threadId ?? 'none'}`);
 
       if (report.lastMessageDate) {
         const who = report.lastMessageFromApple ? 'Apple' : 'you';

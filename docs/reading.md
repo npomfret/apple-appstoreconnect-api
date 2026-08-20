@@ -16,6 +16,8 @@
 ```sh
 node dist/cli.js report                 # the useful one — digest of every open submission
 node dist/cli.js report --json
+node dist/cli.js report --thread <id>       # one thread, no submission lookup at all
+node dist/cli.js report --submission <id>   # one submission you already have the id of
 ```
 
 `report` stitches submissions → thread → messages + rejections + draft into one summary:
@@ -35,13 +37,29 @@ submission 7ecf0154-9ddc-40f5-9b7c-15d67fb3a88d
     ...
 ```
 
+Which id you start from decides how much of the digest is real work and how much is
+duplication. `--thread` reads nothing but the thread, and every request it then makes is one
+Apple has no official equivalent for. `--submission` finds the thread through
+`resolutionCenterThreads?filter[reviewSubmission]`, also private. An app id — the default,
+taken from the captured request — lists the app's review submissions first, and **that read
+is officially available**; it is what supplies the state, platform, version and dates, which
+the other two routes leave out rather than invent. See
+[the sequencing task](../tasks/gap-boundary-next-steps.md).
+
+`inbox` is a request to `apps`, which Apple also serves officially. It is kept for the two
+counts hanging off it: `appStoreVersionMetrics.messageCount` and
+`betaReviewMetrics.messageCount` appear in none of the 966 paths or 1,393 schemas of Apple's
+OpenAPI specification 4.4.1 (generated 2026-07-15). The query asks for those and nothing
+else — `fields[apps]` names only the two metric relationships, so the apps come back as bare
+ids with no name or bundle id. Read those from the official `GET /v1/apps`.
+
 Lower-level commands print denormalized JSON (add `--raw` for the untouched JSON:API
 document):
 
 | Command | Endpoint |
 | --- | --- |
 | `apps` | `apps` |
-| `inbox` | `apps?fields[appStoreVersionMetrics]=messageCount` |
+| `inbox` | `apps?fields[apps]=appStoreVersionMetrics,betaReviewMetrics&fields[appStoreVersionMetrics]=messageCount` |
 | `app [appId]` | `apps/{appId}` |
 | `submissions [appId]` | `apps/{appId}/reviewSubmissions` |
 | `submission <id>` | `reviewSubmissions/{id}` |

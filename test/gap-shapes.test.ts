@@ -100,7 +100,7 @@ async function report(thread: Thread): Promise<SubmissionReport> {
   });
 
   try {
-    const reports = await withStderr(() => buildReport(SESSION, APP));
+    const reports = await withStderr(() => buildReport(SESSION, { appId: APP }));
     assert.equal(reports.length, 1);
     return reports[0]!;
   } finally {
@@ -239,6 +239,84 @@ describe('the guidelines behind a rejection', () => {
 
   test('a thread with no rejections has no guidelines, which is not an error', async () => {
     assert.deepEqual((await report({})).guidelines, []);
+  });
+});
+
+describe('starting without an official read', () => {
+  /**
+   * The app-id route finds submissions through `apps/{id}/reviewSubmissions`, which Apple
+   * serves officially. A thread id or a submission id skips it, and what comes back is the
+   * same Resolution Center digest — which is what makes the planned thread-first rebuild a
+   * change of entry point rather than a change of answer.
+   */
+  const messages = [
+    message('m-1', '2026-04-27T15:51:00-07:00', '<p>We are still seeing the crash.</p>', 'APPLE_REVIEW'),
+  ];
+
+  async function from(target: Parameters<typeof buildReport>[1]) {
+    const stub = stubFetch((call) => {
+      if (call.url.includes('/resolutionCenterMessages')) return { body: { data: messages } };
+      if (call.url.includes('/resolutionCenterDraftMessage')) return { body: { data: null } };
+      if (call.url.includes('/reviewRejections')) return { body: { data: [] } };
+      if (call.url.includes('/resolutionCenterThreads')) return { body: THREADS };
+      return { body: SUBMISSIONS };
+    });
+    try {
+      const reports = await withStderr(() => buildReport(SESSION, target));
+      return { reports, urls: stub.calls.map((call) => call.url) };
+    } finally {
+      stub.restore();
+    }
+  }
+
+  test('a thread id reads the thread and nothing else', async () => {
+    const { reports, urls } = await from({ threadId: THREAD });
+
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0]!.threadId, THREAD);
+    assert.equal(reports[0]!.lastAppleMessage, 'We are still seeing the crash.');
+    assert.doesNotMatch(urls.join(' '), /reviewSubmissions/);
+  });
+
+  test('a thread id leaves the submission fields unsaid rather than guessing them', async () => {
+    const [digest] = (await from({ threadId: THREAD })).reports;
+
+    assert.equal(digest!.submissionId, undefined);
+    assert.equal(digest!.state, undefined);
+    assert.equal(digest!.versionId, undefined);
+  });
+
+  test('a submission id finds its thread by the private filter, not by listing submissions', async () => {
+    const { reports, urls } = await from({ submissionId: 'submission-0000' });
+
+    assert.equal(reports[0]!.submissionId, 'submission-0000');
+    assert.equal(reports[0]!.threadId, THREAD);
+    assert.doesNotMatch(urls.join(' '), /apps\/123\/reviewSubmissions/);
+    assert.ok(
+      urls.some((url) => url.includes('resolutionCenterThreads?filter[reviewSubmission]=submission-0000')),
+      'the thread came from the private submission filter'
+    );
+  });
+
+  test('a submission whose thread does not exist still reports the submission', async () => {
+    const stub = stubFetch((call) =>
+      call.url.includes('resolutionCenterThreads') ? { body: { data: [] } } : { body: SUBMISSIONS }
+    );
+    try {
+      const reports = await withStderr(() => buildReport(SESSION, { submissionId: 'submission-0000' }));
+
+      assert.equal(reports.length, 1);
+      assert.equal(reports[0]!.threadId, undefined);
+      assert.equal(stub.calls.length, 1, 'nothing was read once there was no thread to read');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('an app id is the one route that costs an official read', async () => {
+    const { urls } = await from({ appId: APP });
+
+    assert.ok(urls.some((url) => url.includes(`/apps/${APP}/reviewSubmissions`)));
   });
 });
 

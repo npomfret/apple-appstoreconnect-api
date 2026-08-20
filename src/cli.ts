@@ -15,6 +15,7 @@ import {
   formatHistory,
   formatPrivacy,
   formatReport,
+  ReportTarget,
 } from './report';
 import { log } from './log';
 import * as api from './api';
@@ -24,6 +25,9 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
 
   asc status [file]           Show the captured session and how long it has left
   asc report [appId]          Digest of every open submission: state, guidelines, Apple's latest message
+  asc report --thread <id>    The same digest for one thread, with no submission lookup at all
+  asc report --submission <id>
+                              The same, starting from a submission id you already have
   asc apps                    List every app on the account
   asc inbox                   Unread message counts per app — where to look first
   asc app [appId]             Show one app
@@ -252,6 +256,47 @@ function testStages(detail: ci.CiBuildDetail): ci.CiBuildStage[] {
   return detail.build_stages.filter(
     (stage) => stage.stage_type === 'test' || (stage.stage_sections?.sections ?? []).includes('tests')
   );
+}
+
+/**
+ * Which end of the review conversation `report` starts from.
+ *
+ * A thread id or a submission id skips discovery entirely, and every call the report then
+ * makes is one Apple's official API has no equivalent for. An app id — the default, and
+ * what the session's captured `Referer` supplies — costs one reads of the app's review
+ * submissions, which Apple does serve officially; the report says so on stderr rather than
+ * making a duplicate read quietly.
+ *
+ * Naming more than one is refused rather than ranked: they are three different questions,
+ * and picking one for you would report on something other than what was asked about.
+ */
+function reportTarget(
+  session: Session,
+  appIdArg: string | undefined,
+  threadIds: string[],
+  submissionIds: string[]
+): ReportTarget {
+  const named = [
+    ...threadIds.map((threadId) => ({ label: '--thread', target: { threadId } as ReportTarget })),
+    ...submissionIds.map((submissionId) => ({ label: '--submission', target: { submissionId } as ReportTarget })),
+  ];
+
+  if (named.length > 1) {
+    throw new Error(
+      `report takes one starting point, not ${named.length}: ${named.map((one) => one.label).join(' and ')}`
+    );
+  }
+  if (appIdArg && named.length) {
+    throw new Error(`report takes an app id or ${named[0]!.label}, not both`);
+  }
+  if (named.length) return named[0]!.target;
+
+  const appId = requireAppId(session, appIdArg);
+  log.debug('report.viaSubmissions', {
+    appId,
+    note: 'apps/{id}/reviewSubmissions is officially available; --thread or --submission avoids it',
+  });
+  return { appId };
 }
 
 function requireAppId(session: Session, given: string | undefined): string {
@@ -607,7 +652,9 @@ function describeCategories(appInfo: Denormalized, update: api.AppCategoryUpdate
 async function main(argv: string[]): Promise<number> {
   const { values: attach, rest: afterAttach } = takeOption(argv, '--attach');
   const { values: roles, rest: afterRoles } = takeOption(afterAttach, '--role');
-  const { update: categories, rest: positional } = takeCategoryOptions(afterRoles);
+  const { values: threadIds, rest: afterThread } = takeOption(afterRoles, '--thread');
+  const { values: submissionIds, rest: afterSubmission } = takeOption(afterThread, '--submission');
+  const { update: categories, rest: positional } = takeCategoryOptions(afterSubmission);
   const raw = positional.includes('--raw');
   const json = positional.includes('--json');
   const force = positional.includes('--force');
@@ -650,7 +697,7 @@ async function main(argv: string[]): Promise<number> {
 
     case 'report': {
       const session = loadSession();
-      const reports = await buildReport(session, requireAppId(session, rest[0]));
+      const reports = await buildReport(session, reportTarget(session, rest[0], threadIds, submissionIds));
       console.log(json ? JSON.stringify(reports, null, 2) : formatReport(reports));
       return 0;
     }

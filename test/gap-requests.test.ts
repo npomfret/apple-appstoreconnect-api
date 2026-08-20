@@ -125,9 +125,10 @@ describe('the Resolution Center reads', () => {
 describe('the unread counts', () => {
   /**
    * `inbox` reads the `apps` collection, which is otherwise official-API overlap. What
-   * makes it a gap is the fieldset: `appStoreVersionMetrics` is not a schema in Apple's
-   * specification and `messageCount` is not an attribute anywhere in it. Narrow this query
-   * and the feature goes with it.
+   * makes it a gap is the fieldset: `appStoreVersionMetrics`, `betaReviewMetrics` and
+   * `messageCount` appear in none of the 966 paths or 1,393 schemas of Apple's OpenAPI
+   * specification 4.4.1. Narrow this query and the feature goes with it; widen it and the
+   * duplication comes back.
    */
   test('asks apps for the private metric fieldsets and nothing else', async () => {
     const calls = await sent({ data: [] }, () => api.listAppMetrics(SESSION));
@@ -135,20 +136,35 @@ describe('the unread counts', () => {
     assert.equal(
       calls[0]!.url,
       `${BASE}/apps` +
-        '?include=appStoreVersionMetrics,betaReviewMetrics,reviewSubmissions' +
+        '?include=appStoreVersionMetrics,betaReviewMetrics' +
         '&limit=200&filter[removed]=false' +
-        '&fields[apps]=appStoreVersionMetrics,betaReviewMetrics,reviewSubmissions' +
+        '&fields[apps]=appStoreVersionMetrics,betaReviewMetrics' +
         '&fields[appStoreVersionMetrics]=messageCount' +
-        '&fields[betaReviewMetrics]=messageCount,platform' +
-        '&fields[reviewSubmissions]=state' +
-        '&limit[reviewSubmissions]=10'
+        '&fields[betaReviewMetrics]=messageCount,platform'
     );
   });
 
-  test('the unread count itself is asked for by name', async () => {
+  test('both unread counts are asked for by name', async () => {
     const calls = await sent({ data: [] }, () => api.listAppMetrics(SESSION));
 
     assert.match(calls[0]!.url, /fields\[appStoreVersionMetrics\]=messageCount/);
+    assert.match(calls[0]!.url, /fields\[betaReviewMetrics\]=messageCount,platform/);
+  });
+
+  test('the apps themselves come back as bare ids — no official attribute is asked for', async () => {
+    const calls = await sent({ data: [] }, () => api.listAppMetrics(SESSION));
+
+    // fields[apps] names only relationships, so nothing on Apple's own App resource is
+    // requested. Adding an attribute here would make this a duplicate app listing.
+    assert.match(calls[0]!.url, /fields\[apps\]=appStoreVersionMetrics,betaReviewMetrics(&|$)/);
+  });
+
+  test('the submissions the browser sideloads here are not asked for', async () => {
+    const calls = await sent({ data: [] }, () => api.listAppMetrics(SESSION));
+
+    // GET /v1/apps/{id}/reviewSubmissions is official, `state` included, so this client
+    // does not send the browser's `reviewSubmissions` sideload.
+    assert.doesNotMatch(calls[0]!.url, /reviewSubmissions/);
   });
 });
 

@@ -90,9 +90,9 @@ Official replacements:
 
 | | |
 | --- | --- |
-| `report` | currently mixes official submission reads with private thread/messages/rejections/draft; to be made gap-only |
+| `report` | private thread/messages/rejections/draft. `--thread` or `--submission` reads nothing official; a bare app id still lists submissions first, which Apple serves officially |
 | `apps`, `app` | **legacy official overlap** — app records |
-| `inbox` | private unread App Review/Resolution Center message counts |
+| `inbox` | private unread App Review/Resolution Center message counts — an `apps` request narrowed to the two `messageCount` fieldsets and nothing else |
 | `submissions`, `submission`, `items` | **legacy official overlap** — review submissions and their items |
 | `versions`, `version` | **legacy official overlap** — app versions |
 | `history` | private version state-change history, including initiator and time in state |
