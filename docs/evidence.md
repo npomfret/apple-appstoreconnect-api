@@ -3,6 +3,19 @@
 This is an undocumented, private API, and the calls here are not all equally well
 evidenced. This page says which is which.
 
+It is not all unique functionality. An audit on 2026-08-20 against Apple's official
+OpenAPI specification 4.4.1 found that submissions, versions/builds, metadata and App
+Information, screenshots/previews, users/invitations, and all Xcode Cloud code duplicate
+official operations. They are pending removal; the exact inventory and official operation
+mapping is in [the removal task](../tasks/remove-official-api-overlap.md). Evidence that a
+private call works is not a reason to retain it when Apple supports the capability. The
+official replacements are Apple's
+[App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
+[Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
+[Users and Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
+and [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
+API collections.
+
 ## What isn't captured yet
 
 The captured writes are the version PATCH behind `set-build`, all four App Information page
@@ -20,9 +33,10 @@ footing as the rest.
 The **submit PATCH itself is no longer a guess**, though it is still not a capture — see
 "Confirmed by running it" below.
 
-Recorded but **deliberately not mapped**: the Xcode Cloud workflow replace,
+Recorded but **deliberately not mapped in the private client**: the Xcode Cloud workflow replace,
 `PUT /ci/api/teams/{team}/products/{product}/workflows-v15/{id}`. The shape is fully known;
-the reasons for leaving it are in [xcode cloud](xcode-cloud.md).
+Apple's official API supports workflow updates, and all private Xcode Cloud code is now
+out of scope; see [xcode cloud](xcode-cloud.md).
 
 ## Confirmed by running it
 
@@ -159,11 +173,19 @@ list is the tested one and an override is not.
   names and `true` come from Apple's public API docs and are passed through unchecked, the
   same trade as `set-content-rights`. Note the invitation is the one write here that this
   client cannot reverse *and* that reaches a third party: Apple emails the person.
-- From one Xcode Cloud session — opening the tab and editing a workflow — every read in
-  `src/ci.ts`: `getProductForApp`, `getProduct`, `listWorkflows` (`limit=100`,
+- From one Xcode Cloud session — opening the tab and editing a workflow — the committed
+  reads in `src/ci.ts`: `getProductForApp`, `getProduct`, `listWorkflows` (`limit=100`,
   `include_deleted=false`), `getWorkflow`, `listBuildGroups` (`limit=10`),
   `listBuildSummaries` (`build_group_ids` comma-separated, `limit=4`), `listRepos` and
   `getUserCapabilities`. `test/ci.test.ts` asserts each URL whole against the recording.
+
+  From a second Xcode Cloud session — opening a finished build and reading its test
+  results — `getBuildGroup`, `getBuild` (`details-v3`), `listTestResults`
+  (`limit=60001`) and `listStageIssues` (`limit=2000`), behind `ci-build`, `ci-tests` and
+  `ci-run`. Recorded from the browser like the reads above, and `test/ci.test.ts` asserts
+  those URLs whole too. Being evidenced does not make them in scope: official
+  `ciBuildRuns`, `ciBuildActions`, `ciTestResults` and `ciIssues` operations cover the same
+  ground, so this code is pending removal along with the rest of `/ci/api`.
 
   This is a **second API**, not a corner of iris: `/ci/api`, plain JSON, snake_case fields,
   `{ "items": [...] }` pages, no `include`, no `meta.paging`. The transport learned a closed
@@ -179,9 +201,8 @@ list is the tested one and an override is not.
   browser resent the entire workflow to change one test destination, so anything omitted
   from that body is dropped.
 
-  What the recording does not cover: a build's actions, and any per-test result. No capture
-  here contains either — `test-destinations-v3` is the *picker* of available destinations,
-  not what a run executed. Nothing in this client reports what a build actually ran.
+  The older recording does not cover a build's actions or per-test results.
+  `test-destinations-v3` is the *picker* of available destinations, not what a run executed.
 - From one draft reply with an attachment: `createDraftMessage`, `updateDraftMessage`,
   `reserveMessageAttachment` and `completeMessageAttachment` — all four bodies replayed
   offline against the recording and match the browser's byte for byte. Editing an existing
@@ -220,6 +241,9 @@ list is the tested one and an override is not.
   point of no return has been exercised against live data: the draft is read back, the
   confirmation renders it, declining stops before any request leaves. The request itself
   waits for a submission worth spending. Until then, treat the first run as the test.
+  `sendDraftMessage` is a Resolution Center gap and stays; `resolveSubmissionItem`
+  duplicates the official `reviewSubmissionItems_updateInstance` operation and is pending
+  removal.
 - `deleteDraftMessage` is the other way round: the request was copied from the browser's
   **Delete Draft** button, so the shape is certain, but this client has never run it — the
   one open thread's draft had already been deleted in the browser, and closed threads won't
@@ -233,7 +257,8 @@ From the Xcode Cloud tab: the pickers behind the workflow editor —
 `schemes`, `version-aliases-v3`, `scm-providers-v2`, `notices-v2`,
 `testflight/information-v2`, `repos/{id}/branch`, `product-environment-variables` — all
 recorded, none mapped: they exist to fill in a form this client does not render. Note
-`asc get` does not reach them, being `iris/v1` only.
+`asc get` does not reach them, being `iris/v1` only. All Xcode Cloud mapping is outside the
+gap-only boundary because Apple exposes it officially.
 
 Recordings of the Monetization, Growth & Marketing and Trust & Safety tabs turn up about 40
 further endpoints. Pricing is the substantial one — `appPriceSchedules/{appId}/automaticPrices`
