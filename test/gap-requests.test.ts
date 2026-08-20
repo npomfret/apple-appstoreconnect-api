@@ -1,0 +1,445 @@
+/**
+ * Every retained private call, pinned to the request it makes.
+ *
+ * These are the endpoints Apple's official API has no equivalent for — Resolution Center
+ * threads, messages, rejections, drafts and attachments; the unread counts behind
+ * `fields[appStoreVersionMetrics]=messageCount`; version state history; App Privacy — and
+ * they are the reason this client exists. Everything else here is scheduled to be deleted
+ * as official-API overlap, so this file is the fence around what must survive that.
+ *
+ * **A test in this file that needs editing during a removal slice means the slice took
+ * something it should not have.** Read a failure that way before reaching for the test.
+ *
+ * URLs are asserted whole. These queries carry filters, include lists, page sizes and
+ * fieldsets that were copied from the browser verbatim, iris 400s an include list it does
+ * not recognise, and a fieldset quietly narrowed drops the one attribute a whole feature
+ * reads — so the test compares the string, not its parts. Nothing here reaches the network
+ * and no id, thread or file below is real.
+ */
+
+import { strict as assert } from 'node:assert';
+import { describe, test } from 'node:test';
+
+import * as api from '../src/api';
+import { SESSION, stubFetch, withStderr } from './helpers';
+
+const BASE = 'https://appstoreconnect.apple.com/iris/v1';
+const APP = '123';
+const THREAD = 'thread-0000';
+const DRAFT = 'draft-0000';
+const ATTACHMENT = 'attachment-0000';
+
+/** Runs `call`, answering every request with `body`, and hands back what was sent. */
+async function sent(body: unknown, call: () => Promise<unknown>) {
+  const stub = stubFetch(() => ({ body }));
+  try {
+    await withStderr(() => call());
+    return stub.calls;
+  } finally {
+    stub.restore();
+  }
+}
+
+describe('the Resolution Center reads', () => {
+  test('threads on an app, filtered to the seven types the review centre shows', async () => {
+    const calls = await sent({ data: [] }, () => api.listThreads(SESSION, APP));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.method, 'GET');
+    assert.equal(
+      calls[0]!.url,
+      `${BASE}/apps/${APP}/resolutionCenterThreads` +
+        '?include=appStoreVersions,app,appMessageThreadDetail,build,betaBackgroundAssetReviewSubmission' +
+        '&limit[appStoreVersions]=2000' +
+        '&filter[threadType]=REJECTION_BINARY,REJECTION_METADATA,REJECTION_REVIEW_SUBMISSION' +
+        ',APP_MESSAGE_ARC,APP_MESSAGE_ARB,APP_MESSAGE_COMM,APP_MESSAGE_INFORMATIONAL'
+    );
+  });
+
+  test('one version narrows the threads without disturbing the rest of the query', async () => {
+    const calls = await sent({ data: [] }, () =>
+      api.listThreads(SESSION, APP, { appStoreVersionId: 'v-0000' })
+    );
+
+    assert.match(calls[0]!.url, /&filter\[appStoreVersion\]=v-0000$/);
+  });
+
+  test('a thread with no version filter sends no empty parameter for it', async () => {
+    const calls = await sent({ data: [] }, () => api.listThreads(SESSION, APP));
+
+    assert.doesNotMatch(calls[0]!.url, /filter\[appStoreVersion\]/);
+  });
+
+  test('the conversation, with the actor, rejections and attachments beside it', async () => {
+    const calls = await sent({ data: [] }, () => api.listMessages(SESSION, THREAD));
+
+    assert.equal(
+      calls[0]!.url,
+      `${BASE}/resolutionCenterThreads/${THREAD}/resolutionCenterMessages` +
+        '?include=fromActor,rejections,resolutionCenterMessageAttachments' +
+        '&limit[rejections]=2000&limit[resolutionCenterMessageAttachments]=1000'
+    );
+  });
+
+  test('no top-level limit on messages unless one is asked for — the browser sends none', async () => {
+    const asked = await sent({ data: [] }, () => api.listMessages(SESSION, THREAD, { limit: 500 }));
+
+    assert.match(asked[0]!.url, /&limit=500&/);
+  });
+
+  test('the draft box, with its attachments', async () => {
+    const calls = await sent({ data: null }, () => api.getDraftMessage(SESSION, THREAD));
+
+    assert.equal(
+      calls[0]!.url,
+      `${BASE}/resolutionCenterThreads/${THREAD}/resolutionCenterDraftMessage` +
+        '?include=resolutionCenterMessageAttachments,fromActor' +
+        '&limit[resolutionCenterMessageAttachments]=1000'
+    );
+  });
+
+  test('rejections reach the thread through the message they hang off', async () => {
+    const calls = await sent({ data: [] }, () => api.listRejections(SESSION, THREAD));
+
+    assert.equal(
+      calls[0]!.url,
+      `${BASE}/reviewRejections` +
+        `?filter[resolutionCenterMessage.resolutionCenterThread]=${THREAD}` +
+        '&include=appCustomProductPageVersion,appEvent,appStoreVersion,appStoreVersionExperiment' +
+        ',backgroundAssetVersions,gameCenterAchievementVersions,gameCenterLeaderboardVersions' +
+        ',gameCenterLeaderboardSetVersions,gameCenterChallengeVersions,gameCenterActivityVersions' +
+        ',inAppPurchaseVersions,subscriptionVersions,subscriptionGroupVersions,build,appBundleVersion' +
+        ',rejectionAttachments' +
+        '&limit=2000&limit[rejectionAttachments]=1000'
+    );
+  });
+
+  test('a thread is found from a submission id by filter, not by walking the app', async () => {
+    const calls = await sent({ data: [] }, () => api.findThreadForSubmission(SESSION, 'submission-0000'));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.url, `${BASE}/resolutionCenterThreads?filter[reviewSubmission]=submission-0000`);
+  });
+});
+
+describe('the unread counts', () => {
+  /**
+   * `inbox` reads the `apps` collection, which is otherwise official-API overlap. What
+   * makes it a gap is the fieldset: `appStoreVersionMetrics` is not a schema in Apple's
+   * specification and `messageCount` is not an attribute anywhere in it. Narrow this query
+   * and the feature goes with it.
+   */
+  test('asks apps for the private metric fieldsets and nothing else', async () => {
+    const calls = await sent({ data: [] }, () => api.listAppMetrics(SESSION));
+
+    assert.equal(
+      calls[0]!.url,
+      `${BASE}/apps` +
+        '?include=appStoreVersionMetrics,betaReviewMetrics,reviewSubmissions' +
+        '&limit=200&filter[removed]=false' +
+        '&fields[apps]=appStoreVersionMetrics,betaReviewMetrics,reviewSubmissions' +
+        '&fields[appStoreVersionMetrics]=messageCount' +
+        '&fields[betaReviewMetrics]=messageCount,platform' +
+        '&fields[reviewSubmissions]=state' +
+        '&limit[reviewSubmissions]=10'
+    );
+  });
+
+  test('the unread count itself is asked for by name', async () => {
+    const calls = await sent({ data: [] }, () => api.listAppMetrics(SESSION));
+
+    assert.match(calls[0]!.url, /fields\[appStoreVersionMetrics\]=messageCount/);
+  });
+});
+
+describe('the version history and the privacy declarations', () => {
+  test('state changes hang off the version', async () => {
+    const calls = await sent({ data: [] }, () => api.listVersionStateChanges(SESSION, 'v-0000'));
+
+    assert.equal(calls[0]!.url, `${BASE}/appStoreVersions/v-0000/appStoreVersionStateChanges?limit=200`);
+  });
+
+  test('data usages come with the four enum rows that give them meaning', async () => {
+    const calls = await sent({ data: [] }, () => api.listDataUsages(SESSION, APP));
+
+    assert.equal(
+      calls[0]!.url,
+      `${BASE}/apps/${APP}/dataUsages?include=category,purpose,grouping,dataProtection&limit=500`
+    );
+  });
+
+  test('the publish state takes no query at all', async () => {
+    const calls = await sent({ data: {} }, () => api.getDataUsagePublishState(SESSION, APP));
+
+    assert.equal(calls[0]!.url, `${BASE}/apps/${APP}/dataUsagePublishState`);
+  });
+});
+
+describe('the draft writes', () => {
+  const created = { data: { type: 'resolutionCenterDraftMessages', id: DRAFT } };
+
+  test('a new draft names the thread it belongs to', async () => {
+    const calls = await sent(created, () => api.createDraftMessage(SESSION, THREAD, 'We have fixed it.'));
+
+    assert.equal(calls[0]!.method, 'POST');
+    assert.equal(calls[0]!.url, `${BASE}/resolutionCenterDraftMessages`);
+    assert.equal(
+      calls[0]!.body,
+      '{"data":{"type":"resolutionCenterDraftMessages","attributes":{"messageBody":"We have fixed it."},' +
+        `"relationships":{"resolutionCenterThread":{"data":{"type":"resolutionCenterThreads","id":"${THREAD}"}}}}}`
+    );
+    assert.equal(calls[0]!.headers['content-type'], 'application/vnd.api+json');
+  });
+
+  test('an autosave replaces the text and says nothing about attachments', async () => {
+    const calls = await sent(created, () => api.updateDraftMessage(SESSION, DRAFT, 'Second thoughts.'));
+
+    assert.equal(calls[0]!.method, 'PATCH');
+    assert.equal(calls[0]!.url, `${BASE}/resolutionCenterDraftMessages/${DRAFT}`);
+    assert.equal(
+      calls[0]!.body,
+      `{"data":{"type":"resolutionCenterDraftMessages","id":"${DRAFT}",` +
+        '"attributes":{"messageBody":"Second thoughts."}}}'
+    );
+  });
+
+  test('deleting a draft sends no body', async () => {
+    const calls = await sent({}, () => api.deleteDraftMessage(SESSION, DRAFT));
+
+    assert.equal(calls[0]!.method, 'DELETE');
+    assert.equal(calls[0]!.url, `${BASE}/resolutionCenterDraftMessages/${DRAFT}`);
+    assert.equal(calls[0]!.body, undefined);
+  });
+
+  test('deleting a draft is audited — the attachments go with it', async () => {
+    const stub = stubFetch(() => ({ body: {} }));
+    try {
+      const records = await withStderr(async (captured) => {
+        await api.deleteDraftMessage(SESSION, DRAFT);
+        return captured.records();
+      });
+
+      assert.deepEqual(
+        records.filter((record) => record['event'] === 'draft.delete').map((record) => record['phase']),
+        ['start', 'ok']
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+describe('the attachment slots', () => {
+  test('reserving names the size before the name, as the recording did', async () => {
+    const calls = await sent({ data: { type: 'resolutionCenterMessageAttachments', id: ATTACHMENT } }, () =>
+      api.reserveMessageAttachment(SESSION, DRAFT, 'screenshot.png', 4096)
+    );
+
+    assert.equal(calls[0]!.method, 'POST');
+    assert.equal(calls[0]!.url, `${BASE}/resolutionCenterMessageAttachments`);
+    assert.equal(
+      calls[0]!.body,
+      '{"data":{"type":"resolutionCenterMessageAttachments",' +
+        '"attributes":{"fileSize":4096,"fileName":"screenshot.png"},' +
+        '"relationships":{"resolutionCenterDraftMessage":' +
+        `{"data":{"type":"resolutionCenterDraftMessages","id":"${DRAFT}"}}}}}`
+    );
+    assert.equal(calls[0]!.headers['content-type'], 'application/vnd.api+json');
+  });
+
+  test('committing is the one attribute that makes the bytes count', async () => {
+    const calls = await sent({ data: { type: 'resolutionCenterMessageAttachments', id: ATTACHMENT } }, () =>
+      api.completeMessageAttachment(SESSION, ATTACHMENT)
+    );
+
+    assert.equal(calls[0]!.method, 'PATCH');
+    assert.equal(calls[0]!.url, `${BASE}/resolutionCenterMessageAttachments/${ATTACHMENT}`);
+    assert.equal(
+      calls[0]!.body,
+      `{"data":{"type":"resolutionCenterMessageAttachments","id":"${ATTACHMENT}",` +
+        '"attributes":{"uploaded":true}}}'
+    );
+  });
+
+  test('removing one is audited', async () => {
+    const stub = stubFetch(() => ({ body: {} }));
+    try {
+      const records = await withStderr(async (captured) => {
+        await api.deleteMessageAttachment(SESSION, ATTACHMENT);
+        return captured.records();
+      });
+
+      const audit = records.filter((record) => record['event'] === 'draft.attachment.delete');
+      assert.deepEqual(audit.map((record) => record['phase']), ['start', 'ok']);
+      assert.equal(audit[0]!['attachmentId'], ATTACHMENT);
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+describe('sending, which is the irreversible one', () => {
+  const sendable = {
+    data: {
+      type: 'resolutionCenterDraftMessages',
+      id: DRAFT,
+      attributes: { messageBody: 'We have fixed it.' },
+    },
+  };
+
+  test('the send posts a reference to the draft, not the text', async () => {
+    const calls = await sent({ data: { type: 'resolutionCenterMessages', id: 'message-0000' } }, () =>
+      api.sendDraftMessage(SESSION, DRAFT)
+    );
+
+    assert.equal(calls[0]!.method, 'POST');
+    assert.equal(calls[0]!.url, `${BASE}/resolutionCenterMessages`);
+    assert.equal(
+      calls[0]!.body,
+      '{"data":{"type":"resolutionCenterMessages","relationships":{"createFromDraftMessage":' +
+        `{"data":{"type":"resolutionCenterDraftMessages","id":"${DRAFT}"}}}}}`
+    );
+    assert.equal(calls[0]!.headers['content-type'], 'application/vnd.api+json');
+    // Whatever is in the draft box at this moment is what Apple gets: the body carries no
+    // copy of the text, so a stale draft cannot be sent as a fresh one by accident.
+    assert.doesNotMatch(calls[0]!.body!, /messageBody/);
+  });
+
+  test('the send is audited before it goes out, since there is no unsend', async () => {
+    const stub = stubFetch(() => ({ body: { data: { type: 'resolutionCenterMessages', id: 'message-0000' } } }));
+    try {
+      const records = await withStderr(async (captured) => {
+        await api.sendDraftMessage(SESSION, DRAFT);
+        return captured.records();
+      });
+
+      const audit = records.filter((record) => record['event'] === 'message.send');
+      assert.deepEqual(audit.map((record) => record['phase']), ['start', 'ok']);
+      assert.equal(audit[0]!['draftId'], DRAFT);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('an empty draft sends nothing', async () => {
+    const stub = stubFetch(() => ({
+      body: { data: { type: 'resolutionCenterDraftMessages', id: DRAFT, attributes: { messageBody: '  ' } } },
+    }));
+    try {
+      await assert.rejects(() => api.sendDraftReply(SESSION, THREAD), /is empty/);
+      assert.equal(stub.calls.length, 1, 'the draft was read and nothing was posted');
+      assert.equal(stub.calls[0]!.method, 'GET');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a thread with no draft sends nothing', async () => {
+    const stub = stubFetch(() => ({ body: { data: null } }));
+    try {
+      await assert.rejects(() => api.sendDraftReply(SESSION, THREAD), /no draft to send/);
+      assert.equal(stub.calls.length, 1);
+      assert.equal(stub.calls[0]!.method, 'GET');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a sendable draft is read first and posted second', async () => {
+    const stub = stubFetch((call) => ({
+      body: call.method === 'GET' ? sendable : { data: { type: 'resolutionCenterMessages', id: 'message-0000' } },
+    }));
+    try {
+      await withStderr(() => api.sendDraftReply(SESSION, THREAD));
+
+      assert.deepEqual(
+        stub.calls.map((call) => call.method),
+        ['GET', 'POST']
+      );
+      assert.equal(
+        stub.calls[0]!.url,
+        `${BASE}/resolutionCenterThreads/${THREAD}/resolutionCenterDraftMessage` +
+          '?include=resolutionCenterMessageAttachments,fromActor' +
+          '&limit[resolutionCenterMessageAttachments]=1000'
+      );
+      assert.equal(stub.calls[1]!.url, `${BASE}/resolutionCenterMessages`);
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+describe('saving a reply', () => {
+  test('a thread with no draft gets one created, then read back', async () => {
+    let reads = 0;
+    const stub = stubFetch((call) => {
+      if (call.method !== 'GET') return { body: { data: { type: 'resolutionCenterDraftMessages', id: DRAFT } } };
+      reads += 1;
+      return {
+        body: {
+          data:
+            reads === 1
+              ? null
+              : { type: 'resolutionCenterDraftMessages', id: DRAFT, attributes: { messageBody: 'Fixed.' } },
+        },
+      };
+    });
+    try {
+      await withStderr(() => api.saveDraftReply(SESSION, { threadId: THREAD, body: 'Fixed.' }));
+
+      assert.deepEqual(
+        stub.calls.map((call) => call.method),
+        ['GET', 'POST', 'GET'],
+        'the draft is read back because neither write mentions attachments'
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a thread that already has one gets it replaced, not doubled', async () => {
+    const existing = {
+      data: { type: 'resolutionCenterDraftMessages', id: DRAFT, attributes: { messageBody: 'Old.' } },
+    };
+    const stub = stubFetch(() => ({ body: existing }));
+    try {
+      await withStderr(() => api.saveDraftReply(SESSION, { threadId: THREAD, body: 'New.' }));
+
+      assert.deepEqual(
+        stub.calls.map((call) => call.method),
+        ['GET', 'PATCH', 'GET']
+      );
+      assert.equal(stub.calls[1]!.url, `${BASE}/resolutionCenterDraftMessages/${DRAFT}`);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('an attachment path that is not there stops before anything is written', async () => {
+    const stub = stubFetch();
+    try {
+      await assert.rejects(
+        () =>
+          api.saveDraftReply(SESSION, {
+            threadId: THREAD,
+            body: 'Fixed.',
+            attach: ['/no/such/file/at/all.png'],
+          }),
+        /No such file to attach/
+      );
+      assert.equal(stub.calls.length, 0, 'the text was not saved half way');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('discarding needs a draft to discard and says which one went', async () => {
+    const stub = stubFetch(() => ({ body: { data: null } }));
+    try {
+      await assert.rejects(() => api.discardDraftReply(SESSION, THREAD), /no draft to delete/);
+      assert.equal(stub.calls.length, 1);
+    } finally {
+      stub.restore();
+    }
+  });
+});

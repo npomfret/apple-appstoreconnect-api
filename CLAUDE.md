@@ -48,6 +48,11 @@ capture parsing, date ordering — and says nothing about remote semantics. A gr
 not evidence that a call Apple has never been sent works. Report the verification that
 actually ran, and never make a live write to prove a change.
 
+`test/gap-*.test.ts` is the fence around the capabilities Apple has no official equivalent
+for: the request each one makes, and what this client reads back. **A test in those files
+that needs editing while removing official-API overlap means the removal took something it
+should not have.** Read a failure that way before reaching for the test.
+
 ## Routing
 
 - General TypeScript and module-boundary conventions: `.claude/skills/typescript-conventions/`

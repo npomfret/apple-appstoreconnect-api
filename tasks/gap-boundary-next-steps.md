@@ -86,10 +86,22 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
    and `docs/evidence.md`. No code changes. The `CLAUDE.md` rewrite currently sitting
    uncommitted in the working tree is part of this step and needs the owner's sign-off.
 
-1. **Pin the gaps first.** Contract tests over Resolution Center threads/messages/drafts/
-   attachments/rejections, `inbox` counts, version state history and App Privacy — asserting
-   the endpoint, query and parsed shape of each. These are the tests that make the later
-   deletions safe, and they must be written while the code still works.
+1. **Pin the gaps first.** *Done.* Contract tests over Resolution Center threads/messages/
+   drafts/attachments/rejections, `inbox` counts, version state history and App Privacy —
+   asserting the endpoint, query and parsed shape of each. These are the tests that make the
+   later deletions safe, and they had to be written while the code still worked.
+
+   `test/gap-requests.test.ts` pins the request: URL, query, method, body and content type,
+   asserted whole rather than in pieces, plus the audit record on each irreversible write.
+   `test/gap-shapes.test.ts` pins what is read back: the digest built from a thread —
+   ordering, Apple's last word, guidelines, attachments, a waiting draft — and the App
+   Privacy label. It deliberately asserts on the Resolution Center half of the report and
+   not on how the thread was discovered, so step 3 changes its setup and none of its
+   expectations.
+
+   Coverage before this step ran the wrong way round: 472 of 1,501 test lines pinned
+   `/ci/api`, which is slice 4.1, and not one retained Resolution Center, inbox, history or
+   privacy call was named anywhere in `test/`. The suite protected what is leaving.
 
 2. **Narrow the retained duplicates.** `listAppMetrics` becomes an explicitly gap-only read
    — the `apps` collection asked for nothing but the private metric fieldset, documented as
@@ -139,8 +151,9 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
 
 - Each slice: `rg` the removed command names, exported functions and private routes to prove
   the slice is gone whole; `npm run typecheck`, `npm test`, `npm run build`.
-- The step 1 contract tests must stay green across every slice. A gap test that needs
-  editing during a deletion means the slice took something it should not have.
+- `test/gap-requests.test.ts` and `test/gap-shapes.test.ts` must stay green across every
+  slice, unedited. A gap test that needs changing during a deletion means the slice took
+  something it should not have.
 - Retained reads exercised only against a fresh browser session, read-only.
 - At completion, re-download the official specification and record its version and date in
   the README and `docs/evidence.md`.
