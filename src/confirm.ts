@@ -1,10 +1,11 @@
 /**
  * Asking before the handful of things that can't be taken back.
  *
- * Most of this client is safely repeatable: a read costs nothing, and a bad `set-build` is
- * one more `set-build` away from being fixed. Sending a reply to App Review is not — the
- * message is on the thread the instant the POST returns, and putting an item back in the
- * review queue is the same. Those stop and ask.
+ * A read costs nothing and can be repeated. None of the writes left in this client can be:
+ * `send-reply` is the extreme — the message is on the thread the instant the POST returns,
+ * with no unsend and no edit — and the rest destroy or write over something no second run
+ * restores: a deleted draft, a deleted attachment, the text `save-draft` replaces. Nothing
+ * keeps a copy of any of it, so they all stop and ask.
  *
  * The prompt goes to **stderr** and the answer is read from stdin, so a command's real
  * output still pipes cleanly.
@@ -45,9 +46,9 @@ interface Asked {
  * Normally stdin. But an argument piped in leaves nothing there to answer on —
  * `cat reply.txt | asc save-draft <threadId> -` is a documented way to run this — and a
  * command that both read its input from stdin and asked would be one you always had to add
- * `--yes` to. None does as things stand; the fallback is what keeps that from being a trap
- * the first time one does. There is still a terminal in that case, reachable as `/dev/tty`,
- * so the question goes there instead.
+ * `--yes` to. `save-draft` is one, whenever the box it is writing into already has words in
+ * it; the fallback is what keeps that from being a trap. There is still a terminal in that
+ * case, reachable as `/dev/tty`, so the question goes there instead.
  *
  * Nothing to open means nothing to ask: cron, CI and a container with no tty all fail here,
  * and that is the case the refusal below is for.

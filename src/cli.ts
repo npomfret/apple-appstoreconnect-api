@@ -41,7 +41,8 @@ Writes (these change your live App Store Connect data):
   asc save-draft <threadId> <text|-> [--attach file ...]
                               Write the reply to Apple into the thread's draft box, with
                               attachments. "-" reads the text from stdin. This does NOT
-                              send it — see send-reply
+                              send it — see send-reply. Text already in the box is printed
+                              and asked about first, since the write replaces it
   asc delete-attachment <id>  Remove one attachment from a draft
   asc delete-draft <threadId> Throw the thread's draft away, attachments and all — printed
                               in full first, since nothing keeps a copy
@@ -149,9 +150,10 @@ function requireAppId(session: Session, given: string | undefined): string {
 }
 
 /**
- * What the two commands that act on a whole draft show before they ask. The whole body,
- * not a preview of it: it is the last look anyone gets either way — `send-reply` can't be
- * edited or taken back afterwards, and `delete-draft` leaves no copy of what it threw away.
+ * What the commands that act on a draft show before they ask. The whole body, not a preview
+ * of it: it is the last look anyone gets at those words — `send-reply` can't be edited or
+ * taken back afterwards, `delete-draft` leaves no copy of what it threw away, and
+ * `save-draft` writes over the text without keeping one either.
  */
 function describeDraft(threadId: string, draft: Denormalized): string[] {
   const body = String(draft['messageBody'] ?? '');
@@ -299,6 +301,19 @@ async function main(argv: string[]): Promise<number> {
       // "-" for stdin: a reply to App Review runs to paragraphs, and quoting all of that
       // into a shell argument is how newlines get lost.
       const body = requireText(requireArg(rest[1], 'text', example), 'draft');
+
+      // The PATCH behind this replaces the draft's text outright — it is the autosave, not
+      // an append — and nothing keeps what was there. So the box is read first, and the
+      // question is asked about the words in it rather than about the thread id. A thread
+      // with no draft is not asked: the write there creates one and destroys nothing.
+      const existing = await api.getDraftMessage(session, threadId);
+      if (existing.data) {
+        await confirm({
+          question: `Replace the text of this draft on thread ${threadId}? Its attachments stay.`,
+          detail: describeDraft(threadId, denormalize(existing, existing.data)),
+          yes,
+        });
+      }
 
       const document = await api.saveDraftReply(session, { threadId, body, attach });
       emit(document, raw);

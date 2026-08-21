@@ -53,15 +53,17 @@ and `denormalizeAll` are for.
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
 `sendDraftReply()` called from code go straight to Apple, and neither can be undone.
+`saveDraftReply()` asks nothing either, and replaces whatever text the draft box held.
 `confirm()` from `src/confirm.ts` is there if you want the same guard — it asks on the
 terminal even when stdin is carrying something else, and refuses when there is no terminal
 to ask on. `findSendableDraft()` is the read half of `sendDraftReply()`, so you can show a
 draft and ask before sending the thing you just showed; `findDeletableDraft()` is the same
 half of `discardDraftReply()`, and differs in one thing — an empty draft is still one to
-delete. That is all `send-reply` does —
-plus one more `findSendableDraft()` after the answer, since the send posts a reference to
-the draft rather than its text, and the box autosaves while your prompt is on screen. Worth
-copying if you build your own.
+delete. `saveDraftReply()` has no read half of its own: `getDraftMessage()` is the whole of
+it, since `{"data": null}` is the answer meaning there is nothing to ask about. That is all
+`send-reply` does — plus one more `findSendableDraft()` after the answer, since the send
+posts a reference to the draft rather than its text, and the box autosaves while your prompt
+is on screen. Worth copying if you build your own.
 
 ## Conventions worth knowing before editing
 

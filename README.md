@@ -98,10 +98,10 @@ was probed rather than recorded, which [docs/evidence.md](docs/evidence.md) says
 
 **`send-reply` can't be undone**, so it prints what it is about to do and asks first — it
 shows you the whole draft and reads it again after you answer, in case the browser autosaved
-over it in the meantime. The two deletes ask too, and `delete-draft` prints the draft it is
-about to throw away for the same reason — nothing keeps a copy of it afterwards. `--yes`
-answers for you, and still prints
-what it answered for; a command whose own input is a pipe is asked on the terminal rather
+over it in the meantime. The rest ask too, each of them taking something no second run puts
+back: `delete-draft` prints the draft it is about to throw away, and `save-draft` prints the
+text it is about to write over whenever the box already has some. `--yes` answers for you,
+and still prints what it answered for; a command whose own input is a pipe is asked on the terminal rather
 than refused, and with no terminal at all they stop rather than assume. **There is no
 unconfirmed write**, and no way to send a hand-written body at a path of your own.
 

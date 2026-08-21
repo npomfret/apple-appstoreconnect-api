@@ -21,7 +21,10 @@ App Store Connect keeps one unsent message per thread and autosaves it as you ty
 
 The text replaces the draft's contents rather than appending, and newlines survive the
 round trip, so `-` and a here-doc are the sane way to write anything longer than a
-sentence. Empty text is refused either way — a here-doc that expanded to nothing would
+sentence. Replacing means what was there is gone with nothing keeping a copy, so a box that
+already has words in it is printed in full and asked about before the write; a thread with
+no draft yet is written straight away, having nothing to lose. Empty text is refused either
+way — a here-doc that expanded to nothing would
 otherwise wipe the draft it was meant to write. Attachments are added to whatever the draft
 already carries; `delete-attachment` takes one back off. Every attachment path is checked
 for existence *before* the text is saved, so a typo can't leave the reply half-written.
@@ -72,7 +75,9 @@ An empty draft is refused before anything is sent, matching the browser, which k
 disabled until there's text.
 
 `save-draft` reads the thread first and POSTs or PATCHes accordingly, since the draft is
-created on the first keystroke and updated forever after. Attachments go up in three steps —
+created on the first keystroke and updated forever after. The CLI reads it once more before
+that, to have something to show you and ask about — two GETs where the library call on its
+own makes one, and asks nothing. Attachments go up in three steps —
 reserve, PUT the parts, then `{"uploaded":true}` — which is the same sequence App Store
 Connect uses for any asset, here against `resolutionCenterMessageAttachments`.
 `uploadPart` in `src/http.ts` sends those parts to

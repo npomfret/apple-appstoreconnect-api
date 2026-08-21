@@ -20,17 +20,21 @@ escape hatch, restricted to the private families — see
 
 ## Confirmations
 
-One command reaches Apple in a way this client cannot walk back — `send-reply` — and it
-prints what it is about to do and asks. So do the two deletes, which destroy data rather
-than publish it.
+Every write here prints what it is about to act on and asks. One of them reaches Apple in a
+way this client cannot walk back — `send-reply`. The others destroy or write over data
+instead of publishing it, which is the same question in a smaller way: nothing keeps a copy
+of what they take.
 
 How much each of them can show you differs, and it is worth knowing which you are getting.
-`delete-draft` prints the draft in full, attachments and all, exactly as `send-reply` does:
-the id you typed is a thread's, and it says nothing about the words in the box, which
-nothing keeps a copy of once they are gone. `delete-attachment` prints the id you passed and
-no more — nothing here reads a single attachment, so there is no file name to put beside it
-that didn't come off a draft you had already read. `asc draft <threadId>` is where those ids
-and their names are listed together, and is worth a look first.
+`send-reply` and `delete-draft` print the draft in full, attachments and all: the id you
+typed is a thread's, and it says nothing about the words in the box. `save-draft` prints
+that same thing when the box already has words in it, because what it writes replaces them
+outright rather than adding to them — its attachments are the exception and are kept, and a
+thread with no draft is not asked at all, since creating one takes nothing.
+`delete-attachment` prints the id you passed and no more — nothing here reads a single
+attachment, so there is no file name to put beside it that didn't come off a draft you had
+already read. `asc draft <threadId>` is where those ids and their names are listed together,
+and is worth a look first.
 
 What is about to happen is printed either way, `--yes` included. That flag says the answer
 is already decided, not that there is nothing worth recording — `send-reply` prints the
@@ -39,14 +43,15 @@ whole message it is about to send, and there is no unsend.
 A command reading its input from stdin would still be asked. `cat reply.txt | asc
 save-draft <threadId> -` has no stdin left to answer on, so a question there goes to the
 terminal itself (`/dev/tty`) rather than being refused; needing `--yes` to get through a
-pipe would mean putting the flag on exactly the writes that most want a human. No command
-that asks reads stdin as things stand, so nothing exercises that path today — it is there
-for the first one that does. Where there is no terminal at all — cron, CI, a container
-without one — the answer genuinely can't be asked for, so the command prints what it would
-have done and stops. Declining exits 1, so a script notices.
+pipe would mean putting the flag on exactly the writes that most want a human. `save-draft`
+over a box that already has text in it is the case that exercises it. Where there is no
+terminal at all — cron, CI, a container without one — the answer genuinely can't be asked
+for, so the command prints what it would have done and stops. Declining exits 1, so a
+script notices.
 
-The guard is in the CLI, not the library: `sendDraftMessage()` and `sendDraftReply()`
-called from code go straight to Apple. What is *not* only in the CLI is the check that a
+The guard is in the CLI, not the library: `sendDraftMessage()`, `sendDraftReply()` and
+`saveDraftReply()` called from code go straight through, the last of them writing over
+whatever the box held. What is *not* only in the CLI is the check that a
 draft is worth sending — an absent or empty one is refused in `findSendableDraft()`, which
 both routes go through.
 

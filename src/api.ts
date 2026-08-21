@@ -452,6 +452,11 @@ export interface DraftReply {
  * and attaching any files given. Nothing here reaches Apple: the draft is yours until
  * someone presses Send in the browser.
  *
+ * **No confirmation, and the text it replaces is not kept.** A draft that already has
+ * words in it is written over — that is what the browser's own autosave does — so the
+ * CLI's `save-draft` reads the box first and asks about what is in it. Attachments are the
+ * exception: those are added to, never replaced.
+ *
  * The draft is read back at the end because neither the POST nor the PATCH response
  * mentions attachments — the relationship only shows up on a fresh GET.
  */
