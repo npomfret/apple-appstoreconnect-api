@@ -122,8 +122,16 @@ Reviewed 3 times, rejected 3 times.
 
 The last column is how long the version sat in that state, which is the part worth having:
 it's the only record of how long a past review actually took, and it survives rejections
-and resubmissions. `initiator` separates Apple's moves from your own — that's what tells a
-`REJECTED` apart from a `DEVELOPER_REJECTED` you did yourself.
+and resubmissions. `initiator` says who made each move: "Apple", or the Apple ID of whoever
+on your side did it. It is not what tells a rejection from your own withdrawal — those are
+separate states, `REJECTED` and `DEVELOPER_REJECTED`, in Apple's own vocabulary.
+
+The tally underneath counts a rejection as `REJECTED` **or** `METADATA_REJECTED`, which are
+two of the three rejection states in Apple's `AppStoreVersionState`; the third is your own
+`DEVELOPER_REJECTED` and is not a rejection of yours to answer. A 4.1 metadata rejection —
+the kind most of the Resolution Center reads here are about — is the second, so counting
+only the first read "rejected once" under a timeline showing three. Only `REJECTED` appears
+in any recording; the other spellings come from Apple's enum for the same field.
 
 Note the offsets in those timestamps: Apple stamps them in local time, so the text and the
 moment it names don't sort alike. Ordering is by the instant — across a daylight-saving

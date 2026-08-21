@@ -61,7 +61,7 @@ describe('ordering state changes', () => {
     assert.equal(changes[1].heldForSeconds, undefined);
   });
 
-  test('who moved it is kept, since that is what tells a rejection from your own', async () => {
+  test('who moved it is kept, since a timeline of states says nothing about who moved them', async () => {
     const changes = await history(dst);
 
     assert.equal(changes[0].byApple, false);
@@ -143,6 +143,44 @@ describe('how long a state was held', () => {
     const line = formatHistory([waiting]);
 
     assert.equal(line.trim().split(/\s{2,}/).pop(), '(current)');
+  });
+});
+
+describe('the tally under the timeline', () => {
+  // The one line of `asc history` that is read instead of scanned. Apple has three rejection
+  // states and this counted one of them, so a version rejected three times on its metadata —
+  // which is what a 4.1 Resolution Center thread is — was reported as never rejected at all,
+  // directly beneath a timeline listing every one of them.
+  function tally(...states: string[]): string {
+    const changes: StateChange[] = states.map((state, index) => ({
+      state,
+      date: `2026-04-2${index + 1}T12:00:00-07:00`,
+      byApple: true,
+    }));
+
+    return formatHistory(changes).split('\n').pop() ?? '';
+  }
+
+  test('a metadata rejection is a rejection', () => {
+    assert.equal(tally('IN_REVIEW', 'METADATA_REJECTED'), 'Reviewed once, rejected once.');
+    assert.equal(
+      tally('IN_REVIEW', 'REJECTED', 'IN_REVIEW', 'METADATA_REJECTED'),
+      'Reviewed 2 times, rejected 2 times.'
+    );
+  });
+
+  test('a rejection you made yourself is not one of theirs, and has its own state to say so', () => {
+    assert.equal(tally('IN_REVIEW', 'DEVELOPER_REJECTED'), 'Reviewed once, rejected 0 times.');
+  });
+
+  test('a binary Apple would not process is not a review outcome', () => {
+    // Still printed in the timeline; just not counted as a rejection.
+    const lines = formatHistory([
+      { state: 'INVALID_BINARY', date: '2026-04-25T12:00:00-07:00', byApple: true },
+    ]).split('\n');
+
+    assert.match(lines[0] ?? '', /INVALID_BINARY/);
+    assert.equal(lines.length, 1);
   });
 });
 

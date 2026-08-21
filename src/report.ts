@@ -332,8 +332,11 @@ export async function fetchHistory(session: Session, versionId: string): Promise
     .map((change) => {
       const initiator = asString(change['initiator']);
       return {
-        // appStoreState and appVersionState have agreed on every capture so far; the
-        // first is the one the History tab shows.
+        // appStoreState and appVersionState have agreed on every capture so far, and the
+        // first is the one the History tab shows. They are not interchangeable in general:
+        // 4.4.1 deprecates appStoreState, and the two enums diverge once a version ships
+        // (READY_FOR_SALE against READY_FOR_DISTRIBUTION), so the fallback is a real second
+        // answer rather than a copy of the first.
         state: asString(change['appStoreState']) ?? asString(change['appVersionState']) ?? 'UNKNOWN',
         date: asString(change['date']),
         initiator,
@@ -402,6 +405,28 @@ function duration(seconds: number): string {
   return rest ? `${days}d ${rest}h` : `${days}d`;
 }
 
+/**
+ * The states that mean Apple sent the version back, which is what "rejected" counts.
+ *
+ * Three of them, not one. `appStoreState` and `appVersionState` are Apple's own fields and
+ * carry Apple's own vocabulary — every value in the recording is spelled exactly as
+ * `AppStoreVersionState` and `AppVersionState` spell it in specification 4.4.1 — and both
+ * enums list `REJECTED` and `METADATA_REJECTED` as separate states. Counting only the first
+ * missed every metadata rejection, which is the kind this client is mostly *for*: a 4.1
+ * thread is a metadata rejection, so the tally could read "rejected once" under a timeline
+ * showing three, and the one number in `asc history` nobody reads twice was the wrong one.
+ *
+ * `DEVELOPER_REJECTED` is deliberately not here. That is your own withdrawal and it has its
+ * own state, so the two never have to be told apart by who initiated them. `INVALID_BINARY`
+ * is not here either — a build Apple would not process is not a review outcome — and both
+ * still print in the timeline above like any other state.
+ *
+ * Only `REJECTED` occurs in any recording. The other is read off Apple's enum for the same
+ * field rather than observed, which is why the set is exactly two: a state that means a
+ * rejection and is spelled some third way would still be missed.
+ */
+const REJECTED_BY_APPLE = new Set(['REJECTED', 'METADATA_REJECTED']);
+
 /** Renders the history as a timeline. */
 export function formatHistory(changes: StateChange[]): string {
   if (changes.length === 0) return 'No recorded state changes for this version.';
@@ -414,7 +439,7 @@ export function formatHistory(changes: StateChange[]): string {
   });
 
   const reviews = changes.filter((change) => change.state === 'IN_REVIEW').length;
-  const rejections = changes.filter((change) => change.state === 'REJECTED').length;
+  const rejections = changes.filter((change) => REJECTED_BY_APPLE.has(change.state)).length;
   if (reviews || rejections) {
     const times = (count: number) => (count === 1 ? 'once' : `${count} times`);
     lines.push('');

@@ -57,9 +57,8 @@ exposes CI products, workflows, repositories, build runs, actions, issues and te
 and can create and update workflows.
 
 That is right about workflows in general and **wrong about the field that matters**. The
-check that settles it is against the 4.4.1 document itself and is under "What the recording
-settled" below. The weaker check this file originally carried — against Apple's published
-`CiWorkflow.Attributes` page — has been superseded by it and is not repeated here.
+check that settles it is against the 4.4.1 document itself, under "What the recording
+settled" below.
 
 The private document does carry it. Read live today from
 `GET ci/api/teams/{team}/products/{product}/workflows-v15`:
@@ -82,16 +81,11 @@ be treated as a keep-list candidate and tested as one while the parts Apple genu
 remain removed. That is a decision for whoever owns the boundary, not something this file
 settles.
 
-That code has now been removed, but the boundary question is unchanged. This table used to
-sort the scopes by whether a populated capture was needed; the recording answered that for
-every row, so the column now says what each would still have to settle:
-
-| Proposed work | What it still waits on |
-| --- | --- |
-| Correct the old `/ci/api` content type if a CI transport is restored | Owner approval |
-| Keep a raw `post_actions: unknown[]` read and report only empty/non-empty | Owner approval |
-| Identify and render a TestFlight Internal Testing post-action | Owner approval |
-| Add or remove a post-action from a script | A write design of its own, on top of that |
+That code has now been removed, but the boundary question is unchanged. Three scopes are
+now waiting on nothing but the owner: correcting the `/ci/api` content type if a CI
+transport is restored, a raw `post_actions: unknown[]` read reporting only empty or
+non-empty, and rendering a TestFlight Internal Testing post-action by name. Adding or
+removing one from a script needs a write design of its own on top of that approval.
 
 The read is the coherent first boundary. It answers whether anything is configured without
 inventing a request body or restoring build, repository, test-result and run-report features
@@ -143,8 +137,8 @@ had the post-action; the browser took it off and put it back 23 seconds later:
 | GET | — | populated |
 
 Both `PUT`s answered **200** and the workflow was left as it was found. So removal and
-addition each have a request body and a read-back behind them, which is what the two table
-rows above were waiting for.
+addition each have a request body and a read-back behind them, which is what the scripted
+add-or-remove scope above was waiting for.
 
 **The `PUT` is a full-document replace, confirmed rather than assumed.** Its body carries
 fourteen top-level keys — `actions`, `clean`, `container_file_path`, `description`,
@@ -189,9 +183,7 @@ higher-risk project.
 
 ## Handling the recording
 
-Kept because it governs the recording that is still on disk, and any later one.
-
-It is credential material, not a repository fixture. Safari may include the full session
+This governs the recording still on disk, and any later one. It is credential material, not a repository fixture. Safari may include the full session
 cookie, per-request Apple signatures, repository URLs, account identities and the workflow's
 environment variables. It stays under `tmp/` and is never committed, and a "sanitised" export
 deserves the same treatment, since sanitising authentication headers does not necessarily

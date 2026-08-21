@@ -77,6 +77,19 @@ list is the tested one and an override is not.
 - From the History, Trust & Safety and Growth tabs: `listVersionStateChanges` (the browser
   sends no query at all; the `limit` is ours, and tested), `listDataUsages` and
   `getDataUsagePublishState`.
+
+  What a state change carries was re-read on 2026-08-21: `appStoreState`, `appVersionState`,
+  `date` and `initiator`, no relationships, and `initiator` is either the literal "Apple" or
+  an email address — 15 resources, one recording, and the only one that has them. Five states
+  occur (`PREPARE_FOR_SUBMISSION`, `READY_FOR_REVIEW`, `WAITING_FOR_REVIEW`, `IN_REVIEW`,
+  `REJECTED`), each spelled exactly as `AppStoreVersionState` spells it in 4.4.1, and the two
+  state fields agree on all fifteen. That is a *sample*: Apple's enums carry twenty and
+  fifteen values respectively, including two further rejection states, and they diverge from
+  each other once a version ships, so nothing here should treat five observed values as the
+  vocabulary. `report`'s rejection tally counts `REJECTED` and `METADATA_REJECTED`, the second
+  of which appears in no recording and is read off Apple's enum for the same field. Apple has
+  no official state-change resource at all — zero schemas and zero paths in 4.4.1 — so the
+  read itself is unambiguously a gap.
 - From one real send: `sendDraftMessage` — the `createFromDraftMessage` POST, its `201`,
   and the thread read back with the new message on it.
 - From one draft reply with an attachment: `createDraftMessage`, `updateDraftMessage`,

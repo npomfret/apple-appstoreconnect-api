@@ -252,8 +252,9 @@ export function listThreads(
  * keeps this even across rejections and resubmissions, so it is the only record of how
  * long a past review actually took.
  *
- * `initiator` is "Apple" for their side and an Apple ID for yours, which is what tells a
- * rejection apart from your own withdrawal back to PREPARE_FOR_SUBMISSION.
+ * `initiator` is "Apple" for their side and an Apple ID for yours, which is who moved it.
+ * It is not what separates a rejection from your own withdrawal: those are distinct states
+ * in Apple's own vocabulary, and `report` counts them by state — see `REJECTED_BY_APPLE`.
  */
 export function listVersionStateChanges(
   session: Session,
