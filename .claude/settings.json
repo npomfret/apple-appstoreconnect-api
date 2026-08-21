@@ -19,8 +19,6 @@
       "Bash(git push *)",
       "Bash(* --yes *)",
       "Bash(*--yes)",
-      "Bash(* --reveal *)",
-      "Bash(*--reveal)",
       "Read(session.json)",
       "Edit(session.json)",
       "Read(**/*.session.json)",
