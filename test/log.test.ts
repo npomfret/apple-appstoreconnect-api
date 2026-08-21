@@ -40,7 +40,9 @@ describe('secrets by field name', () => {
     assert.equal(request.headers['x-csrf-itc'], '[redacted]');
   });
 
-  // Not a header: it arrives as a body attribute, which is how `asc patch` would log one.
+  // Not a header: it arrives as a body attribute, nested wherever the response put it.
+  // Nothing in this client reads the record that carries it any more — the scrub is a
+  // standing rule about the field name, which is exactly what this pins.
   test('the demo account password is redacted wherever it arrives', async () => {
     const [record] = await logged(() =>
       log.warn('probe', { body: { data: { attributes: { demoAccountPassword: 'hunter2' } } } })

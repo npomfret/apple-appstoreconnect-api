@@ -121,7 +121,8 @@ promotional text and what's-new hang off the version — so a 4.1 metadata rejec
 about the half the version doesn't have. And a shipped app has *two* `appInfos` records, the
 live one and the one being prepared, with the live one listed first: read that one and you
 get what the store says rather than what you last edited, and write to it and Apple refuses
-with a `409`. `asc get appInfos` still shows both, with a `state` telling them apart.
+with a `409`. Both come back from `GET /v1/apps/{id}/appInfos` officially, with a `state`
+telling them apart.
 
 The ids chain together, which is what makes scripting possible — and is now the way to get
 a version id out of this client at all, since the command that listed versions was official
@@ -174,8 +175,32 @@ something new.
 
 ## Anything not mapped
 
-For anything not mapped yet, probe it directly:
+`asc get` sends a GET at a path you give it, for a query none of the commands above sends —
+a different include list, a filter nothing here uses, a relationship no command reads yet:
 
 ```sh
 node dist/cli.js get resolutionCenterThreads 'filter[reviewSubmission]=<id>'
+node dist/cli.js get resolutionCenterThreads/<id>/resolutionCenterMessages 'limit=500'
 ```
+
+**It is confined to the private families this client is for**, and refuses anything else
+before a request is built:
+
+```
+resolutionCenterThreads, resolutionCenterMessages, resolutionCenterDraftMessages,
+resolutionCenterMessageAttachments, reviewRejections
+apps/{id}/{resolutionCenterThreads,dataUsages,dataUsagePublishState}
+appStoreVersions/{id}/appStoreVersionStateChanges
+```
+
+So `asc get apps/123`, `asc get builds` and `asc get appInfos/<id>` are refused, with a
+pointer to the official API instead. That is the whole point of the restriction: an
+unrestricted private GET leaves every read this project deleted one command-line argument
+away from being back, and the boundary never sees it happen. `apps` bare is refused too —
+the one query it is a gap for is the pair of unread counts, and that is `asc inbox`.
+
+Whole families are open rather than only the routes mapped above, because a type Apple's
+API has never heard of has no official read to duplicate anywhere inside it, so a *new* gap
+can still be found here. Being in scope says a path is this project's business, not that it
+works: what comes back from an unmapped one is undocumented, and the evidence for a call is
+still a recording of the browser making it.

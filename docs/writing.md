@@ -11,16 +11,20 @@
 > and [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
 > APIs. See [the removal task](../tasks/remove-official-api-overlap.md).
 
-What is left is the Resolution Center write surface — drafts, attachments and the reply to
-App Review, documented in [replying](replying.md) — and the escape hatch:
+What is left is the Resolution Center write surface, and only that: drafts, attachments
+and the reply to App Review, documented in [replying](replying.md). Every write in this
+client is now one of those, named, captured from the browser doing it, and confirmed before
+it goes.
 
-```sh
-node dist/cli.js patch <path> '{"data":{...}}'   # raw PATCH against iris/v1
-```
+**There is no longer a raw PATCH.** `asc patch` took any `iris/v1` path and a
+hand-written body, with no confirmation and no preview — which meant every official write
+this project spent step 4 deleting was still reachable, by hand, one argument away, and the
+boundary would never have seen it happen. Nothing replaces it: a private write wants
+captured evidence that Apple accepts that body at that path, and the place a hand-written
+one belongs is Apple's official API, which asks for a key rather than a scraped cookie.
 
-`asc patch` is not narrowed to the retained gaps yet. It will reach any `iris/v1` path,
-including the ones whose commands were removed for being official duplicates, and it has no
-confirmation and no preview. That is a known gap in this boundary, not a feature.
+The read-side hatch survives, restricted the same way — see
+[anything not mapped](reading.md#anything-not-mapped).
 
 ## Confirmations
 
@@ -51,10 +55,11 @@ both routes go through.
 Writes send a different header set to reads — `Origin` and the `X-Connect-Team-*` pair,
 plus a `Content-Type`. Every write left here sends `application/vnd.api+json`, named
 explicitly at each call. The odd one out was the version PATCH, which sent plain
-`application/json`; it left with `set-build`, so the `application/json` fallback in
-`headersFor` is now reachable only through `asc patch`. Both values were copied from the
-browser rather than reasoned about, and which of them the retained transport should keep is
-a question for the transport simplification step rather than something to settle here.
+`application/json`; that left with `set-build`, and `asc patch` — the only other way to
+reach the default — has gone too. So the `application/json` fallback in `headersFor` is
+now unreachable: dead rather than merely narrow. Both values were copied from the browser
+rather than reasoned about, and removing the dead one belongs to the transport
+simplification step, with the rest of that question, rather than here.
 
 The team id is only present on captured write requests, so it's also decoded from the
 `itctx` cookie's `cp` field; that means a session captured from any ordinary `GET` can

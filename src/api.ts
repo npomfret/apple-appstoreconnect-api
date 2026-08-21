@@ -291,11 +291,12 @@ export function getDataUsagePublishState(session: Session, appId: string): Promi
 }
 
 /**
- * Every retained iris write sends this, and each one names it explicitly. The odd one out
- * was the version PATCH behind `updateVersion`, which sent plain application/json; it left
- * with the version slice. So the `application/json` fallback in `headersFor` is now
- * reachable only through `rawPatch` — something for step 5 to settle rather than for this
- * file to assume.
+ * Every write left in this client sends this, and each one names it explicitly. The odd
+ * one out was the version PATCH behind `updateVersion`, which sent plain application/json;
+ * that left with the version slice, and `rawPatch` — the only other way to reach the
+ * default — has gone with the write-side escape hatch. So the `application/json` fallback
+ * in `headersFor` is now unreachable from here: dead rather than merely narrow, and for
+ * the transport step to remove rather than for this file to assume.
  */
 const VND_API_CONTENT_TYPE = 'application/vnd.api+json';
 
@@ -589,12 +590,89 @@ export async function findThreadForSubmission(
   return document.data[0];
 }
 
-/** Escape hatch for probing endpoints we haven't mapped yet. */
-export function raw<T extends Document>(session: Session, path: string, query: Query = {}): Promise<T> {
-  return get<T>(session, path, query);
+/**
+ * The private resource families this client is for: types iris serves and Apple's official
+ * API has no path and no schema for. One list, and the boundary `raw` is held to.
+ *
+ * Checked against Apple's OpenAPI specification **4.4.1** (generated 2026-07-15) on
+ * 2026-08-21: `resolutionCenter`, `reviewRejection`, `dataUsage`, `appStoreVersionStateChange`
+ * and `messageCount` each appear zero times anywhere in its 966 paths and 1,393 schemas.
+ *
+ * A whole family is opened rather than only the routes mapped above, because a type the
+ * official API has never heard of has no official call to duplicate anywhere inside it —
+ * so a *new* gap can still be found here without the boundary moving. Being on the list
+ * says a path is in scope, not that it works: an unmapped route is still an unproven one,
+ * and the evidence for one comes from the browser doing it.
+ */
+const GAP_FAMILIES = [
+  'resolutionCenterThreads',
+  'resolutionCenterMessages',
+  'resolutionCenterDraftMessages',
+  'resolutionCenterMessageAttachments',
+  'reviewRejections',
+] as const;
+
+/**
+ * Private relationships that hang off a resource Apple *does* serve.
+ *
+ * Kept keyed by parent rather than folded into the list above, because the parent is the
+ * part that is out of scope: `apps/{id}/dataUsages` is a gap and `apps/{id}` is
+ * `GET /v1/apps/{id}`, and one segment is the whole difference between them. `apps` bare
+ * is a gap for exactly one query — the two unread counts `listAppMetrics` asks for — which
+ * is why that is a mapped call rather than something reachable with a free-form path.
+ */
+const GAP_SUBRESOURCES: Record<string, readonly string[]> = {
+  apps: ['resolutionCenterThreads', 'dataUsages', 'dataUsagePublishState'],
+  appStoreVersions: ['appStoreVersionStateChanges'],
+};
+
+/** Whether a relative iris path names something in the two lists above. */
+function withinBoundary(path: string): boolean {
+  const segments = path.replace(/^\/+/, '').split('/');
+  // `.` or `..` would leave the family the path appears to name, and an empty segment is a
+  // doubled slash, which reads as a host rather than a path.
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) return false;
+
+  const [family, , child] = segments;
+  if (family === undefined) return false;
+  if (GAP_FAMILIES.some((known) => known === family)) return true;
+  if (segments.length !== 3 || child === undefined) return false;
+
+  const children = GAP_SUBRESOURCES[family];
+  return children !== undefined && children.includes(child);
 }
 
-/** Write-side escape hatch: send a hand-written JSON:API body at any path. */
-export function rawPatch<T = unknown>(session: Session, path: string, body: unknown): Promise<T> {
-  return audited('raw.patch', { path }, () => patch<T>(session, path, body));
+/** The boundary spelled out, built from the lists so a refusal cannot describe a stale one. */
+function inScope(): string {
+  const children = Object.entries(GAP_SUBRESOURCES)
+    .map(([parent, names]) => `${parent}/{id}/{${names.join(',')}}`)
+    .join(', ');
+  return `${GAP_FAMILIES.join(', ')}, and ${children}`;
+}
+
+/**
+ * A GET at a path inside those families, for a query the calls above don't send: another
+ * include list, a filter nothing here uses, a relationship no command reads yet.
+ *
+ * It used to take any `iris/v1` path at all, which is how everything step 4 removed stayed
+ * one command-line argument away from being back — an unrestricted private GET duplicates
+ * whatever you point it at, and the boundary never sees it happen. So `apps/{id}`,
+ * `appStoreVersions/{id}`, `appInfos/{id}`, `builds`, `ciWorkflows` and pricing are refused
+ * here and served by Apple's API with a key.
+ *
+ * The refusal is a boundary rule rather than a safety rail: nothing is sent, and there is
+ * no flag that widens it. What is on the other side of it is a browser capture, which is
+ * where evidence for an unmapped call has to come from anyway.
+ */
+export function raw<T extends Document>(session: Session, path: string, query: Query = {}): Promise<T> {
+  if (!withinBoundary(path)) {
+    throw new Error(
+      `Refusing to GET "${path}": this client is only for what Apple's official App Store ` +
+        `Connect API does not serve, and that path is either outside that or is the official ` +
+        `record itself. In scope: ${inScope()}. Everything else is at ` +
+        'https://developer.apple.com/documentation/appstoreconnectapi/.'
+    );
+  }
+
+  return get<T>(session, path, query);
 }

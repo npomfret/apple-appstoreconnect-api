@@ -6,10 +6,11 @@ and replies, plus unread review-message counts, version state-change history and
 Privacy questionnaire.
 
 The private implementations of capabilities Apple **does** officially expose have all been
-removed — the last of them, apps, versions, builds and review details, on 2026-08-21. What
-remains of that work is in
-[tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md). The boundary
-was last audited on 2026-08-20 against Apple's OpenAPI specification 4.4.1.
+removed, and as of 2026-08-21 the escape hatches can no longer reach them either: `asc
+patch` is gone and `asc get` is confined to the private families this client is for. The
+boundary was last audited on 2026-08-21 against Apple's OpenAPI specification 4.4.1. What
+remains of that work — simplifying the transport, and a docs pass — is in
+[tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md).
 
 It talks to the same private `https://appstoreconnect.apple.com/iris/v1` service the web UI
 uses, reusing a session you capture from your browser.
@@ -68,10 +69,10 @@ all) works unedited.
 
 ## What it can do
 
-The tables below describe the code as it exists today, not the desired boundary. Commands
-for official capabilities are marked **legacy official overlap** and should not be used as
-the basis for new work; use [Apple's official API](https://developer.apple.com/app-store-connect/api/)
-instead. The removal task has the function-by-function mapping.
+Every command below is something [Apple's official API](https://developer.apple.com/app-store-connect/api/)
+does not serve — that is now the whole of what this project is, rather than an intention.
+The commands that duplicated official capabilities have gone, and the removal task has the
+function-by-function mapping of where each one went.
 
 Official replacements:
 
@@ -114,22 +115,24 @@ Official replacements:
 | `history <versionId>` | private version state-change history, including initiator and time in state |
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
 | `privacy` | App Privacy declarations, and whether they're live |
-| `get` | any endpoint at all, mapped or not |
+| `get` | a raw GET at a path you give it, confined to the private families above — an officially served path is refused rather than duplicated |
 
-**Writing** — all of these are copied from a capture of the browser doing it, except `patch`:
+**Writing** — all but one copied from a capture of the browser doing it; `delete-attachment`
+was probed rather than recorded, which [docs/evidence.md](docs/evidence.md) says plainly:
 
 | | |
 | --- | --- |
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
 | `send-reply` | send it — [docs/replying.md](docs/replying.md) |
-| `patch` | any PATCH, for anything not mapped |
 
 **`send-reply` can't be undone**, so it prints what it is about to do and asks first — it
 shows you the whole draft and reads it again after you answer, in case the browser autosaved
 over it in the meantime. The two deletes ask too. `--yes` answers for you, and still prints
 what it answered for; a command whose own input is a pipe is asked on the terminal rather
-than refused, and with no terminal at all they stop rather than assume. `patch` does not
-ask, which is a known gap rather than a judgement that it is safe.
+than refused, and with no terminal at all they stop rather than assume. There is no
+unconfirmed write left: `asc patch`, which took a hand-written body at any `iris/v1` path
+and asked nothing, was removed on 2026-08-21 along with the read hatch's run of the whole
+API.
 
 The lower-level commands print denormalized JSON, or the untouched JSON:API document with
 `--raw`; the digests (`report`, `history`, `privacy`) take `--json` instead. Ids chain

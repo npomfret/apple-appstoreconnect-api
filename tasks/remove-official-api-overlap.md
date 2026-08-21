@@ -4,11 +4,10 @@
 
 This task defines the product boundary; it does not authorize live App Store Connect writes.
 
-**Every resource slice below has now been removed**, the last of them — apps, versions,
-builds and App Review information — on 2026-08-21. What is left of the work is
-`### Generic escape hatches`: `patch` and `get` are still unrestricted. The order, and the
-remaining steps after that, are in
-[gap-boundary-next-steps.md](gap-boundary-next-steps.md).
+**Step 4 is done.** Every resource slice below has been removed, and as of 2026-08-21 so
+have the escape hatches that could still reach them: `patch` is gone and `get` is confined
+to the private families. What remains is step 5 (simplify the transport) and step 6 (the
+docs pass), sequenced in [gap-boundary-next-steps.md](gap-boundary-next-steps.md).
 
 ## Decision
 
@@ -151,20 +150,36 @@ removals: `CiWorkflow.post_actions` in
 the whole Xcode Cloud usage, capabilities and infrastructure-validation surface in
 [xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md). Both need the base restored to act on.
 
-### Generic escape hatches
+### Generic escape hatches — *removed and narrowed 2026-08-21*
 
-- Remove `rawPatch` and the `patch` command. An unrestricted private PATCH invites the
-  project to duplicate official writes again and bypasses the gap-only boundary.
-- Replace `raw`/`get` with a gap-scoped diagnostic mechanism, or constrain it to an
-  explicit allowlist of retained private resource families. It must not advertise access
-  to official-only domains such as pricing, products, subscriptions, Game Center, users,
-  Xcode Cloud, or metadata.
+`rawPatch` and the `patch` command are gone outright. There is no captured evidence for a
+hand-written body at an arbitrary path, it had no confirmation and no preview, and it left
+every official write the slices above deleted reachable by hand.
+
+`raw`/`get` survives, constrained to an explicit allowlist and refusing anything else
+before a request is built: `resolutionCenterThreads`, `resolutionCenterMessages`,
+`resolutionCenterDraftMessages`, `resolutionCenterMessageAttachments` and
+`reviewRejections` whole, plus `apps/{id}/{resolutionCenterThreads,dataUsages,dataUsagePublishState}`
+and `appStoreVersions/{id}/appStoreVersionStateChanges`. Traversal is refused with them.
+
+Two things decided the shape. **Whole families, because the type is the gap** — each of
+those five occurs zero times in 4.4.1's 966 paths and 1,393 schemas, so nothing inside one
+can duplicate an official read, and a new gap can still be found without the boundary
+moving. **The parent of a private relationship is out of scope** — `apps/{id}/dataUsages`
+is a gap and `apps/{id}` is `GET /v1/apps/{id}`, one segment apart, which is why the
+sub-resources are keyed by parent rather than folded into the family list. `apps` bare is a
+gap for one query only, the unread counts, and that is `inbox`.
+
+Consequences recorded rather than acted on: `REVIEW_DETAIL_SECRETS` in `src/log.ts` now has
+no route by which `demoAccountPassword` could arrive and **stays anyway** — a redaction
+keyed on a field name is a standing rule, not a reaction to a caller. And the
+`application/json` fallback in `headersFor` is now unreachable rather than merely narrow;
+it is step 5's to remove.
 
 ## Refactor order
 
-Steps 1–4 are done bar the escape hatches. What remains:
+Steps 1–4 are done. What remains:
 
-- Narrow `patch` and `get`, as above.
 - Simplify the transport back to the private `iris/v1` host and only the methods/content
   types required by retained gaps. Preserve credential isolation, redaction, confirmations,
   and audit logs for retained private writes.

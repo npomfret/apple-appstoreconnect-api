@@ -18,12 +18,17 @@ const ORDER: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 
 /**
  * Fields on a review detail record that must not be printed.
  *
- * There is no longer a command here that reads one: `review-details` and the
- * `redactReviewDetails` that paired with it went with the version slice, because Apple
- * serves `GET /v1/appStoreReviewDetails/{id}` officially. This stays anyway, and is not a
- * leftover. The demo-account password still reaches this process through `asc get` and
- * `asc patch`, whose bodies are audited verbatim, and a redaction rule is the wrong thing
- * to remove on the grounds that the caller you knew about has gone.
+ * Nothing here reads one any more, and as of the escape-hatch slice nothing here *can*:
+ * `review-details` went with the version slice because Apple serves
+ * `GET /v1/appStoreReviewDetails/{id}` officially, `asc patch` has gone entirely, and
+ * `asc get` is now confined to the private families, which that record is not one of.
+ *
+ * It stays regardless, and is not a leftover. Scrubbing by field name costs one string
+ * comparison and covers whatever turns up carrying that name — an iris error body quoting
+ * a request back, a future gap read, a caller of this library that isn't the CLI. Dropping
+ * a known credential from the redaction list because today's read set happens not to
+ * produce it is the wrong direction to reason in: the list is a standing rule about a
+ * field name, not a reaction to a particular caller.
  */
 export const REVIEW_DETAIL_SECRETS = ['demoAccountPassword'] as const;
 

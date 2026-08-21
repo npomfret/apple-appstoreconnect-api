@@ -33,7 +33,9 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc draft <threadId>        Show the thread's unsent draft reply, with its attachments
   asc rejections <threadId>   List guideline rejections for a thread
 
-  asc get <path> [k=v ...]    Raw GET against /iris/v1 for probing unmapped endpoints
+  asc get <path> [k=v ...]    Raw GET, for a query the commands above don't send. Confined
+                              to the private families this client is for; an officially
+                              served path is refused rather than duplicated
 
 Writes (these change your live App Store Connect data):
   asc save-draft <threadId> <text|-> [--attach file ...]
@@ -42,7 +44,6 @@ Writes (these change your live App Store Connect data):
                               send it — see send-reply
   asc delete-attachment <id>  Remove one attachment from a draft
   asc delete-draft <threadId> Throw the thread's draft away, attachments and all
-  asc patch <path> <json>     Raw PATCH against /iris/v1 with a hand-written body
 
 This reaches Apple and cannot be undone. It shows what it is about to send and asks first;
 --yes answers for you:
@@ -87,7 +88,8 @@ function readStdin(): string {
  * itself, and a here-doc that expanded to nothing looks exactly like deliberately blank
  * text: it would put an empty body in the draft box, over whatever was in it, and nothing
  * keeps a copy of that. Emptying a field is not an operation any capture covers, so it
- * isn't one this offers by accident — `asc patch` is there for that.
+ * isn't one this offers by accident, and there is no longer a raw PATCH to do it with
+ * either.
  */
 function requireText(given: string, what: string): string {
   const text = given === '-' ? readStdin() : given;
@@ -357,14 +359,6 @@ async function main(argv: string[]): Promise<number> {
       const id = requireArg(rest[0], 'attachmentId', 'delete-attachment <attachmentId>');
       await confirm({ question: `Delete attachment ${id}?`, yes });
       await api.deleteMessageAttachment(session, id);
-      return 0;
-    }
-
-    case 'patch': {
-      const session = loadSession();
-      const path = requireArg(rest[0], 'path', 'patch appStoreVersions/<id> \'{"data":...}\'');
-      const body = requireArg(rest[1], 'json', 'patch appStoreVersions/<id> \'{"data":...}\'');
-      console.log(JSON.stringify(await api.rawPatch(session, path, JSON.parse(body)), null, 2));
       return 0;
     }
 

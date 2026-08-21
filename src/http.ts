@@ -76,8 +76,10 @@ export interface RequestOptions {
   query?: Query;
   body?: unknown;
   /**
-   * Overrides the Content-Type a write would otherwise send. Not every write agrees:
-   * the version PATCH uses application/json, the asset endpoints application/vnd.api+json.
+   * Overrides the Content-Type a write would otherwise send. The captures disagreed about
+   * it — the version PATCH sent application/json, the Resolution Center endpoints
+   * application/vnd.api+json — and only the second kind is left, every one of them naming
+   * the header explicitly. Which means the default below now has no caller.
    */
   contentType?: string;
 }
@@ -113,8 +115,8 @@ function methodOf(given: string | undefined): Method {
  * Paths here are relative — `appStoreVersions/{id}`, `apps/{id}/resolutionCenterThreads` —
  * and an absolute URL is refused rather than sent. Everything this function returns is fetched
  * with the session cookie and the CSRF header attached, so a URL naming another host is
- * that cookie handed to that host, and `asc get`/`asc patch` take their path straight off
- * the command line. Nothing in this client ever asked for an absolute one: the single
+ * that cookie handed to that host, and `asc get` takes its path straight off the command
+ * line. Nothing in this client ever asked for an absolute one: the single
  * cross-origin request, an upload part, deliberately doesn't come through `request` at all
  * — see `uploadPart`, which sends the presigned URL and no cookie.
  *
@@ -137,6 +139,11 @@ function apiUrl(api: Api, path: string): string {
  * Reads and writes don't send the same headers. The browser adds an Origin and the
  * X-Connect-Team-* pair only when mutating, and switches Content-Type to plain
  * application/json. Mirror that rather than sending one header set for everything.
+ *
+ * That default is now unreached: every write left in this client passes `contentType`
+ * itself. It is left standing for the transport step to settle along with the rest of the
+ * question — the `Api` union with one member, the methods no retained call uses — rather
+ * than half-answered here.
  */
 function headersFor(session: Session, mutating: boolean, contentType?: string): Record<string, string> {
   const headers: Record<string, string> = {

@@ -91,12 +91,20 @@ copying if you build your own.
   app read back.
 - Query strings are built by hand rather than with `URLSearchParams`: Apple wants literal
   `[`, `]` and `,`, which `URLSearchParams` would percent-encode.
-- A path is a path — `appStoreVersions/{id}` — always relative to
+- A path is a path — `resolutionCenterThreads/{id}` — always relative to
   `https://appstoreconnect.apple.com/iris/v1`. An absolute URL is refused rather than
   fetched: everything `request()` sends carries the session cookie and the CSRF header, so a
-  URL naming another host is your App Store Connect session handed to that host, and `get`
-  and `patch` take their path straight off the command line. The one cross-origin request
-  here, an upload part, doesn't go through `request()` at all.
+  URL naming another host is your App Store Connect session handed to that host, and `raw()`
+  takes its path from whatever called it — `asc get` from the command line. The one
+  cross-origin request here, an upload part, doesn't go through `request()` at all.
+- **`raw()` is confined to the private families**, and it is the library's boundary as much
+  as the CLI's: `resolutionCenterThreads`, `resolutionCenterMessages`,
+  `resolutionCenterDraftMessages`, `resolutionCenterMessageAttachments` and
+  `reviewRejections` whole, plus `apps/{id}/{resolutionCenterThreads,dataUsages,dataUsagePublishState}`
+  and `appStoreVersions/{id}/appStoreVersionStateChanges`. Anything else throws before a
+  request is built. There is no `rawPatch()` any more: an unrestricted private PATCH is how
+  the official writes this project removed would come back, and a hand-written body belongs
+  at Apple's official API.
 - The method is one of `GET`, `POST`, `PATCH`, `PUT` and `DELETE`, in whatever case you send
   it. Whether a request mutates decides its headers and whether it lands in the audit trail,
   so it's settled once from the normalised name; anything that isn't one of the five is

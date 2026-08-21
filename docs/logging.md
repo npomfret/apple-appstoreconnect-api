@@ -57,11 +57,15 @@ Credentials are scrubbed two ways, because one of them has to catch what the oth
 
 By field name: `cookie`, `x-csrf-itc`, `myacinfo`, `itctx` and friends, wherever they appear
 and however deeply nested — plus `demoAccountPassword`, which is a body attribute rather
-than a header and can arrive through `asc get` or `asc patch`. That list is
-`REVIEW_DETAIL_SECRETS` in `src/log.ts`. It used to be shared with a `review-details`
-command that hid the same field from its own output; that command has gone, because Apple
-serves the record officially, and the rule stayed. A redaction is the wrong thing to drop
-on the grounds that the caller you knew about has left.
+than a header. That list is `REVIEW_DETAIL_SECRETS` in `src/log.ts`.
+
+It used to be shared with a `review-details` command that hid the same field from its own
+output. That command has gone, because Apple serves the record officially; so has `asc
+patch`; and `asc get` can no longer reach an `appStoreReviewDetails` record either. The
+rule stayed anyway. Scrubbing by field name costs a string comparison and catches whatever
+turns up carrying that name — an iris error quoting a request back, a library caller that
+isn't the CLI, the next gap read. Dropping a known credential from the list because today's
+read set happens not to produce it is the wrong direction to reason in.
 
 By value: the query parameters that authorise a presigned upload — `Signature`,
 `AWSAccessKeyId`, `X-Amz-Signature` and the rest — are replaced in *every* string logged.

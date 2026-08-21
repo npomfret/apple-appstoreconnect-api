@@ -62,8 +62,9 @@ iris did the thing. It says the request works, not that it is the one the browse
   always has a `submittedDate`, and it is the date Apple last looked, not evidence that the
   submission is with Apple now. Reading "has a submitted date" as "is in flight" strands it:
   here it made `submit` refuse and point at `resolve-item`, which refused in turn because
-  the item was no longer `REJECTED` — two commands pointing at each other, with `asc patch`
-  by hand the only way out. A returned submission is reusable, and `{"submitted":true}` is
+  the item was no longer `REJECTED` — two commands pointing at each other, and at the time
+  the only way out was a hand-written PATCH. That PATCH is `reviewSubmissions_updateInstance`
+  on the official API now, and both commands have gone. A returned submission is reusable, and `{"submitted":true}` is
   what moves it on.
 
   **`READY_FOR_REVIEW` alone does not mean unsent either.** It is the pair — that state and
@@ -162,8 +163,9 @@ list is the tested one and an override is not.
   password left in terminal scrollback is a worse problem than a flag. The account *name*
   was shown: it is the pair that is the credential, and which account Apple was given is
   usually the point. Whatever reads this record next has the same problem. `log.ts` still
-  scrubs `demoAccountPassword` here, because it can still arrive through `asc get` and
-  `asc patch`.
+  scrubs `demoAccountPassword`, though as of the escape-hatch slice nothing here can reach
+  the record that carries it: a redaction keyed on a field name is a standing rule, not a
+  reaction to a caller, and it costs a string comparison.
 - From one real send: `sendDraftMessage` — the `createFromDraftMessage` POST, its `201`,
   and the thread read back with the new message on it.
 - From one real resolve: `resolveSubmissionItem` — the `{"resolved":true}` PATCH and the
@@ -376,6 +378,38 @@ off the thread rather than off `appStoreVersionForReview`, so no route reads
 platform and dates: they are Apple's to serve, so they were dropped from the digest rather
 than left as fields nothing fills in.
 
+## The escape hatch, and what it can reach
+
+`asc get` is the one command that takes a path off the command line, which made it the one
+place the whole boundary could be walked round: every official read step 4 deleted is still
+sitting in iris, one argument away. As of 2026-08-21 it is confined to the private families
+and refuses anything else before a request is built. The write-side hatch, `asc patch` and
+`rawPatch()`, was removed outright — there is no captured evidence for a hand-written body
+at an arbitrary path, and it had no confirmation and no preview.
+
+The list is a claim about the official specification, so it carries the same date as the
+rest of this page. Checked against **4.4.1** (generated 2026-07-15, 966 paths, 1,393
+schemas) on 2026-08-21: `resolutionCenter`, `reviewRejection`, `dataUsage`,
+`appStoreVersionStateChange` and `messageCount` each occur **zero** times in the whole
+document.
+
+| In scope | |
+| --- | --- |
+| `resolutionCenterThreads`, `resolutionCenterMessages`, `resolutionCenterDraftMessages`, `resolutionCenterMessageAttachments`, `reviewRejections` | whole families — the type itself is absent from the official API, so nothing inside one duplicates an official read |
+| `apps/{id}/resolutionCenterThreads`, `apps/{id}/dataUsages`, `apps/{id}/dataUsagePublishState` | private relationships of an official record |
+| `appStoreVersions/{id}/appStoreVersionStateChanges` | the same, for a version |
+
+The parent is not in scope: `apps/{id}` and `appStoreVersions/{id}` are
+`GET /v1/apps/{id}` and `GET /v1/appStoreVersions/{id}`, and one segment is the whole
+difference. `apps` bare is a gap for exactly one query — the two unread counts above — and
+that is a mapped call rather than something to hand a free-form path to.
+
+**Being in scope is not evidence.** The families are open whole so a *new* gap can still be
+found without the boundary moving, but an unmapped route inside one is still an unproven
+route: what it returns is undocumented, and the evidence for a call is a recording of the
+browser making it. Traversal (`..`) is refused, because a path that climbs out of the
+family it names is not the family it names.
+
 ## Seen but deliberately not mapped
 
 From the Xcode Cloud tab: the pickers behind the workflow editor —
@@ -384,7 +418,8 @@ From the Xcode Cloud tab: the pickers behind the workflow editor —
 `testflight/information-v2`, `repos/{id}/branch`, `product-environment-variables` — all
 recorded, none ever mapped: they exist to fill in a form this client does not render. Moot
 now in any case, since the whole `/ci/api` surface is out of scope: Apple exposes Xcode
-Cloud officially, and `asc get` cannot reach it, being `iris/v1` only.
+Cloud officially, and `asc get` cannot reach it twice over — it is `iris/v1` only, and
+`ciWorkflows` is not one of the private families it is confined to.
 
 Recordings of the Monetization, Growth & Marketing and Trust & Safety tabs turn up about 40
 further endpoints. Pricing is the substantial one — `appPriceSchedules/{appId}/automaticPrices`
@@ -394,7 +429,13 @@ different domain from review, and a write surface worth respecting. The rest wer
 this account and so unverifiable: `appCustomProductPages`, `appEvents`,
 `appStoreVersionExperimentsV2`, `inAppPurchasesV2`, `subscriptionGroups`,
 `customerReviewSummarizations`, `accessibilityDeclarations`, `appEncryptionDeclarations`,
-`backgroundAssets`, `appClips`. `asc get` reaches all of them without a code change.
+`backgroundAssets`, `appClips`. **`asc get` no longer reaches any of them**: they are
+official families, and the escape hatch is confined to the private ones. That is deliberate
+rather than a loss — an unrestricted private GET is how a boundary stops meaning anything —
+but it does mean the next probe of one of these starts in the browser, which is where the
+evidence for a new gap has to come from in any case. If one of them turns out to carry a
+field the official API has no schema for, the way in is a mapped call and a family on the
+list, both with a recording behind them.
 
 ## The standing caveat
 

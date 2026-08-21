@@ -131,9 +131,22 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
       so it is an unbuilt gap rather than a removed one.
 
       `REVIEW_DETAIL_SECRETS` stays in `src/log.ts` although the command that read the
-      record has gone: `demoAccountPassword` still arrives through `asc get` and `asc patch`.
+      record has gone. Slice 4.7 closed the last route by which `demoAccountPassword` could
+      arrive, and it still stays — see there.
 
-   7. **`patch`, and `get` narrowed to an allowlist of retained private families.**
+   7. **Escape hatches** — *Done, 2026-08-21.* `rawPatch` and `asc patch` removed
+      outright; `raw`/`asc get` constrained to an allowlist of the private families, with
+      `..` refused. Whole families rather than the mapped routes, because each of the five
+      occurs zero times in 4.4.1 — so nothing inside one duplicates an official read, and a
+      new gap is still findable. The parent of a private relationship stays out of scope:
+      `apps/{id}/dataUsages` is a gap, `apps/{id}` is Apple's, and one segment is the whole
+      difference. `test/boundary.test.ts` pins it, asserting that a refused path **sends
+      nothing** rather than merely throwing.
+
+      Two consequences left for step 5: the `application/json` fallback in `headersFor` is
+      now unreachable rather than narrow, and `REVIEW_DETAIL_SECRETS` has no arrival route
+      left but stays, because a redaction keyed on a field name is a standing rule rather
+      than a reaction to a caller.
 
 5. **Simplify the transport** back to `iris/v1` and only the methods and content types the
    retained gaps need. Credential isolation, redaction, confirmations and audit records for

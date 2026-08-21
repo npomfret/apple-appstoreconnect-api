@@ -36,9 +36,11 @@ describe('where a request goes', () => {
     assert.equal(stub.calls[0].url, `${BASE_URL}/apps`);
   });
 
-  // The cookie is a live App Store Connect session and `asc get`/`asc patch` take their
-  // path off the command line. An absolute URL here would send it to whatever host it
-  // named, so it must be refused *before* anything leaves.
+  // The cookie is a live App Store Connect session and `asc get` takes its path off the
+  // command line. An absolute URL here would send it to whatever host it named, so it must
+  // be refused *before* anything leaves. Which host it names is the point: this is the one
+  // check the gap allowlist in `api.ts` does not subsume, because it is about where the
+  // cookie goes rather than about which resources are in scope.
   for (const url of [
     'https://example.invalid/collect',
     'http://example.invalid/collect',
