@@ -12,10 +12,10 @@ fixing an implementation in place. If `post_actions` is accepted as a gap worth 
 the work is to restore the smallest read-only slice that exposes that one field, without
 restoring the official-API duplicates that were deliberately removed.
 
-A browser recording of the post-actions screen was made after this task was written and is
-held privately outside the repository. Its contents have **not** been read, so nothing here
-is claimed from it — that is nobody having done the work, not a rule against it. See
-"Reading the capture" below.
+A browser recording of the post-actions screen was made after this task was written, is held
+privately outside the repository, and **was read here on 2026-08-21** through an extractor.
+It turned out to be a write capture, in both directions, with read-backs. What it establishes
+is in "What the recording settled" below.
 
 ## What a restored transport must not repeat
 
@@ -91,8 +91,8 @@ decision should distinguish these scopes:
 | --- | --- |
 | Correct the old `/ci/api` content type if a CI transport is restored | No — the header bisect above is direct evidence |
 | Keep a raw `post_actions: unknown[]` read and report only empty/non-empty | No — the live empty read already establishes the field |
-| Identify and render a TestFlight Internal Testing post-action | Yes — its populated shape must be observed |
-| Add or remove a post-action from a script | Yes — the browser's PUT body and read-back are mandatory evidence, followed by a separate write-safety decision |
+| Identify and render a TestFlight Internal Testing post-action | Satisfied — the populated shape is recorded below |
+| Add or remove a post-action from a script | Evidence satisfied below, both directions. The write-safety decision is separate and still owed |
 
 The read is the coherent first boundary. It answers whether anything is configured without
 inventing a request body or restoring build, repository, test-result and run-report features
@@ -100,62 +100,110 @@ that Apple already exposes officially. A convenient app-id-to-product-id lookup 
 restore an official duplicate, so the command and library shape — explicit product/workflow
 IDs versus private discovery — needs owner approval before implementation.
 
+## What the recording settled
+
+Read on 2026-08-21 through an extractor emitting methods, redacted paths, query keys, statuses
+and response key structure. No header, cookie, signature or CSRF value was read or printed.
+Identifiers, the post-action's own display name and the beta group's name were reduced to their
+types inside the extractor and never came out of it. 43 entries, of which 22 are `/ci/api`.
+
+**A populated `post_actions` entry**, identical in the `PUT` request body and in the GET that
+read it back:
+
+```
+post_actions: [
+  {
+    id:    <uuid>,
+    name:  <display string, author-supplied>,
+    type:  "testFlight_internal",
+    deployment_config: {
+      archive_action_id: <uuid of an action in this workflow's own actions>,
+      testflight_deployment_ids: {
+        beta_group_ids:  [<uuid>],
+        beta_tester_ids: []
+      }
+    }
+  }
+]
+```
+
+`type` is `testFlight_internal` exactly — mixed case, which is worth writing down because it
+is not the convention the surrounding document uses and a plausible guess would have been
+wrong. `archive_action_id` refers to the archive action in the same workflow, so a
+post-action hangs off a build step rather than off the workflow as a whole. Groups and
+individual testers are separate lists; this capture populated only the first.
+
+**Both directions of the write are recorded**, and neither is inferred. The workflow already
+had the post-action; the browser took it off and put it back 23 seconds later:
+
+| | request | response |
+| --- | --- | --- |
+| GET | — | populated |
+| `PUT` | `post_actions: []` | empty |
+| `PUT` | one entry | populated |
+| GET | — | populated |
+
+Both `PUT`s answered **200** and the workflow was left as it was found. So removal and
+addition each have a request body and a read-back behind them, which is what the two table
+rows above were waiting for.
+
+**The `PUT` is a full-document replace, confirmed rather than assumed.** Its body carries
+fourteen top-level keys — `actions`, `clean`, `container_file_path`, `description`,
+`disabled`, `environment_variables`, `locked`, `macos_version`, `name`, `post_actions`,
+`product_environment_variables`, `repo`, `start_conditions`, `xcode_version` — so what a
+client fails to send back is what the workflow loses, including both environment-variable
+collections. Its request content type is `application/json`, which is the finding above
+holding on a write.
+
+**Resolving a beta group is not a gap.** The browser turned the chosen group into the uuid in
+`beta_group_ids` with `GET /ci/api/teams/{TEAM}/testflight/groups` and
+`POST .../testflight/groups/search`, both returning `items[] {id, name, count, html_url,
+is_internal_group}`. Apple serves that officially: `/v1/betaGroups` in 4.4.1 carries `name`
+and `isInternalGroup`, so anything needing the id has an official way to get it and this pair
+stays out.
+
+**The field-level gap holds.** Re-checked the same day against the 4.4.1 document itself
+rather than the published attributes page: `post_action`, `postAction`, `deployment_config`,
+`archive_action_id` and `testFlight_internal` occur **zero** times across its 966 paths and
+1,393 schemas, and `CiWorkflow` has no post-action attribute and no `betaGroups`
+relationship — its relationships are `buildRuns`, `macOsVersion`, `product`, `repository` and
+`xcodeVersion`.
+
 ## What is still unknown
 
-- **The shape of a populated `post_actions` entry.** Every capture available here has the
-  array empty — including the recorded `PUT`, whose body carries `post_actions: []` both
-  before and after. The recording made since may settle it; nobody has read it yet.
-  Nothing should be typed, interpreted or written into that array on a guess.
-- **Whether the write is safe to map.** `docs/xcode-cloud.md` already argues this well: the
-  `PUT workflows-v15/{id}` is a full-document replace and anything omitted is destroyed, on
-  the workflow that builds every push. That document was removed with the old feature, but
-  the risk remains. Capturing the browser making the change establishes shape; it does not
-  by itself authorise or make a scripted full-document replace safe.
-- **What the recording contains.** A useful read capture has a successful
-  `GET .../workflows-v15/{workflowId}` whose response contains a populated
-  `content.post_actions`. A useful write capture additionally has the initial GET, the
-  browser's `PUT .../workflows-v15/{workflowId}` with populated `post_actions`, a successful
-  response, and a subsequent GET showing the saved value. Until a human confirms which of
-  those are present, do not describe the flow as captured.
+- **Whether the write is safe to map.** The one question here that no further recording can
+  answer, and this one makes it sharper rather than settling it: the removed
+  `docs/xcode-cloud.md` argued that `PUT workflows-v15/{id}` destroys anything omitted, and
+  the fourteen-key body above is that argument in evidence, on the workflow that builds every
+  push. Having watched the browser do it authorises nothing. A scripted replace still needs
+  its own design, and read-modify-write of a document this client only partly understands is
+  the whole difficulty.
+- **Whether any other `type` exists.** Only `testFlight_internal` was observed. The name of
+  the value implies at least an external counterpart, but implying is not observing, and
+  nothing should accept or emit a second value on the strength of the first one's spelling.
+- **Whether `beta_tester_ids` behaves like `beta_group_ids`.** It was present and empty
+  throughout. Nothing here shows what a populated one looks like or whether the two combine.
 
 Read-back alone — after somebody sets the option in the web UI — is enough for the
 verification use case and requires no write from this client. Mapping a write is a separate,
 higher-risk project.
 
-## Reading the capture
+## Handling the recording
 
-The recording is credential material, not a repository fixture. Safari may include the full
-session cookie, per-request Apple signatures, repository URLs, account identities and the
-workflow's environment variables. It stays under `tmp/` and is never committed, and a
-"sanitised" export deserves the same treatment, since sanitising authentication headers does
-not necessarily remove workflow content.
+Kept because it governs the recording that is still on disk, and any later one.
 
-It may be read here, through an extractor that emits methods, paths, query keys, statuses and
-response key structure and lets no credential or personal detail out — the way the Usage page
-recording was read for [xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md). What to take out
-of it:
+It is credential material, not a repository fixture. Safari may include the full session
+cookie, per-request Apple signatures, repository URLs, account identities and the workflow's
+environment variables. It stays under `tmp/` and is never committed, and a "sanitised" export
+deserves the same treatment, since sanitising authentication headers does not necessarily
+remove workflow content.
 
-1. The method and `/ci/api/.../workflows-v15/{workflowId}` path, with team, product and
-   workflow IDs replaced by `{TEAM}`, `{PRODUCT}` and `{WORKFLOW}`.
-2. The request `content-type`; no authentication, cookie, signature, CSRF or team header
-   value.
-3. The populated `post_actions` structure from the GET response and, if present, from the PUT
-   request. Field names and enum-like values are the point; real beta-group IDs, names and
-   other account-specific identifiers become descriptive placeholders.
-4. The response status and the populated `post_actions` value from the read-back GET.
-5. What the browser was doing: for example, adding TestFlight Internal Testing, which group
-   was selected in generic terms, and whether the workflow was restored afterwards.
-
-Not the whole workflow body: the PUT is a full document and may carry unrelated environment
-or repository configuration. Invent a small test fixture from the shape; never use the
-recording itself in a test.
-
-The write is still unrecorded, so a second capture is still wanted. Open Web Inspector before
-the action, select Network's **Live Activity**, clear it, disable caches, and reload the page;
-Safari keeps its export disabled until it has captured a completed main-page request. Then
-make the single intended UI change, wait for all requests to finish, reload once for
-read-back, and export the Network log into `tmp/`. If the setting is already populated, the
-reload-only capture is safer and is enough for the retained read.
+Reading it here means an extractor that emits methods, redacted paths, query keys, statuses
+and response key structure, and lets no credential or personal detail out — the way it was
+read above, and the way the Usage page recording was read for
+[xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md). Not the whole workflow body: the `PUT`
+is a full document carrying unrelated environment and repository configuration. Invent a
+small test fixture from the shape above; never use the recording itself in a test.
 
 ## Implementation gate and verification
 
