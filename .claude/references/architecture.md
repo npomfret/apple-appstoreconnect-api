@@ -15,7 +15,7 @@ private service may change without notice, and write evidence varies by operatio
 | Area | Canonical location | Invariant |
 | --- | --- | --- |
 | Session capture and expiry | `curl.ts`, `session.ts` | Capture content is a credential and is never persisted, logged, or exposed. |
-| Authenticated requests and uploads | `http.ts` | All ordinary writes are audited; every path is relative to the one `BASE_URL` (`iris/v1` on the one host) and an absolute URL is refused, so session headers reach no other host; upload URLs never receive session headers. |
+| Authenticated requests and uploads | `http.ts` | All ordinary writes are audited; a path is checked as the URL it *resolves* to and refused unless that is under the one `BASE_URL` (`iris/v1` on the one host), so neither an absolute URL nor a path that climbs out of the base carries session headers anywhere else; upload URLs never receive session headers. |
 | JSON:API expansion | `jsonapi.ts` | Relationship joining happens here, not ad hoc in command code. |
 | Apple resources and mutations | `api.ts` | Include/query shapes follow browser evidence and resource functions remain transport-focused. |
 | CLI and confirmations | `cli.ts`, `confirm.ts` | stdout is data; destructive/irreversible actions preview and refuse without TTY or `--yes`. |

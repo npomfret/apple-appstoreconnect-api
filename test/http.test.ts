@@ -60,6 +60,61 @@ describe('where a request goes', () => {
     });
   }
 
+  /**
+   * Where a path resolves to, rather than how it is spelled. `..` is not the only way to
+   * write a dot segment — `%2e%2e` and `%2E%2E` are ones too, and `\` separates segments on
+   * a special scheme exactly as `/` does — and each of these reached a base this client
+   * closed with the session cookie on it, past `withinBoundary`, which reads the first
+   * segment and saw a private family there.
+   */
+  for (const path of [
+    'resolutionCenterThreads/../../../v1/apps',
+    'resolutionCenterThreads/%2e%2e/%2e%2e/%2e%2e/ci/api/v1/ciBuildRuns',
+    'resolutionCenterThreads/%2E%2E/%2E%2E/%2E%2E/olympus/v1/actors',
+    'resolutionCenterThreads/.%2e/.%2e/.%2e/v1/apps',
+    'resolutionCenterThreads\\..\\..\\builds',
+  ]) {
+    test(`the session does not follow "${path}" out of the base`, async () => {
+      const stub = stubFetch();
+      try {
+        await assert.rejects(() => get(SESSION, path), /outside/);
+      } finally {
+        stub.restore();
+      }
+
+      assert.deepEqual(stub.calls, []);
+    });
+  }
+
+  // `request` appends the query to whatever this returns, so a path carrying one of its own
+  // does not describe the request that goes out: a second `?`, or — after a `#` — a query
+  // that is never sent at all, which is a filter silently dropped from a read.
+  for (const path of ['resolutionCenterThreads?limit=1', 'resolutionCenterThreads#', 'a#b']) {
+    test(`"${path}" is not a path`, async () => {
+      const stub = stubFetch();
+      try {
+        await assert.rejects(() => get(SESSION, path, { limit: 5 }), /not a path/);
+      } finally {
+        stub.restore();
+      }
+
+      assert.deepEqual(stub.calls, []);
+    });
+  }
+
+  // The URL that goes out is the resolved one, so a path that normalises to somewhere still
+  // inside the base is sent as where it ends up rather than as what was typed.
+  test('a path is sent where it resolves to, not as it was written', async () => {
+    const stub = stubFetch();
+    try {
+      await get(SESSION, 'resolutionCenterThreads/%2e/t1');
+    } finally {
+      stub.restore();
+    }
+
+    assert.equal(stub.calls[0].url, `${BASE_URL}/resolutionCenterThreads/t1`);
+  });
+
   test('a path that merely starts with the letters http is an ordinary path', async () => {
     const stub = stubFetch();
     try {

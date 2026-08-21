@@ -96,6 +96,29 @@ describe('paths the boundary refuses', () => {
     }
   });
 
+  /**
+   * The same climb, spelled so the family check cannot see it: `withinBoundary` reads the
+   * first segment to decide the family, and every one of these says `resolutionCenterThreads`
+   * while resolving somewhere else entirely — `/ci/api`, the base this client closed, and
+   * `/v1/apps`, the official record the boundary exists to refuse. `%2e%2e` and `%2E%2E` are
+   * dot segments to the URL parser, and `\` separates segments on a special scheme as `/`
+   * does, so all four of these were sent with the session cookie on them until 2026-08-21.
+   * What refuses them now is the transport rather than the family check, so the message is
+   * not the boundary's; what matters here is unchanged, which is that nothing leaves.
+   */
+  test('a path that climbs out in a spelling the family check cannot read', async () => {
+    for (const path of [
+      'resolutionCenterThreads/%2e%2e/%2e%2e/%2e%2e/ci/api/v1/ciBuildRuns',
+      'resolutionCenterThreads/%2E%2E/%2E%2E/%2E%2E/v1/apps',
+      'resolutionCenterThreads/.%2e/.%2e/.%2e/olympus/v1/actors',
+      'resolutionCenterThreads/t1\\..\\..\\..\\builds',
+    ]) {
+      const { urls, error } = await attempt(path);
+      assert.match(error ?? '', /resolves to .* which is outside/);
+      assert.deepEqual(urls, [], `${path} was sent anyway`);
+    }
+  });
+
   test('the refusal names what is in scope, and where the rest lives', async () => {
     const { error } = await attempt('builds');
     assert.match(error ?? '', /resolutionCenterThreads/);

@@ -214,8 +214,13 @@ that is a mapped call rather than something to hand a free-form path to.
 **Being in scope is not evidence.** The families are open whole so a *new* gap can still be
 found without the boundary moving, but an unmapped route inside one is still an unproven
 route: what it returns is undocumented, and the evidence for a call is a recording of the
-browser making it. Traversal (`..`) is refused, because a path that climbs out of the
-family it names is not the family it names.
+browser making it. Traversal is refused, because a path that climbs out of the family it
+names is not the family it names — and it is refused where it can be seen, which is the
+transport: this list is matched against the first segment of the path as written, and
+`resolutionCenterThreads/%2e%2e/%2e%2e/%2e%2e/ci/api/v1/ciBuildRuns` has a private family
+in that position while resolving to the `/ci/api` base this client closed. Three spellings
+of the same climb passed this check and were sent with the session cookie until
+2026-08-21; `apiUrl` now compares the *resolved* URL against `BASE_URL`.
 
 ## What the transport can express
 

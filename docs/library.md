@@ -119,11 +119,17 @@ words is the same question as sending them. Worth copying if you build your own.
 - Query strings are built by hand rather than with `URLSearchParams`: Apple wants literal
   `[`, `]` and `,`, which `URLSearchParams` would percent-encode.
 - A path is a path — `resolutionCenterThreads/{id}` — always relative to
-  `https://appstoreconnect.apple.com/iris/v1`. An absolute URL is refused rather than
-  fetched: everything `request()` sends carries the session cookie and the CSRF header, so a
-  URL naming another host is your App Store Connect session handed to that host, and `raw()`
-  takes its path from whatever called it — `asc get` from the command line. The one
-  cross-origin request here, an upload part, doesn't go through `request()` at all.
+  `https://appstoreconnect.apple.com/iris/v1`, and it is checked as the URL it **resolves
+  to** rather than as the text you wrote. An absolute URL is refused, and so is a path that
+  climbs out of that base: everything `request()` sends carries the session cookie and the
+  CSRF header, so where it lands is the whole question, and `raw()` takes its path from
+  whatever called it — `asc get` from the command line. Until 2026-08-21 only a literal `..`
+  was refused, which is one of several ways to write the same climb: `%2e%2e` and `%2E%2E`
+  are dot segments to the URL parser, and `\` separates segments on an https URL exactly as
+  `/` does, so `resolutionCenterThreads/%2e%2e/%2e%2e/%2e%2e/ci/api/v1/ciBuildRuns` went out
+  with the cookie on it. A query or a fragment in a path is refused too — the query is
+  `query`'s to state, and what follows a `#` is never sent. The one cross-origin request
+  here, an upload part, doesn't go through `request()` at all.
 - **`raw()` is confined to the private families**, and it is the library's boundary as much
   as the CLI's: `resolutionCenterThreads`, `resolutionCenterMessages`,
   `resolutionCenterDraftMessages`, `resolutionCenterMessageAttachments` and

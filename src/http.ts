@@ -136,18 +136,33 @@ function methodOf(given: string | undefined): Method {
 }
 
 /**
- * The URL a resource path names, under the base above.
+ * The URL a resource path names, under the base above — checked on the URL that comes out,
+ * not on the text that went in.
  *
  * Paths here are relative — `appStoreVersions/{id}`, `apps/{id}/resolutionCenterThreads` —
- * and an absolute URL is refused rather than sent. Everything this function returns is fetched
- * with the session cookie and the CSRF header attached, so a URL naming another host is
- * that cookie handed to that host, and `asc get` takes its path straight off the command
- * line. Nothing in this client ever asked for an absolute one: the single
- * cross-origin request, an upload part, deliberately doesn't come through `request` at all
- * — see `uploadPart`, which sends the presigned URL and no cookie.
+ * and everything this returns is fetched with the session cookie and the CSRF header
+ * attached, so where it lands is this function's whole job. `raw` takes its path from
+ * whatever called it and `asc get` takes that off the command line.
  *
- * The base is the module constant above and nothing is ever read off the path to choose it,
- * so a caller cannot leave it by writing `../`-anything.
+ * **A path that climbs out of the base is refused, and one used to get through.** This said
+ * a caller could not leave the base "by writing `../`-anything", and that was true only of
+ * paths spelled that way. The URL parser resolves more than a literal dot segment: `%2e%2e`
+ * and `%2E%2E` are dot segments too, and on a special scheme `\` separates path segments
+ * like `/` does — so `resolutionCenterThreads/%2e%2e/%2e%2e/%2e%2e/ci/api/v1/ciBuildRuns`
+ * reached the `/ci/api` base this client closed, and `.../v1/apps` reached the official
+ * record the gap boundary exists to refuse. `withinBoundary` in `api.ts` did not stop either:
+ * it reads the first segment to decide the family, and the first segment said
+ * `resolutionCenterThreads`. Both went out with the cookie on.
+ *
+ * So the check is the resolved URL against the base, which is the thing that has to be true
+ * — no list of the ways a path can be written to mean somewhere else, since that list is the
+ * parser's and it is longer than it looks. The host check above stays for the message it
+ * gives; this would catch an absolute URL as well.
+ *
+ * A query or a fragment is refused for a nearer reason: `request` appends `buildQuery` to
+ * what comes back from here, so a `?` in the path makes a second one, and everything after a
+ * `#` is not sent at all — `resolutionCenterThreads#` with a filter beside it silently asked
+ * for the unfiltered list. The query is `options.query`'s to state.
  */
 function apiUrl(path: string): string {
   if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('//')) {
@@ -157,7 +172,22 @@ function apiUrl(path: string): string {
     );
   }
 
-  return `${BASE_URL}/${path.replace(/^\//, '')}`;
+  if (path.includes('?') || path.includes('#')) {
+    throw new Error(
+      `"${path}" is not a path: a query belongs in the request's own query, not in the path. ` +
+        'What follows a "#" is never sent, and a "?" here would leave the request carrying two.'
+    );
+  }
+
+  const url = new URL(`${BASE_URL}/${path.replace(/^\/+/, '')}`);
+  if (!url.href.startsWith(`${BASE_URL}/`)) {
+    throw new Error(
+      `"${path}" resolves to ${url.href}, which is outside ${BASE_URL}. This client speaks one ` +
+        'base, and every request built here goes out with the App Store Connect session on it.'
+    );
+  }
+
+  return url.href;
 }
 
 /**
