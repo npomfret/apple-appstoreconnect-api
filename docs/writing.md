@@ -1,29 +1,21 @@
 # Writing
 
-> **Boundary notice (re-audited 2026-08-21, Apple OpenAPI 4.4.1):** every mapped write that
-> Apple serves officially has now been removed. Attaching a build to a version was the last
-> one — `PATCH /v1/appStoreVersions/{id}` takes a `build` relationship on Apple's own
-> `AppStoreVersionUpdateRequest`, so `builds` and `set-build` went with the app and version
-> reads. The review submissions, submission items, metadata, categories, age ratings and
-> content rights that used to be here went earlier, to Apple's
-> [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
-> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
-> and [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
-> APIs. See [the removal task](../tasks/remove-official-api-overlap.md).
+Every write this client makes is a Resolution Center one: the draft reply to App Review, its
+attachments, and sending it. That is the whole write surface, and it is documented in
+[replying](replying.md). Apple has no official Resolution Center API — checked against
+OpenAPI 4.4.1 on 2026-08-21, see [evidence and limits](evidence.md) — which is why these are
+here rather than at Apple's own
+[API reference](https://developer.apple.com/documentation/appstoreconnectapi/), where any
+other write to your App Store data belongs.
 
-What is left is the Resolution Center write surface, and only that: drafts, attachments
-and the reply to App Review, documented in [replying](replying.md). Every write in this
-client is now one of those, named, captured from the browser doing it, and confirmed before
-it goes.
+Each one is named, recorded from the browser doing it, and confirmed before it goes.
 
-**There is no longer a raw PATCH.** `asc patch` took any `iris/v1` path and a
-hand-written body, with no confirmation and no preview — which meant every official write
-this project spent step 4 deleting was still reachable, by hand, one argument away, and the
-boundary would never have seen it happen. Nothing replaces it: a private write wants
-captured evidence that Apple accepts that body at that path, and the place a hand-written
-one belongs is Apple's official API, which asks for a key rather than a scraped cookie.
-
-The read-side hatch survives, restricted the same way — see
+**There is no raw PATCH**, and nothing here takes a write path off the command line. A
+hand-written body at an arbitrary `iris/v1` path has no captured evidence behind it by
+definition, and it would put every write Apple serves officially back within reach without
+the boundary ever seeing it happen. The place a hand-written write belongs is Apple's
+official API, which asks for a key rather than a scraped cookie. The read side has an
+escape hatch, restricted to the private families — see
 [anything not mapped](reading.md#anything-not-mapped).
 
 ## Confirmations
@@ -52,16 +44,13 @@ both routes go through.
 
 ## Headers on a write
 
-Writes send a different header set to reads: `Origin` and the `X-Connect-Team-*` pair.
-That is now the whole of the difference.
+Writes send a different header set to reads: `Origin` and the `X-Connect-Team-*` pair. That
+is the whole of the difference.
 
-`Content-Type` used to be part of it. The captures disagreed about the value — the version
-PATCH sent plain `application/json` where the Resolution Center endpoints send
-`application/vnd.api+json` — so a write could name its own, and one that didn't got the
-first. That PATCH left with `set-build`, and `asc patch`, the only other way to reach the
-default, left with the escape hatches; the transport step then removed the value itself.
-Every request this client sends, read or write, now carries `application/vnd.api+json`,
-set in one place. A gap that turns out to need something else brings a capture showing it.
+`Content-Type` is not part of it. Every request this client sends, read or write, carries
+`application/vnd.api+json`, set in one place — which is what the recordings of the
+Resolution Center endpoints show them all sending. A gap that turns out to need something
+else brings a recording showing it.
 
 The team id is only present on captured write requests, so it's also decoded from the
 `itctx` cookie's `cp` field; that means a session captured from any ordinary `GET` can

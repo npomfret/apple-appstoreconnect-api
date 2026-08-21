@@ -4,11 +4,17 @@
 
 This task defines the product boundary; it does not authorize live App Store Connect writes.
 
-**Steps 4 and 5 are done.** Every resource slice below has been removed; as of 2026-08-21
+**Done, apart from step 0.** Every resource slice below has been removed; as of 2026-08-21
 so have the escape hatches that could still reach them — `patch` is gone and `get` is
-confined to the private families — and the transport has been narrowed to the one base, the
-one content type and the four methods the retained gaps use. What remains is step 6, the
-docs pass, sequenced in [gap-boundary-next-steps.md](gap-boundary-next-steps.md).
+confined to the private families — the transport has been narrowed to the one base, the one
+content type and the four methods the retained gaps use, and the README and topic docs have
+been rewritten as a gap-only client. The sequencing and the record of each step are in
+[gap-boundary-next-steps.md](gap-boundary-next-steps.md).
+
+What is left is **step 0**, which is the owner's: the boundary rule and the audit
+date/version are now in `CLAUDE.md`, but the trade-off that removal *withdraws* these
+capabilities from anyone holding a session and no `.p8` key is a product call, and it should
+be recorded there in the owner's own words.
 
 ## Decision
 
@@ -185,8 +191,14 @@ Steps 1–4 are done. What remains:
   types required by retained gaps.~~ *Done, 2026-08-21.* Credential isolation, redaction,
   confirmations and the `http.write` audit records were preserved unchanged, and the gap
   request tests passed unedited, which is what shows nothing moved on the wire.
-- Rewrite the README and topic docs as a gap-only client. Do not leave compatibility
-  aliases or deprecated wrappers for removed official duplicates.
+- ~~Rewrite the README and topic docs as a gap-only client. Do not leave compatibility
+  aliases or deprecated wrappers for removed official duplicates.~~ *Done, 2026-08-21.*
+  There were no aliases or wrappers to leave — nothing forwards to Apple's API — so what
+  this took was replacing the removal narrative with a description of what the client is.
+  Every user-facing page now states its own surface and its audit date; `docs/evidence.md`
+  keeps the recordings' durable observations under one archive heading, since what they
+  established about Apple's *records* outlives the code that made them; and the
+  function-by-function inventory lives here, in this task, and nowhere else.
 
 ## Documentation acceptance criteria
 

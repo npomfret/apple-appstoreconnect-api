@@ -1,10 +1,11 @@
 # Replying to App Review
 
-Apple's official App Store Connect OpenAPI specification 4.4.1, audited 2026-08-20, has no
-Resolution Center thread, message, rejection, draft-message, or message-attachment
-resources. This is therefore part of the private gap this project is intended to cover.
-Recheck the current [official API](https://developer.apple.com/app-store-connect/api/)
-before adding or materially extending it.
+Apple's official App Store Connect OpenAPI specification **4.4.1** (generated 2026-07-15,
+966 paths, 1,393 schemas) has no Resolution Center thread, message, rejection, draft-message
+or message-attachment resource — audited 2026-08-20 and re-checked 2026-08-21. This is
+therefore squarely the private gap this project exists for. Recheck the current
+[official API](https://developer.apple.com/app-store-connect/api/) before adding to it or
+materially extending it.
 
 ```sh
 node dist/cli.js draft <threadId>                              # what's in the box now
@@ -71,13 +72,14 @@ An empty draft is refused before anything is sent, matching the browser, which k
 disabled until there's text.
 
 `save-draft` reads the thread first and POSTs or PATCHes accordingly, since the draft is
-created on the first keystroke and updated forever after. Attachments are the same
-reserve → PUT the parts → `{"uploaded":true}` dance the removed screenshot upload used,
-against `resolutionCenterMessageAttachments` instead of `appScreenshots` — the guess in
-the old notes turned out right. `uploadPart` in `src/http.ts` sends those parts to
+created on the first keystroke and updated forever after. Attachments go up in three steps —
+reserve, PUT the parts, then `{"uploaded":true}` — which is the same sequence App Store
+Connect uses for any asset, here against `resolutionCenterMessageAttachments`.
+`uploadPart` in `src/http.ts` sends those parts to
 `object-storage.apple.com` carrying no cookie, since the presigned query string is the
-whole of the authentication and the session must not follow the bytes to another host. Neither the POST nor the PATCH response mentions
-attachments, so the draft is re-read at the end; that GET is what the command prints.
+whole of the authentication and the session must not follow the bytes to another host.
+Neither the POST nor the PATCH response mentions attachments, so the draft is re-read at the
+end; that GET is what the command prints.
 
 `delete-draft` takes a thread id rather than a draft id, because the draft id is never shown
 in the UI. Attachments go with the draft: after one was deleted this way, a GET of the

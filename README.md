@@ -5,13 +5,13 @@ the official App Store Connect API: Resolution Center threads, messages, rejecti
 and replies, plus unread review-message counts, version state-change history and the App
 Privacy questionnaire.
 
-The private implementations of capabilities Apple **does** officially expose have all been
-removed, and as of 2026-08-21 the escape hatches can no longer reach them either: `asc
-patch` is gone and `asc get` is confined to the private families this client is for. The
-boundary was last audited on 2026-08-21 against Apple's OpenAPI specification 4.4.1. The
-transport has since been narrowed to match — one host, one base, one content type, and the
-four methods the remaining calls use. What remains of that work is a docs pass, in
-[tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md).
+Everything Apple **does** expose officially is out of scope here, however convenient the
+private endpoint or the cookie it already has. Nothing in this client duplicates an official
+call, there is no escape hatch that reaches one — `asc get` is confined to the private
+families this client is for, and there is no raw write at all — and the transport is
+narrowed to match: one host, one base, one content type, four methods. The boundary was
+last audited on 2026-08-21 against Apple's OpenAPI specification 4.4.1, and
+[docs/evidence.md](docs/evidence.md) records what was checked and when.
 
 It talks to the same private `https://appstoreconnect.apple.com/iris/v1` service the web UI
 uses, reusing a session you capture from your browser.
@@ -71,41 +71,12 @@ all) works unedited.
 ## What it can do
 
 Every command below is something [Apple's official API](https://developer.apple.com/app-store-connect/api/)
-does not serve — that is now the whole of what this project is, rather than an intention.
-The commands that duplicated official capabilities have gone, and the removal task has the
-function-by-function mapping of where each one went.
-
-Official replacements:
-
-- [Apps and app metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
-  and [age ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
-  — apps, versions, localizations, categories, age ratings, screenshots and previews. The
-  `screenshots`, `previews`, `screenshot-set`, `upload-screenshot`, `delete-screenshot`,
-  `metadata`, `set-metadata`, `app-info`, `categories`, `set-categories`, `age-rating`,
-  `set-age-rating`, `territory-ratings` and `set-content-rights` commands have been
-  **removed**; this is where they went, and it serves the same `uploadOperations` the
-  private upload flow ran on.
-- [Review submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
-  — creating, reading, updating and submitting review submissions and their items. The
-  `submissions`, `submission`, `items`, `resolve-item`, `submit` and `cancel-submission`
-  commands have been **removed**; this is where they went, down to the `resolved`,
-  `submitted` and `canceled` attributes spelled exactly as the private calls spelled them.
-- [Apps](https://developer.apple.com/documentation/appstoreconnectapi/apps),
-  [App Store versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions)
-  and [builds](https://developer.apple.com/documentation/appstoreconnectapi/builds)
-  — app records, version records, build selection and processing state. The `apps`, `app`,
-  `versions`, `version`, `builds`, `set-build` and `review-details` commands have been
-  **removed**; this is where they went. `AppStoreVersionUpdateRequest` carries the same
-  `build` relationship `set-build` sent, and the build picker's `filter[isAppStoreCandidate]`
-  is spelled `filter[buildAudienceType]=APP_STORE_ELIGIBLE` officially.
-- [Users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
-  [user invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
-  — team access, roles, app visibility, invitations and revocation. The `invites` and
-  `invite` commands that used to do this privately have been **removed**; this is where they
-  went, and it can also revoke.
-- [Xcode Cloud workflows and builds](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
-  — products, workflows, repositories, builds, actions, issues and test results. The `ci-*`
-  commands that used to read these privately have been **removed**; this is where they went.
+does not serve. That is the whole of what this project is: if you are looking for apps,
+versions, builds, screenshots, metadata, age ratings, review submissions, invitations or
+Xcode Cloud, Apple serves all of it officially and none of it is here. The
+function-by-function mapping of what went where is in
+[tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md), and the
+official pages themselves are [at the bottom](#apples-official-api).
 
 **Reading** — [docs/reading.md](docs/reading.md)
 
@@ -130,16 +101,13 @@ was probed rather than recorded, which [docs/evidence.md](docs/evidence.md) says
 shows you the whole draft and reads it again after you answer, in case the browser autosaved
 over it in the meantime. The two deletes ask too. `--yes` answers for you, and still prints
 what it answered for; a command whose own input is a pipe is asked on the terminal rather
-than refused, and with no terminal at all they stop rather than assume. There is no
-unconfirmed write left: `asc patch`, which took a hand-written body at any `iris/v1` path
-and asked nothing, was removed on 2026-08-21 along with the read hatch's run of the whole
-API.
+than refused, and with no terminal at all they stop rather than assume. **There is no
+unconfirmed write**, and no way to send a hand-written body at a path of your own.
 
 The lower-level commands print denormalized JSON, or the untouched JSON:API document with
 `--raw`; the digests (`report`, `history`, `privacy`) take `--json` instead. Ids chain
-between commands, which is what makes scripting it possible — and since the command that
-listed versions was official and went, `report --json` is now where a `versionId` comes
-from.
+between commands, which is what makes scripting it possible — `report --json` is where a
+`versionId` comes from.
 
 ## Docs
 
@@ -190,7 +158,7 @@ this client uses.
   and [generating tokens](https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests)
   — how to authenticate against it.
 
-By topic, for the capabilities this project has removed or is removing:
+By topic, for the capabilities this project deliberately does not have:
 
 - [App metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
   — apps, versions, localizations, categories, age ratings, screenshots and previews.
@@ -215,13 +183,13 @@ By topic, for the capabilities this project has removed or is removing:
 What is **not** in any of the above, and is why this project exists: Resolution Center
 threads, messages, guideline rejections, draft replies and their attachments; unread
 review-message counts; App Store version state-change *history*; and the App Privacy
-`dataUsages` questionnaire. Checked against 4.4.1 — see
+`dataUsages` questionnaire. Checked against 4.4.1 on 2026-08-21 — see
 [docs/evidence.md](docs/evidence.md).
 
-One attribute, rather than a capability, is in the same position: iris carries
+One attribute, rather than a capability, sits on the line: iris carries
 `gracRatingClassificationNumber` on an age-rating declaration — the Korean GRAC
 classification number — and it is in none of 4.4.1's 1,393 schemas, where the other 28
-questions this client sent all are. It left with the age-rating commands on 2026-08-21
-rather than being kept, because writing it back means resending the whole questionnaire and
-no single-attribute PATCH has ever been recorded. See
+questions on that form all are. It is **not** implemented here, because writing it back
+means resending the whole questionnaire and no single-attribute PATCH has ever been
+recorded. Whether it should be is an open question:
 [tasks/grac-rating-classification-number-gap.md](tasks/grac-rating-classification-number-gap.md).

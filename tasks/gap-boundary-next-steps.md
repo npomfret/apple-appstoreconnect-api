@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. This **sequences** [remove-official-api-overlap.md](remove-official-api-overlap.md);
+Steps 1–6 are done; step 0 is the owner's and is outstanding. This **sequences** [remove-official-api-overlap.md](remove-official-api-overlap.md);
 it does not replace it. That task defines *what* leaves. This one records the audit that
 verified it, corrects two defects found while verifying, and fixes the *order* — because
 two of its slices, taken in the order written, delete something the keep list depends on.
@@ -169,6 +169,27 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
 
 6. **Rewrite the docs** as a gap-only client. No compatibility aliases, no deprecated
    wrappers, no stale claims outside this task's history.
+
+   *Done, 2026-08-21.* There were no aliases or wrappers to remove — nothing here ever
+   forwarded to Apple's API — so the work was that the docs had become a removal changelog:
+   every page opened with a boundary notice about what had left, and a reader arriving fresh
+   got the project's history instead of its shape. Each page now describes its own surface
+   and carries the date and specification version its gap claim was checked against.
+
+   `docs/evidence.md` was the delicate one, because its removed-call entries are not stale
+   claims — they are the evidence for the removals, and several carry observations about
+   Apple's *records* that outlive the code and hold for the official API too: a rejection's
+   `submittedDate` is the date Apple last looked; resolving an item does not re-queue its
+   submission; the first `appInfos` record is the live one and refuses writes. Those are
+   kept, under one archive heading at the end, with the dead identifier lists stripped out —
+   the function-by-function inventory belongs in
+   [remove-official-api-overlap.md](remove-official-api-overlap.md) and is now only there.
+
+   Two stale claims outside `docs/` went with it: `CLAUDE.md` still said the tree contained
+   legacy private implementations of official capabilities, and
+   `.claude/references/architecture.md` still described a closed *set* of transport bases
+   and forbade handling a browser recording outright, which `CLAUDE.md`'s redaction rule now
+   permits as evidence.
 
 ## What not to do
 

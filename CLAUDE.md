@@ -6,9 +6,15 @@ handles a browser-derived live session and can change or publish real App Store 
 Correctness, evidence, auditability, and credential safety are more important than the
 smallest diff.
 
-The current tree still contains legacy private implementations of official capabilities.
-Do not extend them. The removal inventory and the dated official-API comparison are in
-`tasks/remove-official-api-overlap.md`.
+The tree is gap-only as of 2026-08-21: no private implementation of an officially served
+capability remains, `asc get` is confined to the private families, there is no raw write,
+and the transport speaks one host, one base, one content type and four methods. Keep it that
+way. The rule for deciding is that **duplication is a property of a call, not of a
+resource** — a private read of an officially-available resource is retained only when it
+carries a field the official specification has no schema for, and is then narrowed to
+exactly that field. Last audited against Apple's OpenAPI specification **4.4.1** (generated
+2026-07-15, 966 paths, 1,393 schemas). The inventory and the dated comparison are in
+`tasks/remove-official-api-overlap.md`; what is evidenced, and how, is in `docs/evidence.md`.
 
 ## Non-negotiables
 

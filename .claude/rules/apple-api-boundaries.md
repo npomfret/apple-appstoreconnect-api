@@ -6,7 +6,6 @@ paths:
   - "src/curl.ts"
   - "src/log.ts"
   - "src/confirm.ts"
-  - "src/screenshots.ts"
   - "src/cli.ts"
   - "docs/**/*.md"
 ---

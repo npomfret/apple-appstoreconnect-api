@@ -1,21 +1,13 @@
 # Reading
 
-> **Boundary notice (re-audited 2026-08-21, Apple OpenAPI 4.4.1, generated 2026-07-15, 966
-> paths, 1,393 schemas):** every read left on this page is one the official API has no
-> equivalent for — Resolution Center threads, messages, rejections and drafts; unread
-> review-message counts; version state-change history; and the App Privacy questionnaire.
-> The last of the legacy overlap went with the app, version, build and review-detail slice.
-> Apple's
-> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
-> [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings),
-> [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
-> [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
-> [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
-> [App Store Versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions),
-> [Builds](https://developer.apple.com/documentation/appstoreconnectapi/builds) and
-> [Apps](https://developer.apple.com/documentation/appstoreconnectapi/apps) APIs are where
-> the removed reads went. They need an API key rather than this client's cookie. See
-> [the removal task](../tasks/remove-official-api-overlap.md).
+Every read here is one Apple's official API has no equivalent for: Resolution Center
+threads, messages, rejections and drafts; unread review-message counts; version state-change
+history; and the App Privacy questionnaire. Checked against Apple's OpenAPI specification
+4.4.1 (generated 2026-07-15, 966 paths, 1,393 schemas) on 2026-08-21 — see
+[evidence and limits](evidence.md). Anything else you might want from App Store Connect,
+Apple serves officially and with an API key rather than this client's cookie; the
+[API reference](https://developer.apple.com/documentation/appstoreconnectapi/) is where to
+start.
 
 ```sh
 node dist/cli.js report                 # the useful one — digest of every review conversation
@@ -49,12 +41,11 @@ is a to-many relationship: a thread about two versions names both rather than ha
 picked for it, and `--json` carries the full list as `versions` alongside the singular
 `version`/`versionId`, which are filled only when there is exactly one.
 
-What no route supplies is the submission's `state`, `platform` and dates — the digest used
-to print them and no longer does. They live on `reviewSubmissions`, which Apple serves
-officially at
+What no route supplies is the submission's own `state`, `platform` and dates. Those live on
+`reviewSubmissions`, which Apple serves officially at
 [`GET /v1/apps/{id}/reviewSubmissions`](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions);
 read them there. `--submission` echoes back the id you gave it and nothing else about the
-submission. See [the sequencing task](../tasks/gap-boundary-next-steps.md).
+submission.
 
 `inbox` is a request to `apps`, which Apple also serves officially. It is kept for the two
 counts hanging off it: `appStoreVersionMetrics.messageCount` and
@@ -75,58 +66,24 @@ document):
 | `draft <threadId>` | `resolutionCenterThreads/{id}/resolutionCenterDraftMessage` |
 | `rejections <threadId>` | `reviewRejections?filter[resolutionCenterMessage.resolutionCenterThread]={id}` |
 
-Every endpoint above is `iris/v1`, and every one of them is about an app. The nine `ci-*`
-commands that read Xcode Cloud over a second private API — `/ci/api`, plain JSON, no JSON:API
-envelope — are **gone**, along with `asc ci-run`'s build digest, and so is `invites`, the one
-read here that was account-wide rather than per-app. Apple exposes Xcode Cloud products,
-workflows, repositories, build runs, actions, issues and test results
-[officially](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
-and pending invitations at
-[`GET /v1/userInvitations`](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations).
-The `screenshots` and `previews` reads have gone the same way: `appScreenshotSets`,
-`appScreenshots`, `appPreviewSets` and `appPreviews` are all
-[App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
-resources, down to the `uploadOperations` the upload flow ran on. So have `metadata`,
-`app-info`, `categories`, `age-rating` and `territory-ratings`: `appInfos`,
-`appInfoLocalizations`, `appStoreVersionLocalizations`, the six category relationships,
-`ageRatingDeclarations` and `appInfos/{id}/territoryAgeRatings` are all official, attribute
-for attribute. And so have `submissions`, `submission` and `items`: `apps/{id}/reviewSubmissions`,
-`reviewSubmissions/{id}` and `reviewSubmissions/{id}/items` are all
-[Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
-operations, and every attribute this client read back — a submission's `platform`, `state`
-and `submittedDate`, an item's `state` — is on Apple's own schema. All of them need an API
-key rather than this client's cookie.
+Every endpoint above is `iris/v1`, and every one of them is about an app.
 
-The same has now happened to the reads this page was built around. `apps`, `app`, `versions`,
-`version`, `builds` and `review-details` are gone: `apps`, `apps/{id}`,
-`apps/{id}/appStoreVersions`, `appStoreVersions/{id}`, `builds` and
-`appStoreReviewDetails/{id}` are all official operations, and every attribute read back —
-a version's `platform`, `versionString`, `appStoreState`, `appVersionState` and
-`downloadable`, a build's `version`, `uploadedDate`, `processingState` and `expired`, a
-review detail's contact, demo account and notes — is on Apple's own schema. The build
-picker's four filters survive the move too, with one rename: Apple spells
-`filter[isAppStoreCandidate]=true` as `filter[buildAudienceType]=APP_STORE_ELIGIBLE`.
+`appId` defaults to the one scraped from the captured request's `Referer`. **`versionId` has
+no default** — `asc history <versionId>` requires it, because working one out means reading
+`apps/{id}/appStoreVersions`, which is Apple's own
+[`GET /v1/apps/{id}/appStoreVersions`](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions).
+That is one place to get the id; `asc report --json` is the other, and needs no API key.
 
-`appId` still defaults to the one scraped from the captured request's `Referer`. **`versionId`
-no longer defaults at all** — `asc history <versionId>` requires it. Working it out meant
-reading `apps/{id}/appStoreVersions`, which is the official call above, so the convenience
-went with it rather than being the one duplicate kept for its own sake. That call is where
-to get the id from:
-`GET /v1/apps/{id}/appStoreVersions?filter[appStoreState]=PREPARE_FOR_SUBMISSION`.
+When a thread quotes a **4.1 metadata rejection**, the text Apple is objecting to is spread
+across two records rather than one, and neither is served here. **Name** and **subtitle**
+hang off `appInfos`; description, keywords, promotional text and what's-new hang off the
+version — so the offending line is often on the half you weren't looking at. A shipped app
+also has *two* `appInfos` records, the live one and the one being prepared, with the live one
+listed first: read that one and you get what the store says rather than what you last edited,
+and a write to it comes back `409`. Both are `GET /v1/apps/{id}/appInfos` officially, with a
+`state` telling them apart.
 
-Two things about App Store metadata are worth carrying over to whichever client reads it,
-because they are properties of the records rather than of this one. It is split across two
-of them — **name** and **subtitle** hang off `appInfos`, while description, keywords,
-promotional text and what's-new hang off the version — so a 4.1 metadata rejection is often
-about the half the version doesn't have. And a shipped app has *two* `appInfos` records, the
-live one and the one being prepared, with the live one listed first: read that one and you
-get what the store says rather than what you last edited, and write to it and Apple refuses
-with a `409`. Both come back from `GET /v1/apps/{id}/appInfos` officially, with a `state`
-telling them apart.
-
-The ids chain together, which is what makes scripting possible — and is now the way to get
-a version id out of this client at all, since the command that listed versions was official
-and went:
+The ids chain together, which is what makes scripting possible:
 
 ```sh
 node dist/cli.js report --json          # -> threadId, versionId
@@ -194,10 +151,11 @@ appStoreVersions/{id}/appStoreVersionStateChanges
 ```
 
 So `asc get apps/123`, `asc get builds` and `asc get appInfos/<id>` are refused, with a
-pointer to the official API instead. That is the whole point of the restriction: an
-unrestricted private GET leaves every read this project deleted one command-line argument
-away from being back, and the boundary never sees it happen. `apps` bare is refused too —
-the one query it is a gap for is the pair of unread counts, and that is `asc inbox`.
+pointer to the official API instead. That is the whole point of the restriction: those reads
+all still sit in iris behind the same cookie, so an unrestricted private GET puts every one
+of them a command-line argument away, and the boundary never sees it happen. `apps` bare is
+refused too — the one query it is a gap for is the pair of unread counts, and that is
+`asc inbox`.
 
 Whole families are open rather than only the routes mapped above, because a type Apple's
 API has never heard of has no official read to duplicate anywhere inside it, so a *new* gap

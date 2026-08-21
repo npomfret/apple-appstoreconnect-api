@@ -1,109 +1,28 @@
 # Evidence and limits
 
 This is an undocumented, private API, and the calls here are not all equally well
-evidenced. This page says which is which.
+evidenced. This page says which is which: what was recorded from App Store Connect doing
+it, what was only probed, and what has never been run from here at all.
 
-It was not all unique functionality. An audit on 2026-08-20 against Apple's official OpenAPI
-specification 4.4.1 found that submissions, versions/builds, metadata and App Information,
-screenshots/previews, users/invitations, and all Xcode Cloud code duplicate official
-operations. All of it has now been removed — Xcode Cloud, the invitations, the screenshots
-and previews, the metadata and App Information code, the review submissions and their items,
-and last the apps, versions, builds and review details. Evidence that a private call works
-was never a reason to retain it when Apple supports the capability. What is left is the
-gap-only surface, re-audited against 4.4.1 on 2026-08-21. The exact inventory and official
-operation mapping is in [the removal task](../tasks/remove-official-api-overlap.md), and the
-official replacements are Apple's
-[App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
-[Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
-[App Store Versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions),
-[Builds](https://developer.apple.com/documentation/appstoreconnectapi/builds),
-[Apps](https://developer.apple.com/documentation/appstoreconnectapi/apps),
-[Users and Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
-and [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
-API collections.
+Everything on it is part of the gap this client is for — Resolution Center threads,
+messages, rejections, drafts and their attachments; unread review-message counts; App Store
+version state-change history; and the App Privacy questionnaire. None of that appears in
+Apple's official OpenAPI specification **4.4.1** (generated 2026-07-15, 966 paths, 1,393
+schemas), re-checked on 2026-08-21 and recorded with that date wherever the claim is made,
+so it ages visibly.
+
+Evidence that a private call works was never a reason to keep one Apple serves officially,
+and the calls that turned out to be duplicates have gone. What those recordings established
+about Apple's *records*, rather than about this client, outlives them and is kept at the end
+of this page. The inventory and the function-by-function mapping are in
+[the removal task](../tasks/remove-official-api-overlap.md).
 
 ## What isn't captured yet
 
-The captured writes on the retained surface are the Resolution Center draft behind
-`save-draft` and `delete-draft`, and sending it (`send-reply`). The version PATCH behind
-`set-build`, the four App Information page PATCHes and the submission-item resolve were
-captured too, and all of that code has since been removed — see below.
-
-What's left uncaptured on the retained surface is `delete-attachment`, which was probed
-rather than recorded. The submission writes that used to be listed here — creating a
-submission, adding a version to it, submitting and cancelling — went with the submission
-slice: they were the least evidenced writes in the repository and Apple serves every one of
-them officially, so the recording that would have settled them is no longer worth making.
-
-Recorded and **never mapped**: the Xcode Cloud workflow replace,
-`PUT /ci/api/teams/{team}/products/{product}/workflows-v15/{id}`. The shape is fully known
-and it was still not written, because it is a **full-document replace** on the workflow that
-builds every push — the browser resent the whole workflow to change one test destination, so
-anything omitted from that body is destroyed. That argument is now moot here: Apple supports
-workflow updates officially and the private Xcode Cloud code has been removed.
-
-## Confirmed by running it
-
-Weaker than a capture and stronger than an inference: the call was made against iris and
-iris did the thing. It says the request works, not that it is the one the browser sends.
-
-- `submitReviewSubmission` — `PATCH reviewSubmissions/{id} {"submitted":true}`, run
-  2026-08-19 against a submission sitting in `UNRESOLVED_ISSUES` with its only item already
-  resolved. `200`, and the submission came back `state: WAITING_FOR_REVIEW` with
-  `submittedDate` stamped to the second. The version moved `READY_FOR_REVIEW` →
-  `WAITING_FOR_REVIEW` in its own history alongside it. **That code has since been
-  removed**: Apple serves `reviewSubmissions_updateInstance` officially and
-  `ReviewSubmissionUpdateRequest` carries `submitted` and `canceled` by those names.
-
-  Three things that run established outlive it, and all three are about the records rather
-  than about this client, so they hold for the official API too.
-
-  **A rejection carries the submitted date of the run that was refused.** `UNRESOLVED_ISSUES`
-  always has a `submittedDate`, and it is the date Apple last looked, not evidence that the
-  submission is with Apple now. Reading "has a submitted date" as "is in flight" strands it:
-  here it made `submit` refuse and point at `resolve-item`, which refused in turn because
-  the item was no longer `REJECTED` — two commands pointing at each other, and at the time
-  the only way out was a hand-written PATCH. That PATCH is `reviewSubmissions_updateInstance`
-  on the official API now, and both commands have gone. A returned submission is reusable, and `{"submitted":true}` is
-  what moves it on.
-
-  **`READY_FOR_REVIEW` alone does not mean unsent either.** It is the pair — that state and
-  no `submittedDate` — that means never handed over.
-
-  **One open submission per platform.** A second `POST reviewSubmissions` for a platform
-  that already has one is not a way to start again, and the platform has to be read off the
-  version rather than assumed: a submission is per-platform, and a guessed `IOS` would put a
-  Mac or tvOS version into the wrong one.
-
-- `listUserInvitations` and `inviteUser` — run 2026-08-19 from this client, and **that code
-  has since been removed**: `userInvitations` is the same JSON:API type Apple serves
-  officially, with the same six attributes, so it was never a gap. Two observations from
-  that run outlive it, and both are about Apple rather than about this client, so they hold
-  for the official API too.
-
-  **Apple refuses plus-addressing on an invitation.** `POST userInvitations` with a
-  plus-tagged address came back `409 ENTITY_ERROR.ATTRIBUTE.INVALID`, "Email format not
-  valid.", pointing at `/data/attributes/email`; case was not the issue. The invitee's
-  address becomes an Apple ID, and Apple is stricter about those than a mail server is —
-  Gmail would have delivered the tag to the base inbox. Reaching per-attribute validation
-  also meant iris had accepted the envelope, the type, the `application/vnd.api+json`
-  content type, the session and the team headers before objecting to the one value.
-
-  **"All apps" is stored as the list, not as the flag.** An invitation sent from the People
-  page with `allAppsVisible: true` and no `visibleApps` relationship read back a moment
-  later as `allAppsVisible: null` with `visibleApps` naming every app on the account. One
-  observation, not a rule, and worth knowing before reading that field as a boolean.
-
-  The read itself established nothing beyond `200` and an empty collection, and no
-  invitation was ever created by this client.
-
-## Capturing a new endpoint
-
-Record dev tools → Network while doing the thing in the browser and export the log (a
-`.har`): every request *and response* is in there, which is far more than "Copy as cURL"
-gives you one at a time. Such an export contains the full session cookie in plain text, so
-keep it in `tmp/` with everything else gitignored. The capture file this client reads is a
-different thing — it wants a curl command or a `Cookie:` line.
+One write on the retained surface was never recorded: `delete-attachment`, which was probed
+rather than captured, and which destroys live data. Everything else here — the draft behind
+`save-draft` and `delete-draft`, and the send behind `send-reply` — was copied from the
+browser doing it.
 
 ## Calls confirmed against the browser
 
@@ -136,16 +55,187 @@ list is the tested one and an override is not.
 - From the History, Trust & Safety and Growth tabs: `listVersionStateChanges` (the browser
   sends no query at all; the `limit` is ours, and tested), `listDataUsages` and
   `getDataUsagePublishState`.
+- From one real send: `sendDraftMessage` — the `createFromDraftMessage` POST, its `201`,
+  and the thread read back with the new message on it.
+- From one draft reply with an attachment: `createDraftMessage`, `updateDraftMessage`,
+  `reserveMessageAttachment` and `completeMessageAttachment` — all four bodies replayed
+  offline against the recording and match the browser's byte for byte. Editing an existing
+  draft, recorded separately, replays through `updateDraftMessage` and `getDraftMessage`
+  with nothing new in it.
+
+## Calls that are probe-only, and so likelier to shift
+
+- `deleteMessageAttachment` was **probed, not captured** — no browser request for it was
+  ever copied. It works (a 204, and the attachment is gone on the next read), but it is the
+  least evidenced call here, and it destroys live data.
+- `sendDraftMessage` is certain in shape — it was recorded from the real thing — but
+  **this client has never run it**. Everything up to the point of no return has been
+  exercised against live data: the draft is read back, the confirmation renders it,
+  declining stops before any request leaves. The request itself waits for a reply worth
+  spending. Until then, treat the first run as the test.
+- `deleteDraftMessage` is the other way round: the request was copied from the browser's
+  **Delete Draft** button, so the shape is certain, but this client has never run it — the
+  one open thread's draft had already been deleted in the browser, and closed threads won't
+  take a scratch draft to practise on. Its [documented
+  aftermath](replying.md) is what was observed after the browser did it.
+
+## Queries narrowed away from the capture
+
+One query here is deliberately *not* what the browser sends.
+
+`listAppMetrics` — the `inbox` command — is a request to `apps`, which Apple serves
+officially. It is retained for two counts the official API has no schema for:
+`appStoreVersionMetrics.messageCount` and `betaReviewMetrics.messageCount`. Re-checked on
+2026-08-20 against the current OpenAPI specification **4.4.1** (generated 2026-07-15, 966
+paths, 1,393 schemas, downloaded from
+`https://developer.apple.com/sample-code/app-store-connect/app-store-connect-openapi-specification.zip`):
+`appStoreVersionMetrics`, `betaReviewMetrics` and `messageCount` occur zero times in the
+whole document.
+
+The browser's version of that request also sideloads `reviewSubmissions` with
+`fields[reviewSubmissions]=state` and `limit[reviewSubmissions]=10`. Apple serves that at
+`GET /v1/apps/{id}/reviewSubmissions`, `state` and its seven-value enum included, so this
+client does not send it. **The shortened query has not been recorded from the browser.**
+Dropping a relationship is the safe direction to differ — iris 400s an include name it does
+not recognise and cannot 400 one that is no longer asked for — but it is a difference, and
+if the counts ever stop arriving this is the first thing to put back.
+
+`fields[apps]` naming only those two relationships is the rest of what makes this a gap
+read: the apps come back as bare ids, with none of the attributes Apple's own `App`
+resource already carries. Widening it turns the call back into a duplicate app listing.
+
+`report` is not a second case, though it reads like one. All three of its routes are
+private — an app id lists the app's Resolution Center threads, `--submission` filters that
+list, `--thread` skips discovery altogether — and the version a report names comes off the
+thread's own `appStoreVersions` rather than off `appStoreVersionForReview`, so no route
+reads `apps/{id}/reviewSubmissions`. The digest says nothing about the submission's state,
+platform or dates for the same reason: they are Apple's to serve.
+
+## The escape hatch, and what it can reach
+
+`asc get` is the one command that takes a path off the command line, which makes it the one
+place the whole boundary could be walked round: every read this project deleted is still
+sitting in iris, one argument away. It is confined to the private families and refuses
+anything else before a request is built. There is no write-side equivalent — a hand-written
+body at an arbitrary path has no captured evidence behind it by definition, and nothing here
+should write without a confirmation and a preview.
+
+The list is a claim about the official specification, so it carries the same date as the
+rest of this page. Checked against **4.4.1** (generated 2026-07-15, 966 paths, 1,393
+schemas) on 2026-08-21: `resolutionCenter`, `reviewRejection`, `dataUsage`,
+`appStoreVersionStateChange` and `messageCount` each occur **zero** times in the whole
+document.
+
+| In scope | |
+| --- | --- |
+| `resolutionCenterThreads`, `resolutionCenterMessages`, `resolutionCenterDraftMessages`, `resolutionCenterMessageAttachments`, `reviewRejections` | whole families — the type itself is absent from the official API, so nothing inside one duplicates an official read |
+| `apps/{id}/resolutionCenterThreads`, `apps/{id}/dataUsages`, `apps/{id}/dataUsagePublishState` | private relationships of an official record |
+| `appStoreVersions/{id}/appStoreVersionStateChanges` | the same, for a version |
+
+The parent is not in scope: `apps/{id}` and `appStoreVersions/{id}` are
+`GET /v1/apps/{id}` and `GET /v1/appStoreVersions/{id}`, and one segment is the whole
+difference. `apps` bare is a gap for exactly one query — the two unread counts above — and
+that is a mapped call rather than something to hand a free-form path to.
+
+**Being in scope is not evidence.** The families are open whole so a *new* gap can still be
+found without the boundary moving, but an unmapped route inside one is still an unproven
+route: what it returns is undocumented, and the evidence for a call is a recording of the
+browser making it. Traversal (`..`) is refused, because a path that climbs out of the
+family it names is not the family it names.
+
+## What the transport can express
+
+One host, one base, one content type, four methods. Each is a module constant rather than
+an option a caller picks, and each is what the recordings actually show — narrowed to that
+on 2026-08-21, once the boundary was closed.
+
+| What it sends | On what evidence |
+| --- | --- |
+| `https://appstoreconnect.apple.com/iris/v1`, and no other base | the only other one this client ever had was `/ci/api`, for Xcode Cloud, which Apple serves officially |
+| `application/vnd.api+json` on every request, read or write | every recorded Resolution Center call sends it, on reads and writes alike. The one capture that sent plain `application/json` was the version PATCH, which is `PATCH /v1/appStoreVersions/{id}` officially |
+| `GET`, `POST`, `PATCH`, `DELETE`, and refuses anything else | no call addressed to iris uses `PUT`. The upload part that does goes to `object-storage.apple.com` through `uploadPart`, without the cookie and without `request` |
+
+A gap that turns out to need something else brings a recording showing it. That narrowing
+changed no byte on the wire: `test/gap-requests.test.ts` pins the method, body and content
+type of every retained call, and passed unedited across it. The `http.write` audit records,
+the redaction, the host check and the confirmations were not touched.
+
+## Capturing a new endpoint
+
+Record dev tools → Network while doing the thing in the browser and export the log (a
+`.har`): every request *and response* is in there, which is far more than "Copy as cURL"
+gives you one at a time. Such an export contains the full session cookie in plain text, so
+keep it in `tmp/` with everything else gitignored. The capture file this client reads is a
+different thing — it wants a curl command or a `Cookie:` line.
+
+## What the removed code established
+
+The private implementations of capabilities Apple serves officially have gone. These are
+kept because what they established is mostly about Apple's records rather than about this
+client, and so holds for the official API too — the point being that none of it was a
+reason to keep the duplicate. What was removed, function by function, is
+[the removal task](../tasks/remove-official-api-overlap.md)'s to list, not this page's.
+
+### Run against iris, not recorded
+
+- `submitReviewSubmission` — `PATCH reviewSubmissions/{id} {"submitted":true}`, run
+  2026-08-19 against a submission sitting in `UNRESOLVED_ISSUES` with its only item already
+  resolved. `200`, and the submission came back `state: WAITING_FOR_REVIEW` with
+  `submittedDate` stamped to the second. The version moved `READY_FOR_REVIEW` →
+  `WAITING_FOR_REVIEW` in its own history alongside it. Apple serves
+  `reviewSubmissions_updateInstance` officially and `ReviewSubmissionUpdateRequest` carries
+  `submitted` and `canceled` by those names, so the call was a duplicate however well it
+  worked.
+
+  Three things that run established outlive it, and all three are about the records rather
+  than about this client, so they hold for the official API too.
+
+  **A rejection carries the submitted date of the run that was refused.** `UNRESOLVED_ISSUES`
+  always has a `submittedDate`, and it is the date Apple last looked, not evidence that the
+  submission is with Apple now. Reading "has a submitted date" as "is in flight" strands it:
+  the client of the day refused to submit for that reason, and refused to resolve the item
+  because it was no longer `REJECTED` — two commands pointing at each other, with a
+  hand-written PATCH the only way out. That PATCH is `reviewSubmissions_updateInstance` on
+  the official API. A returned submission is reusable, and `{"submitted":true}` is what
+  moves it on.
+
+  **`READY_FOR_REVIEW` alone does not mean unsent either.** It is the pair — that state and
+  no `submittedDate` — that means never handed over.
+
+  **One open submission per platform.** A second `POST reviewSubmissions` for a platform
+  that already has one is not a way to start again, and the platform has to be read off the
+  version rather than assumed: a submission is per-platform, and a guessed `IOS` would put a
+  Mac or tvOS version into the wrong one.
+
+- `listUserInvitations` and `inviteUser` — run 2026-08-19 from this client. `userInvitations`
+  is the same JSON:API type Apple serves officially, with the same six attributes, so it was
+  never a gap. Two observations from that run outlive it, and both are about Apple rather
+  than about this client, so they hold for the official API too.
+
+  **Apple refuses plus-addressing on an invitation.** `POST userInvitations` with a
+  plus-tagged address came back `409 ENTITY_ERROR.ATTRIBUTE.INVALID`, "Email format not
+  valid.", pointing at `/data/attributes/email`; case was not the issue. The invitee's
+  address becomes an Apple ID, and Apple is stricter about those than a mail server is —
+  Gmail would have delivered the tag to the base inbox. Reaching per-attribute validation
+  also meant iris had accepted the envelope, the type, the `application/vnd.api+json`
+  content type, the session and the team headers before objecting to the one value.
+
+  **"All apps" is stored as the list, not as the flag.** An invitation sent from the People
+  page with `allAppsVisible: true` and no `visibleApps` relationship read back a moment
+  later as `allAppsVisible: null` with `visibleApps` naming every app on the account. One
+  observation, not a rule, and worth knowing before reading that field as a boolean.
+
+  The read itself established nothing beyond `200` and an empty collection, and no
+  invitation was ever created by this client.
+
+### Recorded from the browser
+
 - The version page, its build picker and one attach-a-build-and-save were all recorded, and
-  **that code has been removed** — `listApps`, `getApp`, `listAppVersions`, `getVersion`,
-  `getReviewDetails`, `findReviewDetails`, `redactReviewDetails`, `listBuilds`,
-  `listBuildCandidates`, `updateVersion`, `setVersionBuild`, `fetchBuilds`, `formatBuilds`
-  and the `apps`, `app`, `versions`, `version`, `builds`, `set-build` and `review-details`
-  commands went with it. Re-checked 2026-08-21 against 4.4.1: `GET /v1/apps`,
+  the slice went whole. Re-checked 2026-08-21 against 4.4.1: `GET /v1/apps`,
   `GET /v1/apps/{id}`, `GET /v1/apps/{id}/appStoreVersions`, `GET /v1/appStoreVersions/{id}`,
   `GET /v1/builds`, `GET /v1/appStoreReviewDetails/{id}` and `PATCH /v1/appStoreVersions/{id}`
   are all official, and `AppStoreVersionUpdateRequest` carries the `build` relationship the
-  `set-build` PATCH body sent. Four include names and one filter had no official schema —
+  recorded PATCH body sent. Four include names and one filter had no official schema —
   `displayableVersions`, `resetRatingsRequest`, `gameCenterConfiguration`,
   `ageRatingDeclaration` *as a relationship of a version* (officially it hangs off
   `AppInfo`), and `filter[isAppStoreCandidate]` — but nothing here read any of them, so
@@ -163,15 +253,13 @@ list is the tested one and an override is not.
   password left in terminal scrollback is a worse problem than a flag. The account *name*
   was shown: it is the pair that is the credential, and which account Apple was given is
   usually the point. Whatever reads this record next has the same problem. `log.ts` still
-  scrubs `demoAccountPassword`, though as of the escape-hatch slice nothing here can reach
-  the record that carries it: a redaction keyed on a field name is a standing rule, not a
-  reaction to a caller, and it costs a string comparison.
-- From one real send: `sendDraftMessage` — the `createFromDraftMessage` POST, its `201`,
-  and the thread read back with the new message on it.
+  scrubs `demoAccountPassword`, though nothing here can reach the record that carries it any
+  more: a redaction keyed on a field name is a standing rule, not a reaction to a caller, and
+  it costs a string comparison.
 - From one real resolve: `resolveSubmissionItem` — the `{"resolved":true}` PATCH and the
-  `READY_FOR_REVIEW` that comes back. **That code has since been removed**; `resolved` is
-  an attribute of Apple's own `ReviewSubmissionItemUpdateRequest`, spelled the same way.
-  Two observations from it are about the records and survive the removal.
+  `READY_FOR_REVIEW` that comes back. `resolved` is an attribute of Apple's own
+  `ReviewSubmissionItemUpdateRequest`, spelled the same way. Two observations from it are
+  about the records rather than about this client, and outlive it.
 
   **Resolving an item does not re-queue its submission.** The button in App Store Connect
   gives the opposite impression and getting it wrong is silent. On 2026-08-13 a resolve
@@ -188,15 +276,8 @@ list is the tested one and an override is not.
   id is base64 of `{submissionId}|{n}|{appId}`, so the parent can be recovered from the id
   itself. Apple never promised that format; it was a guess, and anything that did not come
   apart as a leading UUID was treated as undecodable rather than answered wrongly.
-- One Save on the App Information page was recorded, both of its reads with it, and **that
-  code has been removed** — `listAppInfos`, `listAppInfoLocalizations`, `findEditableAppInfo`,
-  `pickEditableAppInfo`, `listAppInfoPage`, `getAppInfoCategories`, `setAppCategories`,
-  `findAgeRatingDeclaration`, `listTerritoryAgeRatings`, `ageRatingAnswersFrom`,
-  `parseAgeRatingAnswers`, `setAgeRating`, `setContentRights`, `listVersionLocalizations`,
-  `findMetadataField`, `setMetadataField`, `fetchMetadata` and the `metadata`,
-  `set-metadata`, `app-info`, `categories`, `set-categories`, `age-rating`,
-  `set-age-rating`, `territory-ratings` and `set-content-rights` commands all went with it.
-  Re-checked on 2026-08-21 against specification 4.4.1, re-downloaded that day and still
+- One Save on the App Information page was recorded, both of its reads with it, and the
+  slice went whole. Re-checked on 2026-08-21 against specification 4.4.1, re-downloaded that day and still
   4.4.1 with the same 966 paths and 1,393 schemas: `GET /v1/apps/{id}/appInfos`,
   `GET` and `PATCH /v1/appInfos/{id}`, `GET /v1/appInfos/{id}/appInfoLocalizations`,
   `PATCH /v1/appInfoLocalizations/{id}`,
@@ -249,10 +330,8 @@ list is the tested one and an override is not.
   Apple's public documentation rather than evidence from here. Nothing was ever recorded
   about a *partial* age-rating body either, which is why the removed command insisted on a
   complete one.
-- One invitation sent on the People page was recorded and mapped, and **that code has been
-  removed** — `listUserInvitations`, `inviteUser`, `UserInvite`, the `invites` and `invite`
-  commands, `test/invite.test.ts` and `docs/people.md` all went with it. It was well
-  evidenced and that was never a reason to keep it: re-checked on 2026-08-21, Apple's
+- One invitation sent on the People page was recorded and mapped, and the slice went whole.
+  It was well evidenced and that was never a reason to keep it: re-checked on 2026-08-21, Apple's
   `UserInvitation.Attributes` carries `email`, `firstName`, `lastName`, `roles`,
   `provisioningAllowed`, `allAppsVisible` and `expirationDate` — every attribute this client
   sent, plus the one it read back — `UserInvitation.Relationships` carries `visibleApps`, and
@@ -261,12 +340,7 @@ list is the tested one and an override is not.
   API also covers what the recording never did: revoking an invitation, listing the people
   already on the account, and restricting an invitation to named apps.
 - The screenshot and preview reads were recorded and the upload flow was run end to end,
-  and **that code has been removed** — `src/screenshots.ts`, `listVersionLocalizationsWithAssets`,
-  `listScreenshotSets`, `listPreviewSets`, `createScreenshotSet`, `reserveScreenshot`,
-  `completeScreenshot`, `deleteScreenshot`, `deleteScreenshotSet`, `findScreenshotSet`,
-  `uploadScreenshot`, the `screenshots`, `previews`, `screenshot-set`, `upload-screenshot`
-  and `delete-screenshot` commands, the `--force` flag and `docs/screenshots.md` all went
-  with it. Re-checked on 2026-08-21 against Apple's published schemas:
+  and the slice went whole. Re-checked on 2026-08-21 against Apple's published schemas:
   `AppScreenshot.Attributes` carries `assetDeliveryState`, `assetToken`, `assetType`,
   `fileName`, `fileSize`, `imageAsset`, `sourceFileChecksum` and **`uploadOperations`** —
   the last being the one that makes the whole reserve → upload → commit flow official, not
@@ -277,7 +351,7 @@ list is the tested one and an override is not.
   [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
   API is where this went.
 
-  **The display-type list was already Apple's.** `SCREENSHOT_DISPLAY_TYPES` held 33 values,
+  **The display-type list was already Apple's.** The removed code held 33 display types,
   obtained by POSTing an invalid `screenshotDisplayType` and reading the 409 back. Checked
   on 2026-08-21, Apple's published `ScreenshotDisplayType` enum is the same 33 values. The
   private route to that list was a shortcut to something Apple publishes.
@@ -294,13 +368,13 @@ list is the tested one and an override is not.
 
   **iris would not serve a set by id.** `GET appScreenshotSets/{id}` answered `404` for a
   set that demonstrably existed, and `appScreenshots?filter[appScreenshotSet]=` was refused
-  `403`, which is why the removed `findScreenshotSet` went via the localization instead.
+  `403`, which is why the removed code went via the localization instead.
   Apple documents `GET /v1/appScreenshotSets/{id}` officially, so read that as an iris
   quirk and not as a property of the resource.
 
-  **Accepted pixel dimensions are in no API response.** The removed `SCREENSHOT_SIZES` was
-  transcribed by hand from the drop-zone captions on the version page and covered three zone
-  families out of the 33 display types, deliberately: an absent entry skipped the check
+  **Accepted pixel dimensions are in no API response.** The size table the removed code
+  checked against was transcribed by hand from the drop-zone captions on the version page,
+  and covered three zone families out of the 33 display types deliberately: an absent entry skipped the check
   rather than guessing, because a wrong entry would reject a good screenshot. Nothing was
   lost from an API by deleting it — a pre-flight size check is a client convenience, and
   Apple validates server-side either way.
@@ -308,9 +382,8 @@ list is the tested one and an override is not.
   What survives is the transport underneath: `uploadPart` in `src/http.ts` still sends
   presigned parts to `object-storage.apple.com` with no cookie, because draft attachments
   reserve and upload through the same three steps and they are a retained gap.
-- Two Xcode Cloud sessions were recorded and mapped, and **that code has been removed** —
-  `src/ci.ts`, the nine `ci-*` commands, the `ci-run` build digest, `test/ci.test.ts` and
-  `test/run.test.ts` all went with it, along with the transport's second base. Apple's
+- Two Xcode Cloud sessions were recorded and mapped, and the slice went whole, taking the
+  transport's second base with it. Apple's
   official `ciProducts`, `ciWorkflows`, `scmRepositories`, `ciBuildRuns`, `ciBuildActions`,
   `ciTestResults` and `ciIssues` operations cover the same ground, and being well evidenced
   was never a reason to keep a duplicate. Retaining the one field that may not be covered —
@@ -323,109 +396,6 @@ list is the tested one and an override is not.
   One recorded call went out *without* the pair and came back `404 "Product does not exist"`
   — routed and answered rather than refused — which is why the cookie looked like what
   authenticates. That is one request's worth of evidence, not a guarantee.
-- From one draft reply with an attachment: `createDraftMessage`, `updateDraftMessage`,
-  `reserveMessageAttachment` and `completeMessageAttachment` — all four bodies replayed
-  offline against the recording and match the browser's byte for byte. Editing an existing
-  draft, recorded separately, replays through `updateDraftMessage` and `getDraftMessage`
-  with nothing new in it.
-
-## Calls that are probe-only, and so likelier to shift
-
-- `deleteMessageAttachment` was **probed, not captured** — no browser request for it was
-  ever copied. It works (a 204, and the attachment is gone on the next read), but it is the
-  least evidenced call here, and it destroys live data.
-- `sendDraftMessage` is certain in shape — it was recorded from the real thing — but
-  **this client has never run it**. Everything up to the point of no return has been
-  exercised against live data: the draft is read back, the confirmation renders it,
-  declining stops before any request leaves. The request itself waits for a reply worth
-  spending. Until then, treat the first run as the test.
-- `deleteDraftMessage` is the other way round: the request was copied from the browser's
-  **Delete Draft** button, so the shape is certain, but this client has never run it — the
-  one open thread's draft had already been deleted in the browser, and closed threads won't
-  take a scratch draft to practise on. Its [documented
-  aftermath](replying.md) is what was observed after the browser did it.
-
-## Queries narrowed away from the capture
-
-One query here is deliberately *not* what the browser sends.
-
-`listAppMetrics` — the `inbox` command — is a request to `apps`, which Apple serves
-officially. It is retained for two counts the official API has no schema for:
-`appStoreVersionMetrics.messageCount` and `betaReviewMetrics.messageCount`. Re-checked on
-2026-08-20 against the current OpenAPI specification **4.4.1** (generated 2026-07-15, 966
-paths, 1,393 schemas, downloaded from
-`https://developer.apple.com/sample-code/app-store-connect/app-store-connect-openapi-specification.zip`):
-`appStoreVersionMetrics`, `betaReviewMetrics` and `messageCount` occur zero times in the
-whole document.
-
-The browser's version of that request also sideloads `reviewSubmissions` with
-`fields[reviewSubmissions]=state` and `limit[reviewSubmissions]=10`. Apple serves that at
-`GET /v1/apps/{id}/reviewSubmissions`, `state` and its seven-value enum included, so this
-client does not send it. **The shortened query has not been recorded from the browser.**
-Dropping a relationship is the safe direction to differ — iris 400s an include name it does
-not recognise and cannot 400 one that is no longer asked for — but it is a difference, and
-if the counts ever stop arriving this is the first thing to put back.
-
-`fields[apps]` naming only those two relationships is the rest of what makes this a gap
-read: the apps come back as bare ids, with none of the attributes Apple's own `App`
-resource already carries. Widening it turns the call back into a duplicate app listing.
-
-`report`'s starting point used to be the other case here, and no longer is. All three of
-its routes are private: an app id lists the app's Resolution Center threads, `--submission`
-filters that list, `--thread` skips discovery altogether. The version a report names comes
-off the thread rather than off `appStoreVersionForReview`, so no route reads
-`apps/{id}/reviewSubmissions`. What went with the official read is the submission's state,
-platform and dates: they are Apple's to serve, so they were dropped from the digest rather
-than left as fields nothing fills in.
-
-## The escape hatch, and what it can reach
-
-`asc get` is the one command that takes a path off the command line, which made it the one
-place the whole boundary could be walked round: every official read step 4 deleted is still
-sitting in iris, one argument away. As of 2026-08-21 it is confined to the private families
-and refuses anything else before a request is built. The write-side hatch, `asc patch` and
-`rawPatch()`, was removed outright — there is no captured evidence for a hand-written body
-at an arbitrary path, and it had no confirmation and no preview.
-
-The list is a claim about the official specification, so it carries the same date as the
-rest of this page. Checked against **4.4.1** (generated 2026-07-15, 966 paths, 1,393
-schemas) on 2026-08-21: `resolutionCenter`, `reviewRejection`, `dataUsage`,
-`appStoreVersionStateChange` and `messageCount` each occur **zero** times in the whole
-document.
-
-| In scope | |
-| --- | --- |
-| `resolutionCenterThreads`, `resolutionCenterMessages`, `resolutionCenterDraftMessages`, `resolutionCenterMessageAttachments`, `reviewRejections` | whole families — the type itself is absent from the official API, so nothing inside one duplicates an official read |
-| `apps/{id}/resolutionCenterThreads`, `apps/{id}/dataUsages`, `apps/{id}/dataUsagePublishState` | private relationships of an official record |
-| `appStoreVersions/{id}/appStoreVersionStateChanges` | the same, for a version |
-
-The parent is not in scope: `apps/{id}` and `appStoreVersions/{id}` are
-`GET /v1/apps/{id}` and `GET /v1/appStoreVersions/{id}`, and one segment is the whole
-difference. `apps` bare is a gap for exactly one query — the two unread counts above — and
-that is a mapped call rather than something to hand a free-form path to.
-
-**Being in scope is not evidence.** The families are open whole so a *new* gap can still be
-found without the boundary moving, but an unmapped route inside one is still an unproven
-route: what it returns is undocumented, and the evidence for a call is a recording of the
-browser making it. Traversal (`..`) is refused, because a path that climbs out of the
-family it names is not the family it names.
-
-## What the transport can still express
-
-Narrowed on 2026-08-21, after the boundary closed, to what the recordings actually show:
-one host, one base (`iris/v1`), one content type, four methods.
-
-| Was | Is | On what evidence |
-| --- | --- | --- |
-| an `API_BASES` map and an `Api` option | the `BASE_URL` constant | the second base was `/ci/api`, and that surface is out of scope |
-| `application/json` on a write unless the caller said otherwise | `application/vnd.api+json` on every request | every recorded Resolution Center call sends it, on reads and writes alike; the one capture sending `application/json` was the version PATCH, which is `PATCH /v1/appStoreVersions/{id}` officially and left with that slice |
-| `GET`, `POST`, `PATCH`, `PUT`, `DELETE` | `GET`, `POST`, `PATCH`, `DELETE` | no call addressed to iris uses PUT; the upload part that does goes to `object-storage.apple.com` through `uploadPart`, without the cookie and without `request` |
-
-None of this changes a byte on the wire: `test/gap-requests.test.ts` pins the method, body
-and content type of every retained call, and it passed unedited across the change. What it
-changes is what a *future* call can express without coming back here for a reason. The
-`http.write` audit records, the redaction, the host check and the confirmations are
-untouched.
 
 ## Seen but deliberately not mapped
 
@@ -433,10 +403,10 @@ From the Xcode Cloud tab: the pickers behind the workflow editor —
 `test-destinations-v3`, `configuration-options-v10`, `product-configuration-options-v4`,
 `schemes`, `version-aliases-v3`, `scm-providers-v2`, `notices-v2`,
 `testflight/information-v2`, `repos/{id}/branch`, `product-environment-variables` — all
-recorded, none ever mapped: they exist to fill in a form this client does not render. Moot
-now in any case, since the whole `/ci/api` surface is out of scope: Apple exposes Xcode
-Cloud officially, and `asc get` cannot reach it twice over — it is `iris/v1` only, and
-`ciWorkflows` is not one of the private families it is confined to.
+recorded, none ever mapped: they exist to fill in a form this client does not render. Out of
+scope twice over now, since Apple exposes Xcode Cloud officially and `asc get` speaks
+`iris/v1` only — `/ci/api` is not a base this client has, and `ciWorkflows` is not one of
+the private families the hatch is confined to.
 
 Recordings of the Monetization, Growth & Marketing and Trust & Safety tabs turn up about 40
 further endpoints. Pricing is the substantial one — `appPriceSchedules/{appId}/automaticPrices`
@@ -446,11 +416,11 @@ different domain from review, and a write surface worth respecting. The rest wer
 this account and so unverifiable: `appCustomProductPages`, `appEvents`,
 `appStoreVersionExperimentsV2`, `inAppPurchasesV2`, `subscriptionGroups`,
 `customerReviewSummarizations`, `accessibilityDeclarations`, `appEncryptionDeclarations`,
-`backgroundAssets`, `appClips`. **`asc get` no longer reaches any of them**: they are
-official families, and the escape hatch is confined to the private ones. That is deliberate
-rather than a loss — an unrestricted private GET is how a boundary stops meaning anything —
-but it does mean the next probe of one of these starts in the browser, which is where the
-evidence for a new gap has to come from in any case. If one of them turns out to carry a
+`backgroundAssets`, `appClips`. **`asc get` reaches none of them**: they are official
+families, and the hatch is confined to the private ones. That is deliberate rather than a
+loss — an unrestricted private GET is how a boundary stops meaning anything — but it does
+mean the next probe of one of these starts in the browser, which is where the evidence for a
+new gap has to come from in any case. If one of them turns out to carry a
 field the official API has no schema for, the way in is a mapped call and a family on the
 list, both with a recording behind them.
 

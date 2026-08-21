@@ -1,19 +1,12 @@
 # As a library
 
-> **Boundary notice:** the exports for apps, versions, builds and review details have now
-> gone, along with the Xcode Cloud, invitation, screenshot/preview, metadata/App Information
-> and review-submission ones. Use Apple's
-> [Apps](https://developer.apple.com/documentation/appstoreconnectapi/apps),
-> [App Store Versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions),
-> [Builds](https://developer.apple.com/documentation/appstoreconnectapi/builds),
-> [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
-> [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
-> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
-> [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
-> and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
-> APIs instead. What this library exports is the official gaps listed in
-> [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md): Resolution
-> Center, unread message counts, version state history and App Privacy.
+What this library exports is the gap surface and nothing else: Resolution Center threads,
+messages, rejections, drafts and attachments; unread review-message counts; version
+state-change history; and App Privacy. Everything else App Store Connect can do, Apple
+serves through its
+[official API](https://developer.apple.com/documentation/appstoreconnectapi/) — with an API
+key rather than the browser cookie this client reads, and there is no export here that
+wraps or forwards to it.
 
 ```ts
 import { loadSession, buildReport, listMessages, denormalizeAll } from './src';
@@ -24,7 +17,8 @@ const messages = denormalizeAll(await listMessages(session, reports[0].threadId!
 ```
 
 `buildReport` takes one of three starting points. All three are private routes — Apple's
-official API has no Resolution Center — so none of them duplicates a call it serves:
+official API has no Resolution Center in 4.4.1 — so none of them duplicates a call it
+serves:
 
 ```ts
 await buildReport(session, { threadId });       // no discovery at all
@@ -32,12 +26,13 @@ await buildReport(session, { submissionId });   // thread found by a private fil
 await buildReport(session, { appId });          // apps/{id}/resolutionCenterThreads
 ```
 
-A `SubmissionReport` no longer carries the submission's own `state`, `platform`,
-`submittedDate` or `lastUpdatedDate`. Those fields are gone from the type rather than left
-permanently undefined: they come off `reviewSubmissions`, which Apple serves officially at
+A `SubmissionReport` carries nothing of the submission's own — no `state`, `platform`,
+`submittedDate` or `lastUpdatedDate`. Those come off `reviewSubmissions`, which Apple serves
+officially at
 [`GET /v1/apps/{id}/reviewSubmissions`](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
-and that is where to read them. `submissionId` stays optional and is an echo — only the
-`{ submissionId }` route has one, and it is the id you passed in.
+so they are absent from the type rather than present and permanently undefined.
+`submissionId` is optional and is an echo — only the `{ submissionId }` route has one, and
+it is the id you passed in.
 
 The version comes off the thread instead, through its to-many `appStoreVersions`. A report
 lists every version its thread names in `versions: VersionRef[]`, and fills the singular
@@ -102,21 +97,20 @@ copying if you build your own.
   `resolutionCenterDraftMessages`, `resolutionCenterMessageAttachments` and
   `reviewRejections` whole, plus `apps/{id}/{resolutionCenterThreads,dataUsages,dataUsagePublishState}`
   and `appStoreVersions/{id}/appStoreVersionStateChanges`. Anything else throws before a
-  request is built. There is no `rawPatch()` any more: an unrestricted private PATCH is how
-  the official writes this project removed would come back, and a hand-written body belongs
-  at Apple's official API.
+  request is built. There is no write-side counterpart: an unrestricted private PATCH is how
+  every official write would come back within reach, and a hand-written body belongs at
+  Apple's official API, which asks for a key rather than a scraped cookie.
 - The method is one of `GET`, `POST`, `PATCH` and `DELETE`, in whatever case you send it.
   Whether a request mutates decides its headers and whether it lands in the audit trail, so
   it's settled once from the normalised name; anything that isn't one of the four is refused
   rather than guessed at. `PUT` is not one of them — the only PUT here is an upload part,
   which goes to Apple's storage through `uploadPart()` and never through `request()`.
 - **One base and one content type**, both module constants rather than options. `BASE_URL`
-  is `https://appstoreconnect.apple.com/iris/v1` and every request sends
-  `application/vnd.api+json`. The `API_BASES` map and its `Api` type are gone — they held
-  the Xcode Cloud base until that surface left, and a set of one is a choice that isn't one
-  — as are the `api` and `contentType` fields on `RequestOptions` and the `contentType`
-  argument to `patch()` and `post()`. So is the `TEAM_TYPE` export, which nothing outside
-  the transport read.
+  is `https://appstoreconnect.apple.com/iris/v1`, every request sends
+  `application/vnd.api+json`, and neither is something a caller passes: `RequestOptions` is
+  `method`, `query` and `body`, and `patch()`/`post()` take a path and a body. A gap that
+  needs something else brings a recording showing it, which is a conversation rather than an
+  argument.
 - **Nothing from the account the captures came from is baked in.** Every id, locale,
   platform and territory reaches a request from an argument or from the session, and the
   values in the recordings work as examples in help text and nowhere else. The constants

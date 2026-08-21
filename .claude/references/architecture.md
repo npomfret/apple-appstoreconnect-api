@@ -2,19 +2,20 @@
 
 ## Product boundary
 
-The project is an unofficial TypeScript client for App Store Connect's private Iris review
-API. Everything mapped is about an app: the People page's invitations were the one
-account-wide corner, and they were removed with slice 4.2. It reuses a short-lived browser
-session captured locally. It is both a CLI (`asc`) and
-a library. The private service may change without notice, and write evidence varies by
-operation; `docs/evidence.md` is the source of truth.
+The project is an unofficial TypeScript client for the parts of App Store Connect that
+Apple's official API does not serve — principally the private Iris Resolution Center
+surface. Everything mapped is about an app; nothing here is account-wide. Anything Apple
+serves officially is out of scope, however convenient the private route. It reuses a
+short-lived browser session captured locally, and is both a CLI (`asc`) and a library. The
+private service may change without notice, and write evidence varies by operation;
+`docs/evidence.md` is the source of truth.
 
 ## Module ownership
 
 | Area | Canonical location | Invariant |
 | --- | --- | --- |
 | Session capture and expiry | `curl.ts`, `session.ts` | Capture content is a credential and is never persisted, logged, or exposed. |
-| Authenticated requests and uploads | `http.ts` | All ordinary writes are audited; paths are relative to a closed set of bases on the one host — Iris only, since the Xcode Cloud slice was removed — and an absolute URL is refused, so session headers reach no other host; upload URLs never receive session headers. |
+| Authenticated requests and uploads | `http.ts` | All ordinary writes are audited; every path is relative to the one `BASE_URL` (`iris/v1` on the one host) and an absolute URL is refused, so session headers reach no other host; upload URLs never receive session headers. |
 | JSON:API expansion | `jsonapi.ts` | Relationship joining happens here, not ad hoc in command code. |
 | Apple resources and mutations | `api.ts` | Include/query shapes follow browser evidence and resource functions remain transport-focused. |
 | CLI and confirmations | `cli.ts`, `confirm.ts` | stdout is data; destructive/irreversible actions preview and refuse without TTY or `--yes`. |
@@ -23,8 +24,11 @@ operation; `docs/evidence.md` is the source of truth.
 
 ## Safety invariants
 
-- `tmp/curl.txt`, HAR files, cookies, `itctx`, CSRF values, and presigned URL queries are
-  credentials. Do not read or handle them in agent work.
+- `tmp/curl.txt`, browser recordings, cookies, `itctx`, CSRF values, and presigned URL
+  queries are credentials. A recording may be read as evidence through an extractor that
+  emits methods, paths, query keys, status codes and response key structure; no credential
+  or personal detail may ever leave one, and a capture is never modified. Never read a live
+  cookie or `.env*` at all.
 - Browser captures establish request evidence. Keep captured and probe-only operations
   distinct; update `docs/evidence.md` whenever that classification changes.
 - `request()` is the audit choke point for mutations. Do not bypass it for Iris writes.
