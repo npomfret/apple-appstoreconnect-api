@@ -211,6 +211,30 @@ describe('answers that are not what they look like', () => {
     }
   });
 
+  // The refusal body carries whatever iris chose to quote back, and it travels further
+  // than the log: the CLI prints an error message to stderr on its own. Scrubbing it where
+  // the error is built is what covers both.
+  test('a refusal body is scrubbed before it becomes an error message', async () => {
+    const stub = stubFetch(() => ({
+      status: 400,
+      body: { errors: [{ detail: 'bad', meta: { request: { cookie: 'myacinfo=real' } } }] },
+    }));
+    try {
+      await assert.rejects(
+        () => get(SESSION, 'resolutionCenterThreads'),
+        (error: unknown) => {
+          assert.ok(error instanceof ApiError);
+          assert.equal(error.body.includes('myacinfo=real'), false);
+          assert.equal(error.message.includes('myacinfo=real'), false);
+          assert.ok(error.message.includes('bad'), 'the rest of the refusal survives');
+          return true;
+        }
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+
   test('a bare 403 is a dead session', async () => {
     const stub = stubFetch(() => ({ status: 403, text: 'Forbidden' }));
     try {

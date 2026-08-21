@@ -6,7 +6,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { audit, log, redactSignedUrls } from '../src/log';
+import { audit, log, redact } from '../src/log';
 import { withStderr } from './helpers';
 
 function logged(run: () => void): Promise<Record<string, unknown>[]> {
@@ -52,12 +52,51 @@ describe('secrets by field name', () => {
   });
 });
 
+// A response body reaches the log as one string, so the field-name scrub above never sees
+// its fields. These are the same names, matched inside the string instead.
+describe('secrets quoted inside a string', () => {
+  const quoted =
+    '{"errors":[{"detail":"bad request","meta":{"request":{"cookie":"myacinfo=real; itctx=real",' +
+    '"x-csrf-itc":"real"}}}]}';
+
+  test('a cookie quoted back inside an error body is redacted', () => {
+    const safe = redact(quoted);
+
+    assert.equal(safe.includes('myacinfo=real'), false);
+    assert.ok(safe.includes('"cookie":"[redacted]"'));
+    assert.ok(safe.includes('"x-csrf-itc":"[redacted]"'));
+    assert.ok(safe.includes('"detail":"bad request"'), 'the rest of the body survives');
+  });
+
+  test('an escaped quote inside the value does not end the match early', () => {
+    const safe = redact('{"itctx":"a\\"b","keep":"me"}');
+
+    assert.equal(safe.includes('a\\"b'), false);
+    assert.ok(safe.includes('"keep":"me"'));
+  });
+
+  test('a body attribute is caught the same way as a header', () => {
+    assert.equal(redact('{"demoAccountPassword": "hunter2"}').includes('hunter2'), false);
+  });
+
+  test('a field that merely ends in a secret name is left alone', () => {
+    assert.ok(redact('{"noCookie":"keep"}').includes('"noCookie":"keep"'));
+  });
+
+  test('it reaches the log through an error message', async () => {
+    const [record] = await logged(() => log.error('probe', { error: new Error(quoted) }));
+    const error = record.error as { message: string };
+
+    assert.equal(error.message.includes('myacinfo=real'), false);
+  });
+});
+
 describe('secrets by value', () => {
   const signed =
     'https://object-storage.apple.com/part?AWSAccessKeyId=AKIAEXAMPLE&Signature=abc%2Fdef&partNumber=1';
 
   test('the parameters that authorise an upload are replaced, and the rest is left alone', () => {
-    const safe = redactSignedUrls(signed);
+    const safe = redact(signed);
 
     assert.equal(safe.includes('abc%2Fdef'), false);
     assert.equal(safe.includes('AKIAEXAMPLE'), false);
@@ -66,7 +105,7 @@ describe('secrets by value', () => {
   });
 
   test('SigV4 names count too', () => {
-    assert.ok(redactSignedUrls('?X-Amz-Signature=deadbeef&x=1').includes('X-Amz-Signature=[redacted]'));
+    assert.ok(redact('?X-Amz-Signature=deadbeef&x=1').includes('X-Amz-Signature=[redacted]'));
   });
 
   // Storage hosts quote the request they refused back inside the error body, so this is

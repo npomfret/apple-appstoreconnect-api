@@ -57,7 +57,15 @@ Credentials are scrubbed two ways, because one of them has to catch what the oth
 
 By field name: `cookie`, `x-csrf-itc`, `myacinfo`, `itctx` and friends, wherever they appear
 and however deeply nested — plus `demoAccountPassword`, which is a body attribute rather
-than a header. That list is `REVIEW_DETAIL_SECRETS` in `src/log.ts`.
+than a header. That list is `SECRET_FIELDS` in `src/log.ts`, and it is matched twice.
+
+Once against the keys of a record built here, which is the obvious pass. Then again against
+those same names quoted inside a *string*, which is the pass that matters for anything that
+arrived whole from somewhere else. A response body is not a record: it reaches the log as
+one opaque value, so the field names in it are never looked at, and iris quotes parts of the
+request back inside a refusal. That second match is why `ApiError` scrubs the body it is
+handed rather than leaving it to whatever writes it out — the body travels further than the
+log does, since the CLI's top-level handler prints an error message to stderr on its own.
 
 `demoAccountPassword` is the one worth explaining, because nothing here reads the record it
 lives on: `appStoreReviewDetails` is Apple's to serve, and `asc get` cannot reach it. The

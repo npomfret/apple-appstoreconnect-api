@@ -32,10 +32,42 @@ const ORDER: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 
  */
 export const REVIEW_DETAIL_SECRETS = ['demoAccountPassword'] as const;
 
+/**
+ * Every field name whose value is a credential, written once and read twice: a secret can
+ * arrive as a field of a record this process built, or buried in a string that arrived
+ * whole from somewhere else, and the two need different matching for the same list.
+ */
+const SECRET_FIELDS = [
+  'cookie',
+  'set-cookie',
+  'authorization',
+  'x-csrf-itc',
+  'myacinfo',
+  'itctx',
+  'dqsid',
+  'wosid',
+  ...REVIEW_DETAIL_SECRETS,
+] as const;
+
 /** Keys whose values never get written out, wherever they turn up in a record. */
-const SENSITIVE = new RegExp(
-  `^(cookie|set-cookie|authorization|x-csrf-itc|myacinfo|itctx|dqsid|wosid|${REVIEW_DETAIL_SECRETS.join('|')})$`,
-  'i'
+const SENSITIVE = new RegExp(`^(${SECRET_FIELDS.join('|')})$`, 'i');
+
+/**
+ * The same names again, as JSON members inside a string.
+ *
+ * The scrub above only sees a record built here, field by field. A response body is not
+ * one: it reaches the log as a single string — an `ApiError` carries the body the request
+ * was refused with, and iris quotes parts of the request back inside it — and a string is
+ * scrubbed by value, so the field names in it are never looked at.
+ *
+ * JSON is the only textual form a session secret can arrive in, because the only host this
+ * client sends the cookie to speaks `application/vnd.api+json` on every request. The
+ * storage host that answers in XML is never sent one; what it can quote back is a
+ * signature, which is the scrub below.
+ */
+const SECRET_MEMBERS = new RegExp(
+  `("(?:${SECRET_FIELDS.join('|')})"\\s*:\\s*)"(?:[^"\\\\]|\\\\.)*"`,
+  'gi'
 );
 
 /**
@@ -50,8 +82,13 @@ const SENSITIVE = new RegExp(
 const SIGNED_PARAMS =
   /([?&](?:awsaccesskeyid|signature|x-amz-signature|x-amz-credential|x-amz-security-token)=)[^&\s"']+/gi;
 
-export function redactSignedUrls(text: string): string {
-  return text.replace(SIGNED_PARAMS, '$1[redacted]');
+/**
+ * The scrub for what arrived inside a string rather than as a field of its own. Applied to
+ * every string written, and again where an `ApiError` is built, so a body that is printed
+ * to stderr without ever passing through here is scrubbed too.
+ */
+export function redact(text: string): string {
+  return text.replace(SIGNED_PARAMS, '$1[redacted]').replace(SECRET_MEMBERS, '$1"[redacted]"');
 }
 
 /** Long strings are trimmed so one fat body can't bury the rest of the log. */
@@ -66,11 +103,11 @@ function level(): number {
 function scrub(key: string, value: unknown): unknown {
   if (SENSITIVE.test(key)) return '[redacted]';
   if (typeof value === 'string') {
-    const safe = redactSignedUrls(value);
+    const safe = redact(value);
     return safe.length > MAX_STRING ? `${safe.slice(0, MAX_STRING)}… (${safe.length} chars)` : safe;
   }
   // Errors are replaced before their message is reached, so redact it here too.
-  if (value instanceof Error) return { name: value.name, message: redactSignedUrls(value.message) };
+  if (value instanceof Error) return { name: value.name, message: redact(value.message) };
   return value;
 }
 

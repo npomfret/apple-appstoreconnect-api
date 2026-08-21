@@ -1,6 +1,6 @@
 import { Session, timeToExpiry } from './session';
 import { Document } from './jsonapi';
-import { audit, log, redactSignedUrls } from './log';
+import { audit, log, redact } from './log';
 
 /** The one host this client will send the session cookie to. */
 const HOST = 'https://appstoreconnect.apple.com';
@@ -27,8 +27,20 @@ export class SessionExpiredError extends Error {
 }
 
 export class ApiError extends Error {
-  constructor(readonly status: number, readonly url: string, readonly body: string) {
-    super(`HTTP ${status} for ${url}\n${body.slice(0, 2000)}`);
+  /**
+   * What the request was refused with, scrubbed.
+   *
+   * Scrubbed here rather than at each place it is written, because this body goes further
+   * than the log: it is in the message, and the CLI's top-level handler prints an error
+   * message to stderr on its own. iris quotes parts of the request back in a refusal, and
+   * by the time it is a string the field-name scrub can no longer see the fields.
+   */
+  readonly body: string;
+
+  constructor(readonly status: number, readonly url: string, body: string) {
+    const safe = redact(body);
+    super(`HTTP ${status} for ${url}\n${safe.slice(0, 2000)}`);
+    this.body = safe;
     this.name = 'ApiError';
   }
 }
@@ -338,9 +350,9 @@ export async function uploadPart(operation: UploadOperation, file: Buffer): Prom
     // Named by host and path, never by the presigned URL itself. An error message ends up
     // in the audit trail — `audited` logs it, and so does the CLI — and the signature in
     // that query string is the whole of the authorisation to write to Apple's storage.
-    // The response body goes the same way, since a storage host will happily quote the
-    // request it refused back at you.
-    throw new ApiError(response.status, safeHost(operation.url), redactSignedUrls(await response.text()));
+    // The body needs no separate treatment: a storage host will happily quote the request
+    // it refused back at you, and `ApiError` scrubs what it is given.
+    throw new ApiError(response.status, safeHost(operation.url), await response.text());
   }
 }
 
