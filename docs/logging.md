@@ -96,4 +96,9 @@ the request they refused back inside their error bodies, which is why this is ap
 whole strings rather than to things that look like URLs.
 
 Long strings are truncated, and a body that can't be serialised degrades to a note rather
-than taking the command down with it.
+than taking the command down with it. **That note goes through both scrubs and the same
+length cap**, and did not until 2026-08-21 — it was built with a bare `JSON.stringify` and
+no replacer, which made the one line written when serialising fails the one line exempt
+from everything above. The text it carries is not this client's: `JSON.stringify` calls
+`toJSON` before the replacer runs, so a value that throws from there writes the message,
+and `Fields` is exported, so the callers are not only the CLI's.

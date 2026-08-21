@@ -144,6 +144,38 @@ describe('the log as a whole', () => {
     assert.equal(record.of, 'probe');
   });
 
+  // The note replaces the record, so it is the one line written when serialising fails —
+  // and it was written without the replacer until 2026-08-21, which made it the one line
+  // exempt from both scrubs. The message is not this process's own: `toJSON` runs before
+  // the replacer, so whatever throws from there writes it.
+  test('the note about an unserialisable body is scrubbed like any other record', async () => {
+    const exploding = {
+      toJSON() {
+        throw new Error('upload refused: /part?AWSAccessKeyId=AKIAEXAMPLE&Signature=abc%2Fdef');
+      },
+    };
+
+    const [record] = await logged(() => log.warn('probe', { body: exploding }));
+
+    assert.equal(record.event, 'log.unserializable');
+    assert.equal(String(record.error).includes('abc%2Fdef'), false);
+    assert.equal(String(record.error).includes('AKIAEXAMPLE'), false);
+    assert.ok(String(record.error).includes('Signature=[redacted]'));
+  });
+
+  test('a long message in that note is capped like any other string', async () => {
+    const exploding = {
+      toJSON() {
+        throw new Error('x'.repeat(3000));
+      },
+    };
+
+    const [record] = await logged(() => log.warn('probe', { body: exploding }));
+
+    assert.ok(String(record.error).endsWith('… (3000 chars)'));
+    assert.ok(String(record.error).length < 3000);
+  });
+
   test('an event below the level is not written', async () => {
     const records = await atLevel('warn', () => log.info('quiet'));
     assert.deepEqual(records, []);

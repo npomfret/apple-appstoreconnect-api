@@ -114,18 +114,31 @@ function scrub(key: string, value: unknown): unknown {
 /**
  * Serialising must never be what breaks a command, so a body that can't be stringified
  * (circular, a BigInt, a stray Proxy) degrades to a note rather than throwing.
+ *
+ * **The note is scrubbed like anything else**, and was not until 2026-08-21: it was built
+ * with a bare `JSON.stringify` and no replacer, so the one record written when serialising
+ * fails was the one record exempt from both scrubs and from the length cap. What it carries
+ * is a message this process did not write — `JSON.stringify` calls `toJSON` before the
+ * replacer ever runs, so a value that throws from there decides the text of this line — and
+ * `Fields` is a library export, so what reaches it is not only what the CLI logs. Whether
+ * today's callers can produce a message with a credential in it is the wrong question to
+ * settle it on, for the reason `SECRET_FIELDS` gives above: the scrub is a standing rule
+ * about what gets written, not a reaction to a particular caller.
  */
 function line(record: Fields): string {
   try {
     return JSON.stringify(record, scrub);
   } catch (error) {
-    return JSON.stringify({
-      ts: record.ts,
-      level: 'error',
-      event: 'log.unserializable',
-      of: String(record.event),
-      error: error instanceof Error ? error.message : String(error),
-    });
+    return JSON.stringify(
+      {
+        ts: record.ts,
+        level: 'error',
+        event: 'log.unserializable',
+        of: String(record.event),
+        error: error instanceof Error ? error.message : String(error),
+      },
+      scrub
+    );
   }
 }
 
