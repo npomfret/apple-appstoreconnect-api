@@ -73,10 +73,9 @@ all) works unedited.
 Every command below is something [Apple's official API](https://developer.apple.com/app-store-connect/api/)
 does not serve. That is the whole of what this project is: if you are looking for apps,
 versions, builds, screenshots, metadata, age ratings, review submissions, invitations or
-Xcode Cloud, Apple serves all of it officially and none of it is here. The
-function-by-function mapping of what went where is in
-[tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md), and the
-official pages themselves are [at the bottom](#apples-official-api).
+Xcode Cloud, Apple serves all of it officially and none of it is here — the pages to use
+instead are [at the bottom](#apples-official-api), and what was checked against what is in
+[docs/evidence.md](docs/evidence.md).
 
 **Reading** — [docs/reading.md](docs/reading.md)
 

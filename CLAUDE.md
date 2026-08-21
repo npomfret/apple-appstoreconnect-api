@@ -6,15 +6,30 @@ handles a browser-derived live session and can change or publish real App Store 
 Correctness, evidence, auditability, and credential safety are more important than the
 smallest diff.
 
+## The boundary
+
 The tree is gap-only as of 2026-08-21: no private implementation of an officially served
 capability remains, `asc get` is confined to the private families, there is no raw write,
-and the transport speaks one host, one base, one content type and four methods. Keep it that
-way. The rule for deciding is that **duplication is a property of a call, not of a
-resource** — a private read of an officially-available resource is retained only when it
-carries a field the official specification has no schema for, and is then narrowed to
-exactly that field. Last audited against Apple's OpenAPI specification **4.4.1** (generated
-2026-07-15, 966 paths, 1,393 schemas). The inventory and the dated comparison are in
-`tasks/remove-official-api-overlap.md`; what is evidenced, and how, is in `docs/evidence.md`.
+and the transport speaks one host, one base, one content type and four methods. Keep it
+that way.
+
+The rule for deciding is that **duplication is a property of a call, not of a resource**. A
+private read of an officially-available resource is retained only when it carries a field
+the official specification has no schema for, and is then narrowed to exactly that field.
+So do not delete a private read because its *resource* is official, and do not keep one
+because the resource has a private *route*: check the fields. Last audited against Apple's
+OpenAPI specification **4.4.1** (generated 2026-07-15, 966 paths, 1,393 schemas) on
+2026-08-21. `docs/evidence.md` records what was checked, how, and when.
+
+**The trade this makes, and why it is the intended one.** The official API authenticates
+with a JWT signed by a `.p8` key an Account Holder generates. This client's premise is a
+pasted cookie and no login step, so removing a capability Apple serves officially does not
+relocate it for someone holding a session and no key — it withdraws it. That is deliberate.
+A private route to a write Apple supports properly is unstable, unevidenced and unaudited
+by Apple, and a client offering one becomes a way to avoid getting a key. The cookie is for
+what no key can reach. When Apple later adds one of the capabilities still here, the
+policy is to remove it here in favour of Apple's version — and to re-audit against the
+current specification before acting, rather than trusting a comparison this file records.
 
 ## Non-negotiables
 
@@ -22,7 +37,8 @@ exactly that field. Last audited against Apple's OpenAPI specification **4.4.1**
   and its [API reference](https://developer.apple.com/documentation/appstoreconnectapi/)
   before implementing something. We don't want to duplicate existing working implementations.
 - If Apple exposes the underlying capability officially, it is out of scope here even when
-  the private endpoint is more convenient or uses the existing cookie.
+  the private endpoint is more convenient or uses the existing cookie. Never add API-key
+  authentication or reimplement Apple's public client here; point at the official API.
 - Before a non-trivial change: inspect callers, implementations, analogous functions,
   tests, and user-facing CLI/docs; then audit → refactor for readiness → implement → verify.
 - Do not add a dependency, new API convention, abstraction, command shape, request body,

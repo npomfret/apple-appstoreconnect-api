@@ -69,8 +69,9 @@ fix is to replace a capture that was never at fault.
 
 ## The gap: `post_actions` is not in the official API
 
-`remove-official-api-overlap.md:165` removes `src/ci.ts` on the stated grounds that the
-official API "exposes CI products, workflows … It can also create/update workflows."
+The Xcode Cloud slice was removed on 2026-08-21 on the stated grounds that the official API
+exposes CI products, workflows, repositories, build runs, actions, issues and test results,
+and can create and update workflows.
 
 That is right about workflows in general and **wrong about the field that matters**.
 Checked on 2026-08-21 against Apple's published schema for `CiWorkflow.Attributes`

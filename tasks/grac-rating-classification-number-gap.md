@@ -2,8 +2,8 @@
 
 ## Status
 
-Open. Added 2026-08-21, while removing the metadata and App Information slice
-([step 4.4](gap-boundary-next-steps.md)). Nothing is being asked for yet; this records a
+Open. Added 2026-08-21, while removing the metadata, App Information and age-rating
+slice. Nothing is being asked for yet; this records a
 finding so it does not have to be found again.
 
 ## The finding
@@ -25,7 +25,7 @@ and Administration Committee. Checked 2026-08-21 against specification **4.4.1**
 official schema, and Apple's published `AgeRatingDeclaration.Attributes` page does not list
 it.
 
-By the rule in [gap-boundary-next-steps.md](gap-boundary-next-steps.md) — duplication is a
+By the rule in [CLAUDE.md](../CLAUDE.md) — duplication is a
 property of a call, and a private read of an official resource is retained only when it
 carries a field the official specification has no schema for, narrowed to exactly that
 field — this is a keep.

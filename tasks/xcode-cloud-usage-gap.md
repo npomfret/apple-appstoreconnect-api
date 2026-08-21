@@ -173,7 +173,8 @@ point is a write that was not recorded.
 
 1. The owner's decision on point 3 — whether an account-wide, team-scoped surface is back
    in scope.
-2. Whether `asc usage` earns a base and a content-type rule that steps 4 and 5 of
-   [gap-boundary-next-steps.md](gap-boundary-next-steps.md) are otherwise removing.
+2. Whether `asc usage` earns back a second base and a per-base content-type rule, both of
+   which the transport collapsed to constants on 2026-08-21 — see [CLAUDE.md](../CLAUDE.md)
+   on the boundary, and `docs/evidence.md` on what the transport can express.
 3. For infrastructure validation only: a browser recording of the opt-in toggle. Until then
    it is a read of a switch this client cannot throw.

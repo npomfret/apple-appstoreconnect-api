@@ -6,16 +6,30 @@ it, what was only probed, and what has never been run from here at all.
 
 Everything on it is part of the gap this client is for — Resolution Center threads,
 messages, rejections, drafts and their attachments; unread review-message counts; App Store
-version state-change history; and the App Privacy questionnaire. None of that appears in
-Apple's official OpenAPI specification **4.4.1** (generated 2026-07-15, 966 paths, 1,393
-schemas), re-checked on 2026-08-21 and recorded with that date wherever the claim is made,
-so it ages visibly.
+version state-change history; and the App Privacy questionnaire.
+
+## How that is checked, and when
+
+Against two independent sources, agreeing. Apple's official OpenAPI specification **4.4.1**,
+generated 2026-07-15 — 966 paths, 1,393 schemas — downloaded from
+`https://developer.apple.com/sample-code/app-store-connect/app-store-connect-openapi-specification.zip`;
+and the documentation index at
+`https://developer.apple.com/tutorials/data/index/appstoreconnectapi`, 9,997 entries.
+Audited 2026-08-20 and re-checked 2026-08-21. Every "Apple has no official API for this"
+claim in these docs carries that date and version, so it ages visibly; **repeat the
+comparison against the current specification before acting on one**, because both this
+project and Apple's API move.
+
+The rule the audit applies is that **duplication is a property of a call, not of a
+resource**: a private read of an officially-available resource is retained only when it
+carries a field the official specification has no schema for, and is then narrowed to
+exactly that field. `inbox` is the one call that survives on those terms, and
+[why it looks like a duplicate](#queries-narrowed-away-from-the-capture) is set out below.
 
 Evidence that a private call works was never a reason to keep one Apple serves officially,
 and the calls that turned out to be duplicates have gone. What those recordings established
 about Apple's *records*, rather than about this client, outlives them and is kept at the end
-of this page. The inventory and the function-by-function mapping are in
-[the removal task](../tasks/remove-official-api-overlap.md).
+of this page.
 
 ## What isn't captured yet
 
@@ -173,8 +187,9 @@ different thing — it wants a curl command or a `Cookie:` line.
 The private implementations of capabilities Apple serves officially have gone. These are
 kept because what they established is mostly about Apple's records rather than about this
 client, and so holds for the official API too — the point being that none of it was a
-reason to keep the duplicate. What was removed, function by function, is
-[the removal task](../tasks/remove-official-api-overlap.md)'s to list, not this page's.
+reason to keep the duplicate. What each one was, function by function, is in the git
+history of the slice that removed it; none of those identifiers exists to be looked up now,
+which is why they are not listed here.
 
 ### Run against iris, not recorded
 
@@ -241,6 +256,11 @@ reason to keep the duplicate. What was removed, function by function, is
   `AppInfo`), and `filter[isAppStoreCandidate]` — but nothing here read any of them, so
   narrowing to them would have narrowed to nothing. The filter has an official spelling in
   any case: `filter[buildAudienceType]=APP_STORE_ELIGIBLE`.
+
+  **`resetRatingsRequest` is the one worth remembering.** Resetting an app's ratings has no
+  official API at all, which makes it a gap this client never built rather than one it gave
+  up. Anything built on it starts where every gap here started: a recording of the browser
+  doing it.
 
   **Where the reviewer's complaints actually point.** "We were unable to sign in" and "we
   couldn't locate the feature" are complaints about the App Review Information record — the
