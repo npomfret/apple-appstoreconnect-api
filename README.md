@@ -6,7 +6,7 @@ and replies, plus unread review-message counts, version state-change history and
 Privacy questionnaire.
 
 The repository currently also contains older private implementations of capabilities that
-Apple **does** officially expose, including review submissions, apps, versions and builds.
+Apple **does** officially expose, including apps, versions and builds.
 Those are legacy overlap, not the intended product surface, and are
 scheduled for removal in
 [tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md). The boundary
@@ -85,7 +85,10 @@ Official replacements:
   **removed**; this is where they went, and it serves the same `uploadOperations` the
   private upload flow ran on.
 - [Review submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
-  — creating, reading, updating and submitting review submissions and their items.
+  — creating, reading, updating and submitting review submissions and their items. The
+  `submissions`, `submission`, `items`, `resolve-item`, `submit` and `cancel-submission`
+  commands have been **removed**; this is where they went, down to the `resolved`,
+  `submitted` and `canceled` attributes spelled exactly as the private calls spelled them.
 - [Users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
   [user invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
   — team access, roles, app visibility, invitations and revocation. The `invites` and
@@ -102,7 +105,6 @@ Official replacements:
 | `report` | private threads/messages/rejections/draft throughout. All three starting points — an app id, `--thread`, `--submission` — read only the Resolution Center; the submission's own state and dates are Apple's to serve and are left out |
 | `apps`, `app` | **legacy official overlap** — app records |
 | `inbox` | private unread App Review/Resolution Center message counts — an `apps` request narrowed to the two `messageCount` fieldsets and nothing else |
-| `submissions`, `submission`, `items` | **legacy official overlap** — review submissions and their items |
 | `versions`, `version` | **legacy official overlap** — app versions |
 | `history` | private version state-change history, including initiator and time in state |
 | `review-details` | **legacy official overlap** — App Review Information |
@@ -120,21 +122,14 @@ gap-only boundary. The other writes duplicate official operations and are pendin
 | `builds`, `set-build` | attach a build to a version — [docs/writing.md](docs/writing.md) |
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
 | `send-reply` | send it — [docs/replying.md](docs/replying.md) |
-| `resolve-item` | tell App Review an issue is fixed and put it back in the queue — [docs/writing.md](docs/writing.md) |
-| `submit`, `cancel-submission` | submit a version for review, or withdraw it — [docs/writing.md](docs/writing.md) |
 | `patch` | any PATCH, for anything not mapped |
 
-**`send-reply`, `resolve-item` and `submit` can't be undone**, so they print what they are
-about to do and ask first — `send-reply` shows you the whole draft and reads it again after
-you answer, in case the browser autosaved over it in the meantime, `submit --dry-run`
-prints the steps and sends nothing. `cancel-submission` and the two deletes ask too.
-`--yes` answers for you, and still prints what it answered for; a command whose own input is
-a pipe is asked on the terminal rather than refused, and with no terminal at all they stop
-rather than assume. Nothing else asks: a bad `set-build` is one more `set-build` away from
-being right.
-
-The `submit` flow is the one thing here **not** taken from a capture — see
-[docs/evidence.md](docs/evidence.md) before the first real run.
+**`send-reply` can't be undone**, so it prints what it is about to do and asks first — it
+shows you the whole draft and reads it again after you answer, in case the browser autosaved
+over it in the meantime. The two deletes ask too. `--yes` answers for you, and still prints
+what it answered for; a command whose own input is a pipe is asked on the terminal rather
+than refused, and with no terminal at all they stop rather than assume. Nothing else asks: a
+bad `set-build` is one more `set-build` away from being right.
 
 The lower-level commands print denormalized JSON, or the untouched JSON:API document with
 `--raw`; the digests (`report`, `builds`, `history`, `privacy`) take `--json` instead. Ids
@@ -143,7 +138,7 @@ chain between commands, which is what makes scripting it possible.
 ## Docs
 
 - [Reading](docs/reading.md) — every read command and the endpoint behind it
-- [Writing](docs/writing.md) — builds, versions, resolving an item, and what asks before it acts
+- [Writing](docs/writing.md) — builds, versions, and what asks before it acts
 - [Replying to App Review](docs/replying.md) — Resolution Center drafts, attachments, and sending
 - [Logging and the audit trail](docs/logging.md) — structured logs, and why every write is recorded
 - [As a library](docs/library.md) — importing it instead of shelling out

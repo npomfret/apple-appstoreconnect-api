@@ -7,14 +7,15 @@
 > gaps. See [the removal task](../tasks/remove-official-api-overlap.md). Until it lands, the
 > command table documents current behavior; it is not a recommendation to use private APIs
 > for official capabilities. Use Apple's official
-> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
-> and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
-> APIs for the overlapping reads. The Xcode Cloud, invitation, screenshot/preview and App
-> Information reads that used to be on this page have already been removed; Apple's
+> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
+> API for the overlapping reads. The Xcode Cloud, invitation, screenshot/preview, App
+> Information and review-submission reads that used to be on this page have already been
+> removed; Apple's
 > [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
 > [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
-> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
-> and [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
+> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
+> [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
+> and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
 > APIs are where they went.
 
 ```sh
@@ -71,9 +72,6 @@ document):
 | `apps` | `apps` |
 | `inbox` | `apps?fields[apps]=appStoreVersionMetrics,betaReviewMetrics&fields[appStoreVersionMetrics]=messageCount` |
 | `app [appId]` | `apps/{appId}` |
-| `submissions [appId]` | `apps/{appId}/reviewSubmissions` |
-| `submission <id>` | `reviewSubmissions/{id}` |
-| `items <submissionId>` | `reviewSubmissions/{id}/items` |
 | `versions [appId]` | `apps/{appId}/appStoreVersions?filter[platform]=` |
 | `version [versionId]` | `appStoreVersions/{id}` |
 | `review-details [versionId]` | `appStoreVersions/{id}` → `appStoreReviewDetails/{id}` |
@@ -98,12 +96,19 @@ resources, down to the `uploadOperations` the upload flow ran on. So have `metad
 `app-info`, `categories`, `age-rating` and `territory-ratings`: `appInfos`,
 `appInfoLocalizations`, `appStoreVersionLocalizations`, the six category relationships,
 `ageRatingDeclarations` and `appInfos/{id}/territoryAgeRatings` are all official, attribute
-for attribute. All of them need an API key rather than this client's cookie.
+for attribute. And so have `submissions`, `submission` and `items`: `apps/{id}/reviewSubmissions`,
+`reviewSubmissions/{id}` and `reviewSubmissions/{id}/items` are all
+[Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
+operations, and every attribute this client read back — a submission's `platform`, `state`
+and `submittedDate`, an item's `state` — is on Apple's own schema. All of them need an API
+key rather than this client's cookie.
 
 `appId` defaults to the one scraped from the captured request's `Referer`; `versionId`
-defaults to the version attached to the first open submission — one extra request, the
-app's submissions, which name their version. With no open submission it falls back to the
-version being edited, and refuses to choose between two of them.
+defaults to the version being edited, and refuses to choose between two of them. It used to
+prefer the version attached to an open review submission, which cost a read of
+`apps/{id}/reviewSubmissions` — official, so it went with that slice. On an app whose
+current version is in front of Apple *and* which has a newer draft open, the default is now
+the draft. Name the version to be certain.
 
 Two things about App Store metadata are worth carrying over to whichever client reads it,
 because they are properties of the records rather than of this one. It is split across two

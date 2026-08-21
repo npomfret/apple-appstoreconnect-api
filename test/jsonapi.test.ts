@@ -11,59 +11,59 @@ import { Document, Resource, denormalize, denormalizeAll } from '../src/jsonapi'
 
 const DOCUMENT: Document<Resource> = {
   data: {
-    type: 'reviewSubmissions',
-    id: 'sub-1',
-    attributes: { state: 'UNRESOLVED_ISSUES' },
+    type: 'resolutionCenterThreads',
+    id: 'thread-1',
+    attributes: { threadType: 'REJECTION_REVIEW_SUBMISSION' },
     relationships: {
-      appStoreVersionForReview: { data: { type: 'appStoreVersions', id: 'v1' } },
-      items: {
+      app: { data: { type: 'apps', id: 'app-1' } },
+      resolutionCenterMessages: {
         data: [
-          { type: 'reviewSubmissionItems', id: 'item-1' },
-          { type: 'reviewSubmissionItems', id: 'item-2' },
+          { type: 'resolutionCenterMessages', id: 'msg-1' },
+          { type: 'resolutionCenterMessages', id: 'msg-2' },
         ],
       },
-      lastUpdatedByActor: { data: null },
+      appMessageThreadDetail: { data: null },
     },
   },
   included: [
-    { type: 'appStoreVersions', id: 'v1', attributes: { versionString: '1.1.1' } },
-    { type: 'reviewSubmissionItems', id: 'item-1', attributes: { resolved: false } },
+    { type: 'apps', id: 'app-1', attributes: { name: 'Funmax' } },
+    { type: 'resolutionCenterMessages', id: 'msg-1', attributes: { messageBody: 'first' } },
   ],
 };
 
 describe('denormalize', () => {
-  const submission = denormalize(DOCUMENT, DOCUMENT.data);
+  const thread = denormalize(DOCUMENT, DOCUMENT.data);
 
   test('attributes are lifted onto the resource', () => {
-    assert.equal(submission.type, 'reviewSubmissions');
-    assert.equal(submission.id, 'sub-1');
-    assert.equal(submission.state, 'UNRESOLVED_ISSUES');
+    assert.equal(thread.type, 'resolutionCenterThreads');
+    assert.equal(thread.id, 'thread-1');
+    assert.equal(thread.threadType, 'REJECTION_REVIEW_SUBMISSION');
   });
 
   test('a to-one relationship becomes the resource it names', () => {
-    assert.equal((submission.appStoreVersionForReview as Record<string, unknown>).versionString, '1.1.1');
+    assert.equal((thread.app as Record<string, unknown>).name, 'Funmax');
   });
 
   test('a to-many relationship keeps its order', () => {
-    const items = submission.items as Record<string, unknown>[];
+    const messages = thread.resolutionCenterMessages as Record<string, unknown>[];
     assert.deepEqual(
-      items.map((item) => item.id),
-      ['item-1', 'item-2']
+      messages.map((message) => message.id),
+      ['msg-1', 'msg-2']
     );
-    assert.equal(items[0].resolved, false);
+    assert.equal(messages[0].messageBody, 'first');
   });
 
   // The include list decides what was sideloaded, so a linkage with nothing behind it is
   // ordinary. It stays as the identifier rather than becoming undefined: the id is still
   // an answer, and losing it would look like the relationship wasn't there at all.
   test('a linkage with nothing included stays a bare identifier', () => {
-    const items = submission.items as Record<string, unknown>[];
-    assert.deepEqual(items[1], { type: 'reviewSubmissionItems', id: 'item-2' });
+    const messages = thread.resolutionCenterMessages as Record<string, unknown>[];
+    assert.deepEqual(messages[1], { type: 'resolutionCenterMessages', id: 'msg-2' });
   });
 
   test('an explicitly empty relationship is null, not missing', () => {
-    assert.equal(submission.lastUpdatedByActor, null);
-    assert.ok('lastUpdatedByActor' in submission);
+    assert.equal(thread.appMessageThreadDetail, null);
+    assert.ok('appMessageThreadDetail' in thread);
   });
 
   test('a cycle stops at a stub instead of recurring forever', () => {
@@ -83,8 +83,8 @@ describe('denormalize', () => {
       ],
     };
 
-    const thread = denormalize(document, document.data);
-    const draft = thread.draft as Record<string, unknown>;
+    const cyclic = denormalize(document, document.data);
+    const draft = cyclic.draft as Record<string, unknown>;
     assert.equal(draft.messageBody, 'hello');
     assert.deepEqual(draft.thread, { type: 'threads', id: 't1' });
   });

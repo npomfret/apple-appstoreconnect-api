@@ -88,29 +88,43 @@ Commands affected: `apps`, `app`, `versions`, `version`, `builds`, `set-build`, 
 `review-details`. Remove any fallback/default-ID discovery that exists only to support
 these commands.
 
-### Review submissions and items
+### Review submissions and items — *removed 2026-08-21*
 
-Remove:
+`listReviewSubmissions`, `getReviewSubmission`, `listSubmissionItems`,
+`resolveSubmissionItem`, `createReviewSubmission`, `addSubmissionItem`,
+`submitReviewSubmission`, `cancelReviewSubmission`, `planSubmission`, `runSubmission`,
+`SubmissionPlan`, `OPEN_SUBMISSION_STATES`, `submissionIdFromItemId` and
+`findSubmissionItems` are gone from `src/api.ts`, with the `reviewSubmissions` and
+`submissionItems` entries in `INCLUDES` and the `reviewSubmissions` entry in `SIDELOADS`.
+`src/cli.ts` loses the six commands, `describeItem`, `describePlan`, `versionInReview` and
+the `--dry-run` flag, which existed for `submit` alone. `test/submission.test.ts` is
+deleted.
 
-- `listReviewSubmissions`, `getReviewSubmission`, `listSubmissionItems`.
-- `resolveSubmissionItem`.
-- `createReviewSubmission`, `addSubmissionItem`, `submitReviewSubmission`,
-  `cancelReviewSubmission`, `planSubmission`, and `runSubmission`.
-- Helpers used only by those flows, including `submissionIdFromItemId` and
-  `findSubmissionItems`.
+The audit was restated first, against the specification itself rather than the published
+schema pages: re-downloaded 2026-08-21, still **4.4.1** (generated 2026-07-15), still 966
+paths and 1,393 schemas. Every path is an official operation —
+`apps_reviewSubmissions_getToManyRelated`, `reviewSubmissions_getInstance`,
+`reviewSubmissions_createInstance`, `reviewSubmissions_updateInstance`,
+`reviewSubmissions_items_getToManyRelated`, `reviewSubmissionItems_createInstance` and
+`reviewSubmissionItems_updateInstance` — and every attribute is on an official schema:
+`ReviewSubmission` carries `platform`, `state` and `submittedDate` with the same seven-value
+state enum this client hard-coded six of, `ReviewSubmissionItem` carries `state`,
+`ReviewSubmissionUpdateRequest` carries `submitted` and `canceled`, and
+`ReviewSubmissionItemUpdateRequest` carries `resolved`. All thirteen `submissionItems`
+includes are official relationship names.
 
-Official equivalents include `reviewSubmissions_getCollection`,
-`reviewSubmissions_getInstance`, `reviewSubmissions_createInstance`,
-`reviewSubmissions_updateInstance`, `reviewSubmissions_items_getToManyRelated`,
-`reviewSubmissionItems_createInstance`, and `reviewSubmissionItems_updateInstance`.
+**One include was not: `createdByActor`.** It is not on `ReviewSubmission.Relationships`
+and not in the official include enum, which by this file's rule makes it a field-level keep
+— unlike `post_actions` and `gracRatingClassificationNumber`, though, **nothing in this
+client ever read it**. It appeared exactly once, in the include list copied from the
+browser, and no code, test or document touched the value. There is no capability to narrow
+to, so this is a whole removal and not a third open question.
 
-Commands affected: `submissions`, `submission`, `items`, `resolve-item`, `submit`, and
-`cancel-submission`.
-
-Refactor `report` before deleting these dependencies. Make it thread-centric and use only
-private Resolution Center resources, accepting an explicit app, submission, or thread ID
-where the private API cannot discover one without duplicating an official read. Do not add
-official authentication just to preserve the current report UX.
+`report` was made thread-first in step 3 of
+[gap-boundary-next-steps.md](gap-boundary-next-steps.md) before any of this was deleted, so
+nothing in `src/report.ts` needed changing here. `asc report --submission` stays: it reaches
+the Resolution Center through `resolutionCenterThreads?filter[reviewSubmission]`, a private
+filter, and reads no submission.
 
 ### Metadata, categories, age ratings and content rights — *removed 2026-08-21*
 

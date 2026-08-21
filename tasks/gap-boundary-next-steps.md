@@ -345,8 +345,65 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
       and after; `npm run typecheck` and `npm run build` are clean; `rg` finds no `appInfo`,
       age-rating, category, territory or metadata call left in `src/`; and
       `test/gap-requests.test.ts` and `test/gap-shapes.test.ts` were not edited.
-   5. **Submission management** — unblocked by step 3: `report` no longer reads a
-      submission, and `listReviewSubmissions` has no caller left in `src/report.ts`.
+   5. **Submission management** — *Done, 2026-08-21.* `src/api.ts` loses
+      `listReviewSubmissions`, `getReviewSubmission`, `listSubmissionItems`,
+      `resolveSubmissionItem`, `createReviewSubmission`, `addSubmissionItem`,
+      `submitReviewSubmission`, `cancelReviewSubmission`, `planSubmission`, `runSubmission`,
+      `SubmissionPlan`, `OPEN_SUBMISSION_STATES`, `submissionIdFromItemId` and
+      `findSubmissionItems` (331 lines) with the `reviewSubmissions` and `submissionItems`
+      entries in `INCLUDES` and `SIDELOADS`; `src/cli.ts` loses six commands, three helpers
+      and `--dry-run`; `test/submission.test.ts` is deleted.
+
+      Step 3 did its job: `src/report.ts` needed **no change at all**, because `report` had
+      already stopped reading a submission. `asc report --submission` and `asc thread` stay
+      — both reach the Resolution Center through
+      `resolutionCenterThreads?filter[reviewSubmission]`, which is a private filter on a
+      private resource, not a submission read.
+
+      The audit was restated against the re-downloaded specification: still 4.4.1, 966
+      paths, 1,393 schemas. All seven operations are official and every attribute is on an
+      official schema, down to `resolved`, `submitted` and `canceled` being spelled exactly
+      as the private writes spelled them, and `ReviewSubmissionState` carrying all six
+      states this client hard-coded plus `COMPLETE`.
+
+      **A third field-level keep appeared, and it was the first one that cost nothing.**
+      `createdByActor` is in the browser's include list for `reviewSubmissions` and is not
+      on Apple's `ReviewSubmission.Relationships` — but unlike `post_actions` (4.1) and
+      `gracRatingClassificationNumber` (4.4), **nothing here ever read it**. One line in an
+      include list, no code, no test, no document. A keep narrowed to exactly that field
+      would be narrowed to nothing, so it went with the slice and needs no task file.
+
+      The entanglement this slice was ordered for was real but small: `versionInReview`
+      resolved a default version id by reading `apps/{id}/reviewSubmissions` and taking
+      `appStoreVersionForReview`. That is an official read, so it went, leaving
+      `versionUnderReview` with the drafts route alone. **This is a user-visible behaviour
+      change and is documented as one**: on an app whose current version is in front of
+      Apple *and* which has a newer draft open, `asc history` and friends now default to the
+      draft rather than to the version under review. Naming the version is exact either way.
+
+      Rescued into `docs/evidence.md` before the sections that held it were deleted, all of
+      it about the records rather than about this client: that a rejection keeps the
+      `submittedDate` of the run that was refused, so a submitted date is no guide to where
+      a submission is, and that reading it as one deadlocked `submit` against `resolve-item`
+      until `asc patch` broke the tie; that `READY_FOR_REVIEW` means unsent only when paired
+      with *no* submitted date; that there is one open submission per platform and the
+      platform must be read off the version, not assumed; that **resolving an item does not
+      re-queue its submission** — the 2026-08-13 case sat in `UNRESOLVED_ISSUES` for five
+      days and sixteen hours with the version page saying "Ready for Review"; and that an
+      item id is base64 of `{submissionId}|{n}|{appId}`, which matters because
+      `GET reviewSubmissionItems/{id}` is refused 403 by iris *and* has no official by-id
+      read either — 4.4.1 gives that path `PATCH` and `DELETE` only.
+
+      The irreversible-write set is now **one**: `send-reply`. `docs/writing.md`, the CLI
+      usage text and `README.md` all said "three" and now say so.
+
+      One test changed and it was not a gap test: `test/jsonapi.test.ts` built its
+      denormalization fixture out of a `reviewSubmissions` document. Every assertion kept
+      its shape; the invented fixture is now a `resolutionCenterThreads` one, so the suite
+      stops demonstrating `denormalize` on a resource this client can no longer read.
+      `npm test` is 113 pass, 0 fail (six left with `test/submission.test.ts`);
+      `npm run typecheck` and `npm run build` are clean; and **`test/gap-requests.test.ts`
+      and `test/gap-shapes.test.ts` were not edited**.
    6. **Apps, versions, builds, review details** — last of the resource slices, because
       default-id discovery across 26 call sites in `src/cli.ts` runs through them.
    7. **`patch`, and `get` narrowed to an allowlist of retained private families.**

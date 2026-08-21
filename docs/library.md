@@ -1,12 +1,13 @@
 # As a library
 
-> **Boundary notice:** exports for submissions, versions and builds are legacy official
-> overlap and will be removed. The Xcode Cloud, invitation, screenshot/preview and
-> metadata/App Information exports have already gone — use Apple's
+> **Boundary notice:** exports for apps, versions and builds are legacy official overlap
+> and will be removed. The Xcode Cloud, invitation, screenshot/preview,
+> metadata/App Information and review-submission exports have already gone — use Apple's
 > [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
 > [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
-> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
-> and [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
+> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
+> [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
+> and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
 > APIs.
 > New callers should use this library only for the official gaps listed in
 > [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md). For overlapping
@@ -44,7 +45,7 @@ lists every version its thread names in `versions: VersionRef[]`, and fills the 
 reduced to one of them.
 
 `denormalize` splices JSON:API `included` resources into their relationships, so you can
-read `submission.appStoreVersionForReview.versionString` instead of hand-joining sideloads.
+read `thread.app.name` instead of hand-joining sideloads.
 
 `loadSession()` reads and parses the capture file — `tmp/curl.txt`, or `ASC_CURL_PATH` —
 every time you call it; nothing is cached on disk. Call it once and keep the `Session`,
@@ -55,18 +56,15 @@ already have, if the capture reaches you some other way.
 the package root. Everything it returns is a JSON:API document, which is what `denormalize`
 and `denormalizeAll` are for.
 
-**The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()`,
-`sendDraftReply()`, `resolveSubmissionItem()` and `submitReviewSubmission()`
-called from code go straight to Apple, and none of them can be undone. `confirm()` from
-`src/confirm.ts` is there if you want the same guard — it asks on the terminal even when
-stdin is carrying something else, and refuses when there is no terminal to ask on.
-`planSubmission()` works out what
-`submit` would do and writes nothing, so it's a safe thing to call first — and
-`findSendableDraft()` is the read half of `sendDraftReply()`, so you can show a draft and
-ask before sending the thing you just showed. That is all `send-reply` does — plus one more
-`findSendableDraft()` after the answer, since the send posts a reference to the draft rather
-than its text, and the box autosaves while your prompt is on screen. Worth copying if you
-build your own.
+**The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
+`sendDraftReply()` called from code go straight to Apple, and neither can be undone.
+`confirm()` from `src/confirm.ts` is there if you want the same guard — it asks on the
+terminal even when stdin is carrying something else, and refuses when there is no terminal
+to ask on. `findSendableDraft()` is the read half of `sendDraftReply()`, so you can show a
+draft and ask before sending the thing you just showed. That is all `send-reply` does —
+plus one more `findSendableDraft()` after the answer, since the send posts a reference to
+the draft rather than its text, and the box autosaves while your prompt is on screen. Worth
+copying if you build your own.
 
 ## Conventions worth knowing before editing
 
@@ -78,10 +76,8 @@ build your own.
 - Page sizes are options, never fixed. The top-level one is `{ limit }`; the per-relationship
   caps on what an include drags along are `{ sideloads }`, keyed by relationship name:
   `listMessages(session, threadId, { sideloads: { rejections: 5 } })`. Both default to the
-  browser's own numbers, which is what a call with no options sends — including
-  `limit[items]=0`, which asks for a submission's items to be identified rather than
-  expanded. Raise one when a thread, an app list or a version has outgrown the number the
-  UI was built for.
+  browser's own numbers, which is what a call with no options sends. Raise one when a
+  thread, an app list or a version has outgrown the number the UI was built for.
 - Nothing pages. One request gets one page, and a list that came back short is reported
   rather than followed: `read.clipped` in the log when iris gives a total bigger than what
   it sent, `read.atLimit` when the page is exactly as long as the limit asked for. Worth

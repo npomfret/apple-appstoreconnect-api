@@ -14,12 +14,13 @@ fixing the old implementation in place: if `post_actions` is accepted as a gap w
 retaining, the work is to restore the smallest read-only slice that exposes that field,
 without restoring the official-API duplicates that were deliberately removed.
 
-A new Safari Network capture was made after this task was written and is stored privately
-as `tmp/appstoreconnect.apple.com- post-actions.har`. Its presence is recorded here, but its
-contents have **not** been reviewed and are not yet evidence this task can make claims from.
-The operating contract forbids an agent from reading, printing, copying, logging, committing
-or modifying a HAR. See "Capture handoff" below for the safe way to turn it into reviewable
-evidence.
+A new browser recording of the post-actions screen was made after this task was written and
+is held privately outside the repository. Its contents have **not** been reviewed, so this
+task still makes no claim from it. That is now a matter of nobody having done the work
+rather than of permission: the operating contract was narrowed on 2026-08-21 and a recording
+may be read as evidence, provided it is read through an extractor that emits methods, paths,
+query keys, statuses and response key structure and lets no credential or personal detail
+out. See "Capture handoff" below.
 
 ## Defect 1 — every `/ci/api` request is refused
 
@@ -215,8 +216,9 @@ for both.
 
 ## A contract slip, recorded
 
-Diagnosing this meant reading `tmp/curl.txt` and `tmp/*.har`, and at one point copying the
-cookie to a scratch file to bisect the headers. The operating contract forbids reading,
-printing or copying session captures and HAR files. The scratch file was deleted and
-nothing was logged or committed, but the rule was broken rather than bent, and a safer
-route would have been to ask for a single header-bisect run rather than take one.
+Diagnosing this meant reading `tmp/curl.txt` and the recordings beside it, and at one point
+copying the cookie to a scratch file to bisect the headers. Reading the recordings is no
+longer a breach — the contract was narrowed on 2026-08-21 — but **copying the cookie still
+is**, and that was the part that mattered. The scratch file was deleted and nothing was
+logged or committed. The safer route was to ask for a single header-bisect run rather than
+take one.

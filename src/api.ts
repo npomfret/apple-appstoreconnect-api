@@ -22,28 +22,6 @@ import { audited, log, REVIEW_DETAIL_SECRETS } from './log';
  * live call behind it.
  */
 const INCLUDES = {
-  reviewSubmissions: [
-    'appStoreVersionForReview',
-    'items',
-    'lastUpdatedByActor',
-    'submittedByActor',
-    'createdByActor',
-  ],
-  submissionItems: [
-    'appCustomProductPageVersion',
-    'appEvent',
-    'appStoreVersion',
-    'appStoreVersionExperiment',
-    'backgroundAssetVersion',
-    'gameCenterAchievementVersion',
-    'gameCenterLeaderboardVersion',
-    'gameCenterLeaderboardSetVersion',
-    'gameCenterChallengeVersion',
-    'gameCenterActivityVersion',
-    'inAppPurchaseVersion',
-    'subscriptionVersion',
-    'subscriptionGroupVersion',
-  ],
   messages: ['fromActor', 'rejections', 'resolutionCenterMessageAttachments'],
   reviewDetails: ['appStoreReviewAttachments', 'appStoreVersion'],
   draftMessage: ['resolutionCenterMessageAttachments', 'fromActor'],
@@ -97,15 +75,14 @@ const INCLUDES = {
 /**
  * Page sizes for the records those includes drag along — JSON:API's
  * `limit[relationship]` — copied from the browser with the include lists they pair with.
- * `0` is not "no limit": it asks for the related records to be identified rather than
- * expanded, which is how the review-centre UI avoids pulling every item of every
- * submission just to list them.
+ * A `0` here would not mean "no limit": it asks for the related records to be identified
+ * rather than expanded. None of the retained calls sends one, now that the review-centre
+ * submission list that did has gone.
  *
  * These are the browser's numbers for the browser's screens, so every call that sends them
  * takes a `sideloads` option to name a different one. The defaults stay as captured.
  */
 const SIDELOADS = {
-  reviewSubmissions: { items: 0 },
   messages: { rejections: 2000, resolutionCenterMessageAttachments: 1000 },
   draftMessage: { resolutionCenterMessageAttachments: 1000 },
   rejections: { rejectionAttachments: 1000 },
@@ -190,58 +167,6 @@ function fieldsets<D extends Readonly<Record<string, readonly string[]>>>(
     query[`fields[${type}]`] = [...(overrides[type as keyof D] ?? captured)];
   }
   return query;
-}
-
-export const OPEN_SUBMISSION_STATES = [
-  'READY_FOR_REVIEW',
-  'WAITING_FOR_REVIEW',
-  'IN_REVIEW',
-  'UNRESOLVED_ISSUES',
-  'CANCELING',
-  'COMPLETING',
-] as const;
-
-/** Review submissions for an app. Defaults to the states the review-centre UI shows. */
-export function listReviewSubmissions(
-  session: Session,
-  appId: string,
-  options: {
-    include?: readonly string[];
-    states?: readonly string[];
-    limit?: number;
-    sideloads?: SideloadLimits<typeof SIDELOADS.reviewSubmissions>;
-  } = {}
-): Promise<Document<Resource[]>> {
-  return get(session, `apps/${appId}/reviewSubmissions`, {
-    include: includeList(INCLUDES.reviewSubmissions, options.include),
-    limit: options.limit ?? 2000,
-    ...sideloadLimits(SIDELOADS.reviewSubmissions, options.sideloads),
-    'filter[state]': [...(options.states ?? OPEN_SUBMISSION_STATES)],
-  });
-}
-
-/** One submission on its own, without going via the app. */
-export function getReviewSubmission(
-  session: Session,
-  submissionId: string,
-  options: { include?: readonly string[]; sideloads?: SideloadLimits<typeof SIDELOADS.reviewSubmissions> } = {}
-): Promise<Document<Resource>> {
-  return get(session, `reviewSubmissions/${submissionId}`, {
-    include: includeList(INCLUDES.reviewSubmissions, options.include),
-    ...sideloadLimits(SIDELOADS.reviewSubmissions, options.sideloads),
-  });
-}
-
-/** The individual things (version, IAPs, events...) bundled into one submission. */
-export function listSubmissionItems(
-  session: Session,
-  submissionId: string,
-  options: { include?: readonly string[]; limit?: number } = {}
-): Promise<Document<Resource[]>> {
-  return get(session, `reviewSubmissions/${submissionId}/items`, {
-    include: includeList(INCLUDES.submissionItems, options.include),
-    limit: options.limit ?? 200,
-  });
 }
 
 /**
@@ -393,8 +318,7 @@ export const LIVE_VERSION_STATES = [
 
 /**
  * Enough of each version to tell them apart, and no more — what the version switcher in
- * the header runs on. The cheap way to find a version id when there is no open submission
- * to take one from; `getVersion` has the rest.
+ * the header runs on. The cheap way to find a version id; `getVersion` has the rest.
  *
  * One current version per platform, plus whatever is live: an account with a Mac build
  * gets its READY_FOR_SALE versions back here alongside the iOS one being edited. Pass a
@@ -880,285 +804,6 @@ export async function findSendableDraft(session: Session, threadId: string): Pro
 export async function sendDraftReply(session: Session, threadId: string): Promise<Resource> {
   const draft = (await findSendableDraft(session, threadId)).data;
   return (await sendDraftMessage(session, draft.id)).data;
-}
-
-/**
- * The submission an item belongs to, read out of the item's own id.
- *
- * Item ids are base64 of `{submissionId}|{n}|{appId}` — a uuid, an index, a numeric app id. The
- * browser never decodes them and Apple never promised the format, so this is a guess and
- * treated as one: anything that doesn't come back as a leading UUID gives `undefined`
- * rather than a wrong answer. Worth having because a direct
- * `GET reviewSubmissionItems/{id}` is refused with a 403, so the parent is the only way in.
- */
-export function submissionIdFromItemId(itemId: string): string | undefined {
-  const [first] = Buffer.from(itemId, 'base64').toString('utf8').split('|');
-  return first && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(first) ? first : undefined;
-}
-
-/** Every item of the submission an item id points at, or nothing if the id won't decode. */
-export async function findSubmissionItems(
-  session: Session,
-  itemId: string
-): Promise<Document<Resource[]> | undefined> {
-  const submissionId = submissionIdFromItemId(itemId);
-  return submissionId ? listSubmissionItems(session, submissionId) : undefined;
-}
-
-/**
- * Marks one item of a submission as fixed — the "resolved" step on a submission sitting in
- * `UNRESOLVED_ISSUES`. **Irreversible:** the item goes straight to `READY_FOR_REVIEW` and
- * there is no un-resolve.
- *
- * **This does not re-queue the submission.** The parent stays `UNRESOLVED_ISSUES` until
- * something calls `submitReviewSubmission` on it — not for a moment, indefinitely; one was
- * found still sitting there five days later with nothing to say it was waiting. Read that
- * lingering `UNRESOLVED_ISSUES` as work outstanding, not as a stale read.
- *
- * Copied from a recording of one real resolve.
- */
-export function resolveSubmissionItem(session: Session, itemId: string): Promise<Document<Resource>> {
-  return audited('submission.item.resolve', { itemId }, () =>
-    patch<Document<Resource>>(
-      session,
-      `reviewSubmissionItems/${itemId}`,
-      { data: { type: 'reviewSubmissionItems', id: itemId, attributes: { resolved: true } } },
-      VND_API_CONTENT_TYPE
-    )
-  );
-}
-
-/**
- * Submitting a version for review.
- *
- * **Read this before using it.** Nothing below was captured. Every other write in this
- * file was copied from App Store Connect doing the thing; these four were not, because no
- * recording of the Submit button exists. What they are built on:
- *
- * - Apple's *public* App Store Connect API documents this exact flow on these exact
- *   resource names — create a `reviewSubmissions`, add `reviewSubmissionItems` to it,
- *   PATCH `submitted: true`.
- * - iris demonstrably shares that model: `reviewSubmissions`, `reviewSubmissionItems` and
- *   `items` all read back the way the public API describes, and the `resolved` attribute
- *   we *did* capture is the public API's documented attribute, spelled the same way.
- *
- * That is a good reason to expect these to work and not a reason to be sure. The realistic
- * failure is a 4xx; the unpleasant one is a half-made submission left on the account, so
- * `runSubmission` stops at the first error and says where it got to. Record the Submit
- * button once and this can be replaced with something certain.
- */
-
-/**
- * Starts an empty review submission for an app. Nothing is in front of Apple yet.
- *
- * The platform is required rather than defaulted: a submission is per-platform, and an
- * assumed one would put a Mac or tvOS version into an iOS submission on someone else's
- * account. `planSubmission` reads it off the version.
- */
-export function createReviewSubmission(
-  session: Session,
-  appId: string,
-  platform: string
-): Promise<Document<Resource>> {
-  return audited('submission.create', { appId, platform }, () =>
-    post<Document<Resource>>(
-      session,
-      'reviewSubmissions',
-      {
-        data: {
-          type: 'reviewSubmissions',
-          attributes: { platform },
-          relationships: { app: { data: { type: 'apps', id: appId } } },
-        },
-      },
-      VND_API_CONTENT_TYPE
-    )
-  );
-}
-
-/** Puts a version into a submission — the "add for review" step. Still not submitted. */
-export function addSubmissionItem(
-  session: Session,
-  submissionId: string,
-  versionId: string
-): Promise<Document<Resource>> {
-  return audited('submission.item.add', { submissionId, versionId }, () =>
-    post<Document<Resource>>(
-      session,
-      'reviewSubmissionItems',
-      {
-        data: {
-          type: 'reviewSubmissionItems',
-          relationships: {
-            reviewSubmission: { data: { type: 'reviewSubmissions', id: submissionId } },
-            appStoreVersion: { data: { type: 'appStoreVersions', id: versionId } },
-          },
-        },
-      },
-      VND_API_CONTENT_TYPE
-    )
-  );
-}
-
-/**
- * Hands the submission to App Review. **This is the irreversible one** — everything before
- * it is a draft you can throw away, and this is the step that starts the review.
- *
- * `cancelReviewSubmission` is the nearest thing to an undo, and only while Apple hasn't
- * started looking.
- */
-export function submitReviewSubmission(session: Session, submissionId: string): Promise<Document<Resource>> {
-  return audited('submission.submit', { submissionId }, () =>
-    patch<Document<Resource>>(
-      session,
-      `reviewSubmissions/${submissionId}`,
-      { data: { type: 'reviewSubmissions', id: submissionId, attributes: { submitted: true } } },
-      VND_API_CONTENT_TYPE
-    )
-  );
-}
-
-/** Withdraws a submission from the queue. Once review has started this is refused. */
-export function cancelReviewSubmission(session: Session, submissionId: string): Promise<Document<Resource>> {
-  return audited('submission.cancel', { submissionId }, () =>
-    patch<Document<Resource>>(
-      session,
-      `reviewSubmissions/${submissionId}`,
-      { data: { type: 'reviewSubmissions', id: submissionId, attributes: { canceled: true } } },
-      VND_API_CONTENT_TYPE
-    )
-  );
-}
-
-/** What `submit` would do, worked out before anything is written. */
-export interface SubmissionPlan {
-  appId: string;
-  versionId: string;
-  versionString?: string;
-  platform: string;
-  /** An unsubmitted submission to reuse. Absent means one has to be created. */
-  submissionId?: string;
-  /** The item for this version, if it's already on that submission. */
-  itemId?: string;
-  /** A submission genuinely in front of Apple — the reason not to make another. */
-  inFlight?: { id: string; state: string };
-  /**
-   * Items on a returned submission that Apple still has open. The submit PATCH is a 409
-   * while any one of them is `REJECTED`, so these are named rather than discovered.
-   */
-  unresolvedItemIds?: string[];
-}
-
-/**
- * Works out the three steps without taking any of them: which of create / add / submit are
- * actually needed for this version.
- *
- * Existing submissions are reused rather than duplicated, because App Store Connect only
- * carries one open submission per platform and a second POST would either fail or make a
- * mess. A submission that has already gone to Apple stops the plan instead — resubmitting
- * over the top of one in review is not a thing this should do quietly.
- */
-export async function planSubmission(
-  session: Session,
-  appId: string,
-  versionId: string
-): Promise<SubmissionPlan> {
-  const version = (await getVersion(session, versionId)).data;
-  // Not defaulted to IOS: everything below is per-platform, and guessing would mean
-  // reusing or creating a submission on the wrong one.
-  const platform = version.attributes?.platform;
-  if (typeof platform !== 'string' || !platform) {
-    throw new Error(`Version ${versionId} came back without a platform — cannot plan a submission for it`);
-  }
-
-  const plan: SubmissionPlan = {
-    appId,
-    versionId,
-    versionString: version.attributes?.versionString as string | undefined,
-    platform,
-  };
-
-  // Matched strictly, and one with no platform at all is reported rather than assumed to
-  // be this one — the cost of getting that wrong is reusing another platform's submission.
-  const all = (await listReviewSubmissions(session, appId)).data;
-  const unplaced = all.filter((one) => typeof one.attributes?.platform !== 'string');
-  if (unplaced.length) {
-    log.warn('submission.platformMissing', { appId, ids: unplaced.map((one) => one.id) });
-  }
-  const submissions = all.filter((one) => one.attributes?.platform === platform);
-
-  // Two different shapes can still be handed to Apple, and only one of them is "new".
-  //
-  // Never sent is the pair: still READY_FOR_REVIEW and never given a submitted date.
-  // Either half on its own would misread a submission Apple has already seen.
-  //
-  // UNRESOLVED_ISSUES is the other: Apple looked, refused, and sent it back. It always
-  // carries the submitted date of the run that was rejected, so the pair above would
-  // exclude it forever — which left `submit` and `resolve-item` pointing at each other
-  // with no way through once the items were resolved. It is not in front of Apple, and
-  // `{"submitted":true}` on it returns WAITING_FOR_REVIEW. Confirmed against a live
-  // rejection on 2026-08-19; see docs/evidence.md.
-  const open = submissions.find(
-    (one) =>
-      one.attributes?.state === 'UNRESOLVED_ISSUES' ||
-      (one.attributes?.state === 'READY_FOR_REVIEW' && !one.attributes?.submittedDate)
-  );
-  const sent = submissions.find((one) => one !== open);
-
-  if (open) {
-    plan.submissionId = open.id;
-    const items = (await listSubmissionItems(session, open.id)).data;
-    plan.itemId = items.find(
-      (item) => item.relationships?.appStoreVersion?.data &&
-        !Array.isArray(item.relationships.appStoreVersion.data) &&
-        item.relationships.appStoreVersion.data.id === versionId
-    )?.id;
-    // On a returned submission every item Apple refused has to be resolved before it can
-    // go back. Naming them lets the plan say what to do instead of the PATCH saying no.
-    const unresolved = items
-      .filter((item) => item.attributes?.state === 'REJECTED')
-      .map((item) => item.id);
-    if (unresolved.length) plan.unresolvedItemIds = unresolved;
-  } else if (sent) {
-    plan.inFlight = { id: sent.id, state: String(sent.attributes?.state ?? 'unknown') };
-  }
-
-  return plan;
-}
-
-/**
- * Carries out a plan: create if needed, add the version if needed, then submit.
- *
- * Each step is logged as it lands, so a run that dies in the middle leaves a record of
- * exactly how far it got — which matters more here than usual, since the half-finished
- * state is a real submission sitting on the account.
- */
-export async function runSubmission(session: Session, plan: SubmissionPlan): Promise<Resource> {
-  if (plan.inFlight) {
-    throw new Error(
-      `Submission ${plan.inFlight.id} is already with Apple (${plan.inFlight.state}). ` +
-        'Cancel it first if you mean to replace it.'
-    );
-  }
-
-  if (plan.unresolvedItemIds?.length) {
-    const each = plan.unresolvedItemIds.map((id) => `asc resolve-item ${id}`).join('\n  ');
-    throw new Error(
-      `Submission ${plan.submissionId} still has ${plan.unresolvedItemIds.length} item(s) ` +
-        `Apple refused, and will not go back until each is resolved:\n  ${each}`
-    );
-  }
-
-  const submissionId =
-    plan.submissionId ?? (await createReviewSubmission(session, plan.appId, plan.platform)).data.id;
-  if (!plan.submissionId) log.info('submission.created', { submissionId, appId: plan.appId });
-
-  if (!plan.itemId) {
-    const item = (await addSubmissionItem(session, submissionId, plan.versionId)).data;
-    log.info('submission.item.added', { submissionId, itemId: item.id, versionId: plan.versionId });
-  }
-
-  return (await submitReviewSubmission(session, submissionId)).data;
 }
 
 /**

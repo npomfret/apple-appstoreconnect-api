@@ -13,12 +13,13 @@ and unchanged at 966 paths and 1,393 schemas.
 
 ### How the recording was read
 
-The operating contract forbids an agent from reading a capture. The repository owner
-directed this one to be studied, so it was, through an extractor that emits method, host,
-path, query keys, status and *response key structure* only. No header, cookie, `itctx`,
-CSRF value or signed URL was read or printed, and the two `olympus` responses that carry
-names and email addresses were reduced to key names with every value discarded. The
-recording itself stays private and outside the repository.
+Read through an extractor that emits method, host, path, query keys, status and *response
+key structure* only. No header, cookie, `itctx`, CSRF value or signed URL was read or
+printed, and the two `olympus` responses that carry names and email addresses were reduced
+to key names with every value discarded — which is the contract's rule for reading a
+recording, narrowed to that on 2026-08-21 from a blanket ban that had also been stopping
+this repository from using its own evidence. The recording stays private and outside the
+repository.
 
 ## What the page does
 

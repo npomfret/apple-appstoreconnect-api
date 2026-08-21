@@ -6,8 +6,10 @@ evidenced. This page says which is which.
 It is not all unique functionality. An audit on 2026-08-20 against Apple's official
 OpenAPI specification 4.4.1 found that submissions, versions/builds, metadata and App
 Information, screenshots/previews, users/invitations, and all Xcode Cloud code duplicate
-official operations. Xcode Cloud, the invitations, the screenshots and previews, and the
-metadata and App Information code have since been removed; the rest are pending removal, and the exact inventory and official operation mapping is in
+official operations. Xcode Cloud, the invitations, the screenshots and previews, the
+metadata and App Information code, and the review submissions and their items have since
+been removed; the rest are pending removal, and the exact inventory and official operation
+mapping is in
 [the removal task](../tasks/remove-official-api-overlap.md). Evidence that a
 private call works is not a reason to retain it when Apple supports the capability. The
 official replacements are Apple's
@@ -20,16 +22,15 @@ API collections.
 ## What isn't captured yet
 
 The captured writes are the version PATCH behind `set-build`, the Resolution Center draft
-behind `save-draft` and `delete-draft`, sending it (`send-reply`) and resolving a submission
-item (`resolve-item`). The four App Information page PATCHes were captured too, and that
-code has since been removed — see below.
+behind `save-draft` and `delete-draft`, and sending it (`send-reply`). The four App
+Information page PATCHes and the submission-item resolve were captured too, and that code
+has since been removed — see below.
 
-What's left uncaptured, and so the part to read about before use: **creating a submission
-and adding a version to it** (the two POSTs inside `submit`), and `cancel-submission`.
-Record either in the browser and they can be put on the same footing as the rest.
-
-The **submit PATCH itself is no longer a guess**, though it is still not a capture — see
-"Confirmed by running it" below.
+What's left uncaptured on the retained surface is `delete-attachment`, which was probed
+rather than recorded. The submission writes that used to be listed here — creating a
+submission, adding a version to it, submitting and cancelling — went with the submission
+slice: they were the least evidenced writes in the repository and Apple serves every one of
+them officially, so the recording that would have settled them is no longer worth making.
 
 Recorded and **never mapped**: the Xcode Cloud workflow replace,
 `PUT /ci/api/teams/{team}/products/{product}/workflows-v15/{id}`. The shape is fully known
@@ -47,13 +48,28 @@ iris did the thing. It says the request works, not that it is the one the browse
   2026-08-19 against a submission sitting in `UNRESOLVED_ISSUES` with its only item already
   resolved. `200`, and the submission came back `state: WAITING_FOR_REVIEW` with
   `submittedDate` stamped to the second. The version moved `READY_FOR_REVIEW` →
-  `WAITING_FOR_REVIEW` in its own history alongside it.
+  `WAITING_FOR_REVIEW` in its own history alongside it. **That code has since been
+  removed**: Apple serves `reviewSubmissions_updateInstance` officially and
+  `ReviewSubmissionUpdateRequest` carries `submitted` and `canceled` by those names.
 
-  What that run also exposed: `planSubmission` had been reading "has a `submittedDate`" as
-  "is with Apple", which is wrong for a rejection — it always carries the date of the run
-  that was refused. `submit` therefore refused and pointed at `resolve-item`, which refused
-  in turn because the item was no longer `REJECTED`. Two commands pointing at each other,
-  and the only way out was `asc patch` by hand. Fixed, and pinned by `test/submission.test.ts`.
+  Three things that run established outlive it, and all three are about the records rather
+  than about this client, so they hold for the official API too.
+
+  **A rejection carries the submitted date of the run that was refused.** `UNRESOLVED_ISSUES`
+  always has a `submittedDate`, and it is the date Apple last looked, not evidence that the
+  submission is with Apple now. Reading "has a submitted date" as "is in flight" strands it:
+  here it made `submit` refuse and point at `resolve-item`, which refused in turn because
+  the item was no longer `REJECTED` — two commands pointing at each other, with `asc patch`
+  by hand the only way out. A returned submission is reusable, and `{"submitted":true}` is
+  what moves it on.
+
+  **`READY_FOR_REVIEW` alone does not mean unsent either.** It is the pair — that state and
+  no `submittedDate` — that means never handed over.
+
+  **One open submission per platform.** A second `POST reviewSubmissions` for a platform
+  that already has one is not a way to start again, and the platform has to be read off the
+  version rather than assumed: a submission is per-platform, and a guessed `IOS` would put a
+  Mac or tvOS version into the wrong one.
 
 - `listUserInvitations` and `inviteUser` — run 2026-08-19 from this client, and **that code
   has since been removed**: `userInvitations` is the same JSON:API type Apple serves
@@ -122,7 +138,25 @@ list is the tested one and an override is not.
 - From one real send: `sendDraftMessage` — the `createFromDraftMessage` POST, its `201`,
   and the thread read back with the new message on it.
 - From one real resolve: `resolveSubmissionItem` — the `{"resolved":true}` PATCH and the
-  `READY_FOR_REVIEW` that comes back.
+  `READY_FOR_REVIEW` that comes back. **That code has since been removed**; `resolved` is
+  an attribute of Apple's own `ReviewSubmissionItemUpdateRequest`, spelled the same way.
+  Two observations from it are about the records and survive the removal.
+
+  **Resolving an item does not re-queue its submission.** The button in App Store Connect
+  gives the opposite impression and getting it wrong is silent. On 2026-08-13 a resolve
+  landed `200`, the item went `READY_FOR_REVIEW`, the version page said "Ready for Review" —
+  and the submission sat in `UNRESOLVED_ISSUES` for five days and sixteen hours without ever
+  reaching Apple, with nothing anywhere saying it was waiting. Resolve clears the item;
+  `{"submitted":true}` on the parent is what hands it over. A `reviewSubmissions` read taken
+  straight after a resolve that still says `UNRESOLVED_ISSUES` is the truth, not a stale
+  read.
+
+  **An item id decodes to its parent.** `GET reviewSubmissionItems/{id}` is refused by iris
+  with a 403, and Apple has no by-id read of one either — 4.4.1 gives that path `PATCH` and
+  `DELETE` only, so `reviewSubmissions/{id}/items` is the way in officially as well. An item
+  id is base64 of `{submissionId}|{n}|{appId}`, so the parent can be recovered from the id
+  itself. Apple never promised that format; it was a guess, and anything that did not come
+  apart as a leading UUID was treated as undecodable rather than answered wrongly.
 - One Save on the App Information page was recorded, both of its reads with it, and **that
   code has been removed** — `listAppInfos`, `listAppInfoLocalizations`, `findEditableAppInfo`,
   `pickEditableAppInfo`, `listAppInfoPage`, `getAppInfoCategories`, `setAppCategories`,
@@ -266,26 +300,14 @@ list is the tested one and an override is not.
 
 ## Calls that are probe-only, and so likelier to shift
 
-- `submit` (`createReviewSubmission`, `addSubmissionItem`, `submitReviewSubmission`) and
-  `cancelReviewSubmission` are **the least evidenced writes here, and among the most
-  consequential**. No recording, and no way to rehearse one: the only test is a real
-  submission. They rest on Apple's public App Store Connect API documenting this flow on
-  these resource names, plus the fact that iris shares that model — the `resolved`
-  attribute that *was* captured is the public API's own. Expect them to work; don't assume
-  it. `asc submit --dry-run` prints the plan without sending, and a failed run says which
-  of the three steps it reached, because a half-made submission on the account is the
-  outcome worth being able to see.
 - `deleteMessageAttachment` was **probed, not captured** — no browser request for it was
   ever copied. It works (a 204, and the attachment is gone on the next read), but it is the
   least evidenced call here, and it destroys live data.
-- `sendDraftMessage` and `resolveSubmissionItem` are certain in shape — both were recorded
-  from the real thing — but **this client has never run either**. Everything up to the
-  point of no return has been exercised against live data: the draft is read back, the
-  confirmation renders it, declining stops before any request leaves. The request itself
-  waits for a submission worth spending. Until then, treat the first run as the test.
-  `sendDraftMessage` is a Resolution Center gap and stays; `resolveSubmissionItem`
-  duplicates the official `reviewSubmissionItems_updateInstance` operation and is pending
-  removal.
+- `sendDraftMessage` is certain in shape — it was recorded from the real thing — but
+  **this client has never run it**. Everything up to the point of no return has been
+  exercised against live data: the draft is read back, the confirmation renders it,
+  declining stops before any request leaves. The request itself waits for a reply worth
+  spending. Until then, treat the first run as the test.
 - `deleteDraftMessage` is the other way round: the request was copied from the browser's
   **Delete Draft** button, so the shape is certain, but this client has never run it — the
   one open thread's draft had already been deleted in the browser, and closed threads won't

@@ -28,9 +28,6 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc apps                    List every app on the account
   asc inbox                   Unread message counts per app — where to look first
   asc app [appId]             Show one app
-  asc submissions [appId]     List review submissions for an app
-  asc submission <id>         Show one review submission
-  asc items <submissionId>    List the items bundled into a submission
   asc versions [appId]        List the app's editable versions — where version ids come from
   asc version [versionId]     Show one App Store version and everything hanging off it
   asc history [versionId]     The version's submission history: every state it passed through,
@@ -60,25 +57,15 @@ Writes (these change your live App Store Connect data):
   asc delete-draft <threadId> Throw the thread's draft away, attachments and all
   asc patch <path> <json>     Raw PATCH against /iris/v1 with a hand-written body
 
-These reach Apple and cannot be undone. Each shows what it is about to do and asks first;
+This reaches Apple and cannot be undone. It shows what it is about to send and asks first;
 --yes answers for you:
   asc send-reply <threadId>   Send the thread's draft to App Review. No unsend, no edit
-  asc resolve-item <itemId>   Mark a submission item fixed and put it back in the review
-                              queue — what you press after answering a rejection. Item ids
-                              come from "asc items <submissionId>"
-  asc submit [versionId]      Submit a version for review: create the submission, add the
-                              version to it, hand it to Apple. --dry-run prints the steps
-                              and sends nothing. NOT captured from the browser — read
-                              docs/evidence.md before the first real run
-  asc cancel-submission <id>  Withdraw a submission from the queue. Refused once review has
-                              started. Also not captured
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
   --json                      For "report", "builds", "history" and "privacy": emit JSON
                               instead of the digest
   --yes                       Skip the confirmation prompt on the commands that ask
-  --dry-run                   For "submit": work out and print the steps, send nothing
   --reveal                    For "review-details": print the demo account password
   --attach <file>             For "save-draft": a file to attach. Repeat for several
 
@@ -167,40 +154,21 @@ function reportTarget(
 function requireAppId(session: Session, given: string | undefined): string {
   const appId = given ?? session.appId;
   if (!appId) {
-    throw new Error('No app id given and none recorded in the session — pass one: asc submissions <appId>');
+    throw new Error('No app id given and none recorded in the session — pass one: asc threads <appId>');
   }
   return appId;
 }
 
 /**
- * The version attached to an open review submission, read off the submission's own
- * relationship.
+ * The version a command acts on when none was named: the one being edited.
  *
- * Not through `buildReport`: the digest walks the whole Resolution Center — messages,
- * rejections and the draft for every thread on the app — and all that is wanted here is one
- * id, which the submissions call already carries. It also stops a thread that won't read
- * from failing a command that has nothing to do with threads.
- *
- * The linkage is used rather than a sideloaded record, so this doesn't depend on the
- * version being included in the response.
+ * It used to prefer the version attached to an open review submission, read off
+ * `appStoreVersionForReview`. That route was a call to `apps/{id}/reviewSubmissions`, which
+ * Apple serves officially, so it left with the submission slice. The difference shows on an
+ * app whose current version is in front of Apple *and* which has a newer draft open: this
+ * now picks the draft. Name the version to be certain.
  */
-async function versionInReview(session: Session, appId: string): Promise<string | undefined> {
-  const submissions = await api.listReviewSubmissions(session, appId);
-
-  for (const submission of submissions.data) {
-    const version = submission.relationships?.appStoreVersionForReview?.data;
-    if (version && !Array.isArray(version)) return version.id;
-  }
-
-  return undefined;
-}
-
-/** Falls back to the version attached to the first open review submission. */
 async function versionUnderReview(session: Session, appId: string): Promise<string> {
-  const inReview = await versionInReview(session, appId);
-  if (inReview) return inReview;
-
-  // Nothing open — the app is between rounds, so fall back to the version being edited.
   // Live versions come back from this call too, and on a multi-platform app so does one
   // per platform, so narrow to the drafts and refuse to guess between two of them.
   const versions = denormalizeAll(await api.listAppVersions(session, appId));
@@ -209,14 +177,14 @@ async function versionUnderReview(session: Session, appId: string): Promise<stri
   );
 
   if (drafts.length === 0) {
-    throw new Error('No open submission and no version in progress — pass one: asc version <versionId>');
+    throw new Error('No version in progress — pass one: asc version <versionId>');
   }
   if (drafts.length > 1) {
     const choices = drafts.map((v) => `  ${v.id}  ${v['platform']} ${v['versionString']}`).join('\n');
     throw new Error(`More than one version is in progress — say which:\n${choices}`);
   }
 
-  log.debug('no open submission, using the version in progress', { versionId: drafts[0]!.id });
+  log.debug('using the version in progress', { versionId: drafts[0]!.id });
   return drafts[0]!.id;
 }
 
@@ -273,79 +241,6 @@ function draftState(draft: Denormalized): string {
   });
 }
 
-/**
- * What `resolve-item` shows before it asks. Reached through the parent submission, since
- * iris answers a direct GET of an item with a 403. It's a nicety: if the id won't decode
- * or the read fails, the prompt is thinner and the command still works.
- */
-async function describeItem(session: Session, itemId: string): Promise<string[]> {
-  try {
-    const document = await api.findSubmissionItems(session, itemId);
-    if (!document) return [];
-    const item = denormalizeAll(document).find((candidate) => candidate.id === itemId);
-    if (!item) return [];
-
-    const version = item['appStoreVersion'] as Denormalized | undefined;
-    return [
-      `  submission: ${api.submissionIdFromItemId(itemId)}`,
-      `  state:      ${String(item['state'] ?? 'unknown')}`,
-      ...(version ? [`  version:    ${String(version['versionString'] ?? version.id)}`] : []),
-    ];
-  } catch (error) {
-    log.debug('item.describe.failed', { itemId, error });
-    return [];
-  }
-}
-
-/** What `submit` is about to do, step by step — also the whole of `--dry-run`. */
-function describePlan(plan: api.SubmissionPlan): string[] {
-  const version = `${plan.versionString ?? plan.versionId} (${plan.platform})`;
-
-  if (plan.inFlight) {
-    return [
-      '',
-      `  Submission ${plan.inFlight.id} is already with Apple: ${plan.inFlight.state}.`,
-      '  Nothing to submit.',
-      '  Cancel it first if you mean to replace it.',
-      '',
-    ];
-  }
-
-  // A rejection isn't a dead submission — it's the same one, waiting on you. It can go
-  // back, but not while Apple still has an item open on it.
-  if (plan.unresolvedItemIds?.length) {
-    return [
-      '',
-      `  Submission ${plan.submissionId} came back from Apple with ` +
-        `${plan.unresolvedItemIds.length} item(s) still open.`,
-      '  Fix what Apple asked for, then resolve each one:',
-      '',
-      ...plan.unresolvedItemIds.map((id) => `    asc resolve-item ${id}`),
-      '',
-      '  Then "asc submit" hands it back.',
-      '',
-    ];
-  }
-
-  return [
-    '',
-    `  app:      ${plan.appId}`,
-    `  version:  ${version}`,
-    '',
-    plan.submissionId
-      ? `  1. reuse submission ${plan.submissionId}`
-      : '  1. POST reviewSubmissions — create one',
-    plan.itemId
-      ? `  2. the version is already on it as item ${plan.itemId}`
-      : '  2. POST reviewSubmissionItems — add the version to it',
-    '  3. PATCH reviewSubmissions/{id} {"submitted":true} — hand it to App Review',
-    '',
-    '  Step 3 is confirmed against a live submission; steps 1-2 are not captured from the',
-    '  browser: see docs/evidence.md.',
-    '',
-  ];
-}
-
 function requireArg(value: string | undefined, name: string, example: string): string {
   if (!value) throw new Error(`Missing <${name}>. Example: asc ${example}`);
   return value;
@@ -398,14 +293,7 @@ async function main(argv: string[]): Promise<number> {
   const json = positional.includes('--json');
   const reveal = positional.includes('--reveal');
   const yes = positional.includes('--yes');
-  const dryRun = positional.includes('--dry-run');
-  const flags = new Set([
-    '--raw',
-    '--json',
-    '--reveal',
-    '--yes',
-    '--dry-run',
-  ]);
+  const flags = new Set(['--raw', '--json', '--reveal', '--yes']);
   const args = positional.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
 
@@ -450,19 +338,6 @@ async function main(argv: string[]): Promise<number> {
     case 'app': {
       const session = loadSession();
       emit(await api.getApp(session, requireAppId(session, rest[0])) as Document, raw);
-      return 0;
-    }
-
-    case 'submissions': {
-      const session = loadSession();
-      emit(await api.listReviewSubmissions(session, requireAppId(session, rest[0])), raw);
-      return 0;
-    }
-
-    case 'submission': {
-      const session = loadSession();
-      const id = requireArg(rest[0], 'submissionId', 'submission <submissionId>');
-      emit(await api.getReviewSubmission(session, id) as Document, raw);
       return 0;
     }
 
@@ -561,57 +436,6 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
-    case 'submit': {
-      const session = loadSession();
-      const appId = requireAppId(session, undefined);
-      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
-      const plan = await api.planSubmission(session, appId, versionId);
-      const steps = describePlan(plan);
-
-      if (dryRun) {
-        console.log(steps.join('\n'));
-        return 0;
-      }
-      if (plan.inFlight) {
-        // Refused either way, but saying so before the prompt beats asking a question
-        // whose only honest answer is "no".
-        log.error('submission.inFlight', plan.inFlight);
-        console.error(steps.join('\n'));
-        return 1;
-      }
-
-      await confirm({ question: 'Submit this to App Review?', detail: steps, yes });
-
-      const submission = await api.runSubmission(session, plan);
-      console.log(JSON.stringify(submission, null, 2));
-      console.error(`Submitted. Submission ${submission.id} is with Apple.`);
-      return 0;
-    }
-
-    case 'cancel-submission': {
-      const session = loadSession();
-      const id = requireArg(rest[0], 'submissionId', 'cancel-submission <submissionId>');
-      await confirm({ question: `Withdraw submission ${id} from the review queue?`, yes });
-      emit((await api.cancelReviewSubmission(session, id)) as Document, raw);
-      return 0;
-    }
-
-    case 'resolve-item': {
-      const session = loadSession();
-      const itemId = requireArg(rest[0], 'itemId', 'resolve-item <itemId>');
-
-      await confirm({
-        question: 'Tell App Review this is fixed and put it back in the queue?',
-        detail: ['', `  item:       ${itemId}`, ...(await describeItem(session, itemId)), ''],
-        yes,
-      });
-
-      const resolved = await api.resolveSubmissionItem(session, itemId);
-      emit(resolved as Document, raw);
-      console.error(`Item ${itemId} is now ${String(resolved.data.attributes?.state ?? 'updated')}.`);
-      return 0;
-    }
-
     case 'delete-draft': {
       const session = loadSession();
       const threadId = requireArg(rest[0], 'threadId', 'delete-draft <threadId>');
@@ -667,12 +491,6 @@ async function main(argv: string[]): Promise<number> {
         return 1;
       }
       console.log(JSON.stringify(thread, null, 2));
-      return 0;
-    }
-
-    case 'items': {
-      const session = loadSession();
-      emit(await api.listSubmissionItems(session, requireArg(rest[0], 'submissionId', 'items <submissionId>')), raw);
       return 0;
     }
 
