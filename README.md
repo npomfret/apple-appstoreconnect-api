@@ -6,7 +6,7 @@ and replies, plus unread review-message counts, version state-change history and
 Privacy questionnaire.
 
 The repository currently also contains older private implementations of capabilities that
-Apple **does** officially expose, including review submissions, metadata and screenshots.
+Apple **does** officially expose, including review submissions and app metadata.
 Those are legacy overlap, not the intended product surface, and are
 scheduled for removal in
 [tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md). The boundary
@@ -77,7 +77,10 @@ instead. The removal task has the function-by-function mapping.
 Official replacements:
 
 - [Apps and app metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
-  — apps, versions, localizations, categories, age ratings, screenshots and previews.
+  — apps, versions, localizations, categories, age ratings, screenshots and previews. The
+  `screenshots`, `previews`, `screenshot-set`, `upload-screenshot` and `delete-screenshot`
+  commands have been **removed**; this is where they went, and it serves the same
+  `uploadOperations` the private upload flow ran on.
 - [Review submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
   — creating, reading, updating and submitting review submissions and their items.
 - [Users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
@@ -99,7 +102,7 @@ Official replacements:
 | `submissions`, `submission`, `items` | **legacy official overlap** — review submissions and their items |
 | `versions`, `version` | **legacy official overlap** — app versions |
 | `history` | private version state-change history, including initiator and time in state |
-| `metadata`, `screenshots`, `previews` | **legacy official overlap** — store listing text and assets |
+| `metadata` | **legacy official overlap** — store listing text |
 | `app-info`, `categories`, `age-rating`, `territory-ratings` | **legacy official overlap** — App Information |
 | `review-details` | **legacy official overlap** — App Review Information |
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
@@ -114,7 +117,6 @@ gap-only boundary. The other writes duplicate official operations and are pendin
 | | |
 | --- | --- |
 | `builds`, `set-build` | attach a build to a version — [docs/writing.md](docs/writing.md) |
-| `upload-screenshot`, `delete-screenshot` | the full reserve → upload → commit dance, with size checks — [docs/screenshots.md](docs/screenshots.md) |
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
 | `send-reply` | send it — [docs/replying.md](docs/replying.md) |
 | `set-metadata` | one field, one locale: description, keywords, name, subtitle… — [docs/writing.md](docs/writing.md) |
@@ -143,7 +145,6 @@ chain between commands, which is what makes scripting it possible.
 
 - [Reading](docs/reading.md) — every read command and the endpoint behind it
 - [Writing](docs/writing.md) — builds, versions, resolving an item, and what asks before it acts
-- [Screenshots](docs/screenshots.md) — the upload flow and the pre-flight checks
 - [Replying to App Review](docs/replying.md) — Resolution Center drafts, attachments, and sending
 - [Logging and the audit trail](docs/logging.md) — structured logs, and why every write is recorded
 - [As a library](docs/library.md) — importing it instead of shelling out
@@ -169,3 +170,50 @@ This is an undocumented, private API. It can change without warning, and automat
 on you with respect to Apple's terms. The calls here vary in how well evidenced they are —
 most are copied from the browser's own requests, a few were probed and never captured; see
 [docs/evidence.md](docs/evidence.md) before relying on one.
+
+
+## Apple's official API
+
+Everything this project does *not* do is Apple's to serve, and these are the pages worth
+having open. All of them need an API key — a JWT signed with a `.p8` from
+**Users and Access → Integrations → App Store Connect API** — rather than the browser cookie
+this client uses.
+
+- [App Store Connect API overview](https://developer.apple.com/app-store-connect/api/) —
+  what the official API covers, and the starting point for any "should this be here?" question.
+- [API reference](https://developer.apple.com/documentation/appstoreconnectapi/) — every
+  resource and operation, and the authority the boundary in this repository is checked against.
+- [OpenAPI specification](https://developer.apple.com/sample-code/app-store-connect/app-store-connect-openapi-specification.zip)
+  — the machine-readable version. Last audited here: **4.4.1**, generated 2026-07-15
+  (966 paths, 1,393 schemas).
+- [Creating API keys](https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api)
+  and [generating tokens](https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests)
+  — how to authenticate against it.
+
+By topic, for the capabilities this project has removed or is removing:
+
+- [App metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
+  — apps, versions, localizations, categories, age ratings, screenshots and previews.
+- [Uploading assets](https://developer.apple.com/documentation/appstoreconnectapi/uploading-assets-to-app-store-connect)
+  — the reserve → `uploadOperations` → `{"uploaded":true}` flow for screenshots, previews
+  and review attachments.
+- [Review submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
+  — creating, reading, updating and submitting submissions and their items.
+- [App Store versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions)
+  and [builds](https://developer.apple.com/documentation/appstoreconnectapi/builds) — version
+  records, build selection and processing state.
+- [Age ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings) —
+  the declaration and the per-territory ratings computed from it.
+- [Users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
+  [user invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
+  — team access, roles, app visibility, invitations and revocation.
+- [Xcode Cloud workflows and builds](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
+  — products, workflows, repositories, build runs, actions, issues and test results.
+- [TestFlight](https://developer.apple.com/documentation/appstoreconnectapi/testflight) —
+  beta groups, testers and beta app review, none of which this project touches.
+
+What is **not** in any of the above, and is why this project exists: Resolution Center
+threads, messages, guideline rejections, draft replies and their attachments; unread
+review-message counts; App Store version state-change *history*; and the App Privacy
+`dataUsages` questionnaire. Checked against 4.4.1 — see
+[docs/evidence.md](docs/evidence.md).

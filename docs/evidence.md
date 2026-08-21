@@ -6,8 +6,8 @@ evidenced. This page says which is which.
 It is not all unique functionality. An audit on 2026-08-20 against Apple's official
 OpenAPI specification 4.4.1 found that submissions, versions/builds, metadata and App
 Information, screenshots/previews, users/invitations, and all Xcode Cloud code duplicate
-official operations. Xcode Cloud and the invitations have since been removed; the rest are
-pending removal, and the exact inventory and official operation mapping is in
+official operations. Xcode Cloud, the invitations and the screenshots and previews have
+since been removed; the rest are pending removal, and the exact inventory and official operation mapping is in
 [the removal task](../tasks/remove-official-api-overlap.md). Evidence that a
 private call works is not a reason to retain it when Apple supports the capability. The
 official replacements are Apple's
@@ -21,8 +21,8 @@ API collections.
 
 The captured writes are the version PATCH behind `set-build`, all four App Information page
 PATCHes — `set-metadata`, `set-categories`, `set-age-rating`, `set-content-rights` — the
-screenshot flow, the Resolution Center draft behind `save-draft` and `delete-draft`,
-sending it (`send-reply`) and resolving a submission item (`resolve-item`).
+Resolution Center draft behind `save-draft` and `delete-draft`, sending it (`send-reply`)
+and resolving a submission item (`resolve-item`).
 
 What's left uncaptured, and so the part to read about before use: the **version half of
 `set-metadata`** — a description, keywords, promo text or what's new — **creating a
@@ -115,10 +115,9 @@ list is the tested one and an override is not.
   promoting one. What no recording here settles is a thread's own *attributes* — nothing in
   this client reads one, and `threadType` appears only as a filter value, so treat any
   attribute on a thread resource as unmapped.
-- `listAppInfos`, `getReviewDetails`, and the localizations-with-assets call behind
-  `screenshots`.
-- From one attach-a-build-and-save: `listBuilds`, `listBuildCandidates`, `listPreviewSets`
-  and the `set-build` PATCH body.
+- `listAppInfos` and `getReviewDetails`.
+- From one attach-a-build-and-save: `listBuilds`, `listBuildCandidates` and the `set-build`
+  PATCH body.
 - From the History, Trust & Safety and Growth tabs: `listVersionStateChanges` (the browser
   sends no query at all; the `limit` is ours, and tested), `listAppVersions`,
   `listDataUsages` and `getDataUsagePublishState`.
@@ -183,6 +182,54 @@ list is the tested one and an override is not.
   narrow to. Apple's [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
   API also covers what the recording never did: revoking an invitation, listing the people
   already on the account, and restricting an invitation to named apps.
+- The screenshot and preview reads were recorded and the upload flow was run end to end,
+  and **that code has been removed** — `src/screenshots.ts`, `listVersionLocalizationsWithAssets`,
+  `listScreenshotSets`, `listPreviewSets`, `createScreenshotSet`, `reserveScreenshot`,
+  `completeScreenshot`, `deleteScreenshot`, `deleteScreenshotSet`, `findScreenshotSet`,
+  `uploadScreenshot`, the `screenshots`, `previews`, `screenshot-set`, `upload-screenshot`
+  and `delete-screenshot` commands, the `--force` flag and `docs/screenshots.md` all went
+  with it. Re-checked on 2026-08-21 against Apple's published schemas:
+  `AppScreenshot.Attributes` carries `assetDeliveryState`, `assetToken`, `assetType`,
+  `fileName`, `fileSize`, `imageAsset`, `sourceFileChecksum` and **`uploadOperations`** —
+  the last being the one that makes the whole reserve → upload → commit flow official, not
+  just the reads — `AppScreenshotSet.Attributes` carries `screenshotDisplayType`,
+  `AppPreviewSet.Attributes` carries `previewType`, `AppPreview.Attributes` carries
+  `uploadOperations` too, and creating, modifying, listing and deleting screenshots and
+  screenshot sets are all documented operations. There was no field to narrow to. Apple's
+  [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
+  API is where this went.
+
+  **The display-type list was already Apple's.** `SCREENSHOT_DISPLAY_TYPES` held 33 values,
+  obtained by POSTing an invalid `screenshotDisplayType` and reading the 409 back. Checked
+  on 2026-08-21, Apple's published `ScreenshotDisplayType` enum is the same 33 values. The
+  private route to that list was a shortcut to something Apple publishes.
+
+  Three observations from the live run outlive the code, and the first two are about the
+  resource rather than about this client, so they hold for the official API too.
+
+  **The commit is what makes an asset real.** `assetDeliveryState` reads `UPLOAD_COMPLETE`
+  the moment the `{"uploaded":true}` PATCH lands and `COMPLETE` once Apple has processed the
+  file, at which point `sourceFileChecksum` — an MD5 — and a `downloadUrl` appear. Skip that
+  PATCH and the reservation stays an invisible empty slot that never reaches the version
+  page. Both attributes are on Apple's official `AppScreenshot`, so the same sequence is
+  observable there.
+
+  **iris would not serve a set by id.** `GET appScreenshotSets/{id}` answered `404` for a
+  set that demonstrably existed, and `appScreenshots?filter[appScreenshotSet]=` was refused
+  `403`, which is why the removed `findScreenshotSet` went via the localization instead.
+  Apple documents `GET /v1/appScreenshotSets/{id}` officially, so read that as an iris
+  quirk and not as a property of the resource.
+
+  **Accepted pixel dimensions are in no API response.** The removed `SCREENSHOT_SIZES` was
+  transcribed by hand from the drop-zone captions on the version page and covered three zone
+  families out of the 33 display types, deliberately: an absent entry skipped the check
+  rather than guessing, because a wrong entry would reject a good screenshot. Nothing was
+  lost from an API by deleting it — a pre-flight size check is a client convenience, and
+  Apple validates server-side either way.
+
+  What survives is the transport underneath: `uploadPart` in `src/http.ts` still sends
+  presigned parts to `object-storage.apple.com` with no cookie, because draft attachments
+  reserve and upload through the same three steps and they are a retained gap.
 - Two Xcode Cloud sessions were recorded and mapped, and **that code has been removed** —
   `src/ci.ts`, the nine `ci-*` commands, the `ci-run` build digest, `test/ci.test.ts` and
   `test/run.test.ts` all went with it, along with the transport's second base. Apple's

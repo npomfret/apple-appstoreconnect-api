@@ -9,10 +9,11 @@
 > for official capabilities. Use Apple's official
 > [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
 > and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
-> APIs for the overlapping reads. The Xcode Cloud and invitation reads that used to be on
-> this page have already been removed; Apple's
-> [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
-> and [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
+> APIs for the overlapping reads. The Xcode Cloud, invitation and screenshot/preview reads
+> that used to be on this page have already been removed; Apple's
+> [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
+> [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
+> and [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
 > APIs are where they went.
 
 ```sh
@@ -79,8 +80,6 @@ document):
 | `categories [appId]` | the same request, narrowed to the six category slots |
 | `age-rating [appId]` | the same request, narrowed to the age-rating questionnaire |
 | `territory-ratings [appId]` | `appInfos/{id}/territoryAgeRatings?include=territory&limit=500` |
-| `screenshots [versionId]` | `appStoreVersionLocalizations?filter[appStoreVersion]={id}&include=appScreenshotSets,appPreviewSets` |
-| `previews <localizationId>` | `appPreviewSets?filter[appStoreVersionLocalization]={id}&include=appPreviews` |
 | `review-details [versionId]` | `appStoreVersions/{id}` → `appStoreReviewDetails/{id}` |
 | `threads [appId]` | `apps/{appId}/resolutionCenterThreads` |
 | `thread <submissionId>` | `resolutionCenterThreads?filter[reviewSubmission]={id}` |
@@ -96,7 +95,11 @@ workflows, repositories, build runs, actions, issues and test results
 [officially](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
 and pending invitations at
 [`GET /v1/userInvitations`](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations).
-Both need an API key rather than this client's cookie.
+The `screenshots` and `previews` reads have gone the same way: `appScreenshotSets`,
+`appScreenshots`, `appPreviewSets` and `appPreviews` are all
+[App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
+resources, down to the `uploadOperations` the upload flow ran on. All of them need an API
+key rather than this client's cookie.
 
 `appId` defaults to the one scraped from the captured request's `Referer`; `versionId`
 defaults to the version attached to the first open submission — one extra request, the
@@ -120,12 +123,7 @@ The ids chain together, which is what makes scripting possible:
 ```sh
 node dist/cli.js report --json          # -> threadId, versionId
 node dist/cli.js metadata               # -> localizationId per locale
-node dist/cli.js screenshots            # -> every locale with its sets, in one request
 ```
-
-`screenshots` uses the same call the version page does, so one request covers all locales
-and both asset kinds. Giving it a version id explicitly skips the lookup that works out
-which version is under review.
 
 ## App Review Information
 

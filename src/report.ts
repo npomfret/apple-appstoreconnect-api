@@ -534,7 +534,7 @@ export function formatPrivacy(privacy: PrivacyDeclaration): string {
 
 export interface LocaleMetadata {
   locale: string;
-  /** Id of the appStoreVersionLocalization — feed it to `listScreenshotSets`. */
+  /** Id of the appStoreVersionLocalization the version half of this locale came from. */
   localizationId?: string;
   name?: string;
   subtitle?: string;

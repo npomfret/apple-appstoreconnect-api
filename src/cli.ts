@@ -50,10 +50,6 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc territory-ratings [appId]
                               The rating Apple worked out for each territory from that
                               questionnaire
-  asc screenshots [versionId] Every locale of a version with its screenshot and preview
-                              sets, in one request (defaults to the version under review)
-  asc previews <locId>        App preview videos in one locale's preview sets. The
-                              localization id comes from "asc screenshots"
   asc review-details [versionId]
                               App Review Information: reviewer contact, demo account and
                               notes. The demo password is hidden unless --reveal
@@ -68,12 +64,6 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
 Writes (these change your live App Store Connect data):
   asc set-build <versionId> <buildId|none>
                               Attach a build to a version — the version page's Save button
-  asc screenshot-set <locId> <displayType>
-                              Create an empty screenshot set for a device size
-  asc upload-screenshot <locId> <displayType> <file>
-                              Add a screenshot, creating the set if the size has none yet.
-                              Checks dimensions and the 10-per-set limit before uploading
-  asc delete-screenshot <id>  Remove a screenshot
   asc save-draft <threadId> <text|-> [--attach file ...]
                               Write the reply to Apple into the thread's draft box, with
                               attachments. "-" reads the text from stdin. This does NOT
@@ -125,7 +115,6 @@ Options:
                               instead of the digest
   --yes                       Skip the confirmation prompt on the commands that ask
   --dry-run                   For "submit": work out and print the steps, send nothing
-  --force                     For "upload-screenshot": upload despite failed checks
   --reveal                    For "review-details": print the demo account password
   --attach <file>             For "save-draft": a file to attach. Repeat for several
   --primary <category>        For "set-categories", with --primary-sub-1, --primary-sub-2,
@@ -136,7 +125,7 @@ Options:
 Logging goes to stderr as one JSON object per line, so stdout stays pipeable:
   ASC_LOG=debug|info|warn|error|off   default info
 Every change to live data is logged whatever the level, marked "audit":true. To keep just
-the audit trail:  asc upload-screenshot ... 2>&1 >/dev/null | jq -c 'select(.audit)'
+the audit trail:  asc send-reply ... 2>&1 >/dev/null | jq -c 'select(.audit)'
 
 The session is read from ${CURL_PATH} (override with ASC_CURL_PATH), fresh on every
 command. There is no login step: log in with your passkey, open dev tools, right-click any
@@ -572,14 +561,12 @@ async function main(argv: string[]): Promise<number> {
   const { update: categories, rest: positional } = takeCategoryOptions(afterSubmission);
   const raw = positional.includes('--raw');
   const json = positional.includes('--json');
-  const force = positional.includes('--force');
   const reveal = positional.includes('--reveal');
   const yes = positional.includes('--yes');
   const dryRun = positional.includes('--dry-run');
   const flags = new Set([
     '--raw',
     '--json',
-    '--force',
     '--reveal',
     '--yes',
     '--dry-run',
@@ -684,36 +671,6 @@ async function main(argv: string[]): Promise<number> {
       const buildId = requireArg(rest[1], 'buildId', 'set-build <versionId> <buildId>');
       const document = await api.setVersionBuild(session, versionId, buildId === 'none' ? null : buildId);
       emit(document as Document, raw);
-      return 0;
-    }
-
-    case 'screenshot-set': {
-      const session = loadSession();
-      const locId = requireArg(rest[0], 'localizationId', 'screenshot-set <localizationId> APP_IPHONE_65');
-      const displayType = requireArg(rest[1], 'displayType', 'screenshot-set <localizationId> APP_IPHONE_65');
-      const document = await api.createScreenshotSet(session, locId, displayType);
-      emit(document as Document, raw);
-      return 0;
-    }
-
-    case 'upload-screenshot': {
-      const session = loadSession();
-      const example = 'upload-screenshot <localizationId> APP_IPHONE_65 shot.png';
-      const screenshot = await api.uploadScreenshot(session, {
-        localizationId: requireArg(rest[0], 'localizationId', example),
-        displayType: requireArg(rest[1], 'displayType', example),
-        filePath: requireArg(rest[2], 'file', example),
-        force,
-      });
-      console.log(JSON.stringify(screenshot, null, 2));
-      return 0;
-    }
-
-    case 'delete-screenshot': {
-      const session = loadSession();
-      const id = requireArg(rest[0], 'screenshotId', 'delete-screenshot <screenshotId>');
-      await confirm({ question: `Delete screenshot ${id}?`, yes });
-      await api.deleteScreenshot(session, id);
       return 0;
     }
 
@@ -992,20 +949,6 @@ async function main(argv: string[]): Promise<number> {
       });
 
       emit(await api.setContentRights(session, appId, declaration), raw);
-      return 0;
-    }
-
-    case 'screenshots': {
-      const session = loadSession();
-      const versionId = await requireVersionId(session, rest[0]);
-      emit(await api.listVersionLocalizationsWithAssets(session, versionId), raw);
-      return 0;
-    }
-
-    case 'previews': {
-      const session = loadSession();
-      const id = requireArg(rest[0], 'localizationId', 'previews <localizationId>');
-      emit(await api.listPreviewSets(session, id), raw);
       return 0;
     }
 

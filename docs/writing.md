@@ -1,7 +1,7 @@
 # Writing: builds and versions
 
 > **Legacy official overlap:** Apple officially supports build selection, app metadata,
-> App Information, screenshots, review submissions and submission-item updates. These
+> App Information, review submissions and submission-item updates. These
 > private implementations are scheduled for removal; see
 > [the audited removal task](../tasks/remove-official-api-overlap.md). The retained private
 > write surface is Resolution Center drafts, attachments and replies, documented in
@@ -11,10 +11,9 @@
 > and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
 > APIs for the overlapping writes.
 
-Mapped: attaching a build to a version (the version page's **Save** button), [adding a
-screenshot](screenshots.md), [writing and sending the reply to App Review](replying.md),
-editing metadata, putting a resolved item back in the review queue, and submitting a
-version.
+Mapped: attaching a build to a version (the version page's **Save** button), [writing and
+sending the reply to App Review](replying.md), editing metadata, putting a resolved item
+back in the review queue, and submitting a version.
 
 ```sh
 node dist/cli.js builds [versionId]                 # the picker — "*" marks the current one
@@ -186,7 +185,7 @@ public API's other one and unproven here.
 ## Putting a rejected item back in review
 
 A rejected submission sits in `UNRESOLVED_ISSUES` with one item per thing under review.
-Once you've fixed the problem — new build, new screenshots, [a reply](replying.md) — you
+Once you've fixed the problem — a new build, [a reply](replying.md) — you
 tell App Review each refused item is resolved:
 
 ```sh
@@ -259,11 +258,10 @@ the state to avoid is a half-made submission left on the account. See
 
 Three commands reach Apple in a way this client cannot walk back — `send-reply`,
 `resolve-item` and `submit` — and they print what they are about to do and ask. So do the
-three deletes
-(`delete-draft`, `delete-attachment`, `delete-screenshot`), which destroy data rather than
-publish it, `set-metadata`, which overwrites text Apple keeps no copy of, and
-`cancel-submission`. Everything else writes without asking — `set-build` and the screenshot
-upload are undone by doing them again.
+two deletes
+(`delete-draft`, `delete-attachment`), which destroy data rather than publish it,
+`set-metadata`, which overwrites text Apple keeps no copy of, and `cancel-submission`.
+Everything else writes without asking — `set-build` is undone by doing it again.
 
 What is about to happen is printed either way, `--yes` included. That flag says the answer
 is already decided, not that there is nothing worth recording — `set-metadata` prints the

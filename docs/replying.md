@@ -72,9 +72,11 @@ disabled until there's text.
 
 `save-draft` reads the thread first and POSTs or PATCHes accordingly, since the draft is
 created on the first keystroke and updated forever after. Attachments are the same
-reserve → PUT the parts → `{"uploaded":true}` dance as [screenshots](screenshots.md),
+reserve → PUT the parts → `{"uploaded":true}` dance the removed screenshot upload used,
 against `resolutionCenterMessageAttachments` instead of `appScreenshots` — the guess in
-the old notes turned out right. Neither the POST nor the PATCH response mentions
+the old notes turned out right. `uploadPart` in `src/http.ts` sends those parts to
+`object-storage.apple.com` carrying no cookie, since the presigned query string is the
+whole of the authentication and the session must not follow the bytes to another host. Neither the POST nor the PATCH response mentions
 attachments, so the draft is re-read at the end; that GET is what the command prints.
 
 `delete-draft` takes a thread id rather than a draft id, because the draft id is never shown

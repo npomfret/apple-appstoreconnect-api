@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from 'fs';
 import { Session } from './session';
 import { del, get, patch, post, uploadPart, Query, UploadOperation } from './http';
 import { Document, Resource, ResourceIdentifier } from './jsonapi';
-import { checkScreenshot, readImageSize } from './screenshots';
 import { audited, log, REVIEW_DETAIL_SECRETS } from './log';
 
 /**
@@ -81,9 +80,6 @@ const INCLUDES = {
   ],
   appVersions: ['alternativeDistributionPackage'],
   dataUsages: ['category', 'purpose', 'grouping', 'dataProtection'],
-  versionAssets: ['appScreenshotSets', 'appPreviewSets'],
-  screenshotSets: ['appScreenshots'],
-  previewSets: ['appPreviews'],
   territoryAgeRatings: ['territory'],
   version: [
     'app',
@@ -139,7 +135,6 @@ const SIDELOADS = {
   apps: { displayableVersions: 20 },
   threads: { appStoreVersions: 2000 },
   version: { appStoreVersionLocalizations: 50 },
-  versionAssets: { appScreenshotSets: 50, appPreviewSets: 50 },
 } as const;
 
 /**
@@ -555,23 +550,6 @@ export function redactReviewDetails(document: Document<Resource>): Document<Reso
     if (attributes[field]) attributes[field] = '[redacted — pass --reveal to show]';
   }
   return document;
-}
-
-/**
- * Every locale of a version with its screenshot and preview sets already attached — the
- * form the version page itself uses. One request, where going via the localization list
- * and then asking for each locale's sets costs one per locale.
- */
-export function listVersionLocalizationsWithAssets(
-  session: Session,
-  versionId: string,
-  options: { include?: readonly string[]; sideloads?: SideloadLimits<typeof SIDELOADS.versionAssets> } = {}
-): Promise<Document<Resource[]>> {
-  return get(session, 'appStoreVersionLocalizations', {
-    'filter[appStoreVersion]': versionId,
-    include: includeList(INCLUDES.versionAssets, options.include),
-    ...sideloadLimits(SIDELOADS.versionAssets, options.sideloads),
-  });
 }
 
 /**
@@ -1030,8 +1008,7 @@ export function setContentRights(
 
 /**
  * Per-locale version metadata: description, keywords, promo text, what's new.
- * Not in the captured requests — found by probing, and it's the bridge from a version to
- * its screenshot sets.
+ * Not in the captured requests — found by probing.
  */
 export function listVersionLocalizations(session: Session, versionId: string): Promise<Document<Resource[]>> {
   return get(session, `appStoreVersions/${versionId}/appStoreVersionLocalizations`);
@@ -1164,212 +1141,12 @@ export function setMetadataField(
   );
 }
 
-/** Screenshots for one localization of a version — the metadata behind 4.1/2.3 rejections. */
-export function listScreenshotSets(
-  session: Session,
-  localizationId: string,
-  options: { include?: readonly string[] } = {}
-): Promise<Document<Resource[]>> {
-  return get(session, 'appScreenshotSets', {
-    include: includeList(INCLUDES.screenshotSets, options.include),
-    'filter[appStoreVersionLocalization]': localizationId,
-  });
-}
-
 /**
- * App preview videos for one localization — the moving counterpart to the screenshot
- * sets, and subject to the same 4.1/2.3 objections. Worth asking for separately:
- * `listVersionLocalizationsWithAssets` names a locale's preview sets but not what is
- * inside them.
- */
-export function listPreviewSets(
-  session: Session,
-  localizationId: string,
-  options: { include?: readonly string[] } = {}
-): Promise<Document<Resource[]>> {
-  return get(session, 'appPreviewSets', {
-    include: includeList(INCLUDES.previewSets, options.include),
-    'filter[appStoreVersionLocalization]': localizationId,
-  });
-}
-
-/**
- * Most iris writes send application/vnd.api+json — the asset endpoints and the Resolution
- * Center drafts both do. The version PATCH behind `updateVersion` is the odd one out and
+ * Most iris writes send application/vnd.api+json — the Resolution Center drafts and their
+ * attachments all do. The version PATCH behind `updateVersion` is the odd one out and
  * sends plain application/json. Both were copied from the browser rather than reasoned about.
  */
 const VND_API_CONTENT_TYPE = 'application/vnd.api+json';
-
-/**
- * Creates an empty screenshot set for one device size on one locale. Only needed when
- * the locale has no set for that size yet — otherwise upload straight into the existing
- * set id from `listScreenshotSets`.
- */
-export function createScreenshotSet(
-  session: Session,
-  localizationId: string,
-  displayType: string
-): Promise<Document<Resource>> {
-  return post(
-    session,
-    'appScreenshotSets',
-    {
-      data: {
-        type: 'appScreenshotSets',
-        attributes: { screenshotDisplayType: displayType },
-        relationships: {
-          appStoreVersionLocalization: {
-            data: { type: 'appStoreVersionLocalizations', id: localizationId },
-          },
-        },
-      },
-    },
-    VND_API_CONTENT_TYPE
-  );
-}
-
-/**
- * Step one of an upload: reserve a slot for a file of this name and size. No bytes yet —
- * the response carries the `uploadOperations` saying where to put them.
- */
-export function reserveScreenshot(
-  session: Session,
-  setId: string,
-  fileName: string,
-  fileSize: number
-): Promise<Document<Resource>> {
-  return post(
-    session,
-    'appScreenshots',
-    {
-      data: {
-        type: 'appScreenshots',
-        attributes: { fileSize, fileName },
-        relationships: { appScreenshotSet: { data: { type: 'appScreenshotSets', id: setId } } },
-      },
-    },
-    VND_API_CONTENT_TYPE
-  );
-}
-
-/**
- * Step three: tell iris the bytes are all there. Until this lands the screenshot exists
- * as an empty reservation and doesn't show up on the version page.
- */
-export function completeScreenshot(session: Session, screenshotId: string): Promise<Document<Resource>> {
-  return patch(
-    session,
-    `appScreenshots/${screenshotId}`,
-    { data: { type: 'appScreenshots', id: screenshotId, attributes: { uploaded: true } } },
-    VND_API_CONTENT_TYPE
-  );
-}
-
-/** Removes a screenshot. Not in any capture — the shape was probed and works. */
-export function deleteScreenshot(session: Session, screenshotId: string): Promise<void> {
-  return audited('screenshot.delete', { screenshotId }, () =>
-    del<void>(session, `appScreenshots/${screenshotId}`)
-  );
-}
-
-/** Removes a whole set, screenshots and all. Probed, like `deleteScreenshot`. */
-export function deleteScreenshotSet(session: Session, setId: string): Promise<void> {
-  return audited('screenshotSet.delete', { setId }, () =>
-    del<void>(session, `appScreenshotSets/${setId}`)
-  );
-}
-
-/**
- * The set for one device size on one locale, if it exists.
- *
- * Goes via the localization rather than the set id because iris has no GET for a single
- * appScreenshotSet — `appScreenshotSets/{id}` 404s even for a set that demonstrably
- * exists, and filtering appScreenshots by set is refused outright with a 403. The
- * collection filtered by localization is the only way in.
- */
-export async function findScreenshotSet(
-  session: Session,
-  localizationId: string,
-  displayType: string
-): Promise<Resource | undefined> {
-  const document = await listScreenshotSets(session, localizationId);
-  return document.data.find((set) => set.attributes?.screenshotDisplayType === displayType);
-}
-
-export interface UploadScreenshotOptions {
-  localizationId: string;
-  displayType: string;
-  filePath: string;
-  /** Upload even if the pre-flight checks object. */
-  force?: boolean;
-}
-
-/**
- * The whole add-a-screenshot flow: check, reserve, send the parts, commit.
- *
- * The set is created if the locale doesn't have one for that device size yet. Apple
- * splits large files across several presigned URLs, so the operations are replayed in
- * order rather than assumed to be a single PUT.
- */
-export async function uploadScreenshot(
-  session: Session,
-  options: UploadScreenshotOptions
-): Promise<Resource> {
-  const { localizationId, displayType, filePath, force } = options;
-  const fileName = basename(filePath);
-
-  const file = readFileSync(filePath);
-  const size = readImageSize(file);
-  const existingSet = await findScreenshotSet(session, localizationId, displayType);
-
-  // Counted from the set we just read; a set that doesn't exist yet is empty by definition.
-  const existing = existingSet
-    ? ((existingSet.relationships?.appScreenshots?.data as unknown[] | undefined) ?? []).length
-    : 0;
-
-  const problems = checkScreenshot({ displayType, size, existing });
-  for (const problem of problems) {
-    log.warn('screenshot.check', { fileName, displayType, problem, forced: Boolean(force) });
-  }
-  if (problems.length && !force) {
-    throw new Error(
-      `Not uploading ${fileName}: ${problems.join('; ')}. Pass --force to upload anyway.`
-    );
-  }
-
-  return audited(
-    'screenshot.upload',
-    {
-      localizationId,
-      displayType,
-      fileName,
-      fileSize: file.length,
-      dimensions: size && `${size.width} × ${size.height}`,
-      existingInSet: existing,
-      forced: problems.length ? true : undefined,
-    },
-    async () => {
-      const setId =
-        existingSet?.id ?? (await createScreenshotSet(session, localizationId, displayType)).data.id;
-
-      const reserved = await reserveScreenshot(session, setId, fileName, file.length);
-      const screenshot = reserved.data;
-      const operations = (screenshot.attributes?.uploadOperations ?? []) as UploadOperation[];
-      if (!operations.length) {
-        throw new Error(
-          `Reservation ${screenshot.id} came back with no uploadOperations — nowhere to send the file`
-        );
-      }
-
-      log.info('screenshot.reserved', { screenshotId: screenshot.id, setId, parts: operations.length });
-
-      for (const operation of operations) await uploadPart(operation, file);
-
-      const done = await completeScreenshot(session, screenshot.id);
-      return done.data;
-    }
-  );
-}
 
 /**
  * Resolution Center replies live as a *draft* until you send them: Apple keeps one unsent
@@ -1442,8 +1219,8 @@ export function deleteDraftMessage(session: Session, draftId: string): Promise<v
 
 /**
  * Step one of attaching a file: reserve a slot on the draft for a file of this name and
- * size. The response carries the `uploadOperations` saying where the bytes go — the same
- * reserve/upload/commit dance as screenshots, against a different resource.
+ * size. The response carries the `uploadOperations` saying where the bytes go: reserve,
+ * PUT each part to its presigned URL, then commit with `{"uploaded":true}`.
  */
 export function reserveMessageAttachment(
   session: Session,
@@ -1489,8 +1266,8 @@ export function completeMessageAttachment(
 }
 
 /**
- * Removes an attachment from a draft. Not in any capture — the shape was probed, like
- * `deleteScreenshot`, and works on an attachment that has been uploaded.
+ * Removes an attachment from a draft. Not in any capture — the shape was probed, and
+ * works on an attachment that has been uploaded.
  */
 export function deleteMessageAttachment(session: Session, attachmentId: string): Promise<void> {
   return audited('draft.attachment.delete', { attachmentId }, () =>

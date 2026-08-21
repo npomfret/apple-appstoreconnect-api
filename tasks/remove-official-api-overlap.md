@@ -139,19 +139,29 @@ Commands affected: `metadata`, `set-metadata`, `app-info`, `categories`,
 `set-categories`, `age-rating`, `set-age-rating`, `territory-ratings`, and
 `set-content-rights`.
 
-### Screenshots and previews
+### Screenshots and previews — *removed 2026-08-21*
 
-Remove the entire screenshot implementation, including `src/screenshots.ts`, its exports,
-upload validation/constants, the asset upload orchestration in `src/api.ts`, and related
-tests and audit examples that no longer describe retained behavior.
+`src/screenshots.ts`, its `src/index.ts` export, `listVersionLocalizationsWithAssets`,
+`listScreenshotSets`, `listPreviewSets`, `createScreenshotSet`, `reserveScreenshot`,
+`completeScreenshot`, `deleteScreenshot`, `deleteScreenshotSet`, `findScreenshotSet`,
+`uploadScreenshot` and `UploadScreenshotOptions` are gone, with the `versionAssets`,
+`screenshotSets` and `previewSets` entries in `INCLUDES` and `SIDELOADS`, the
+`screenshots`, `previews`, `screenshot-set`, `upload-screenshot` and `delete-screenshot`
+commands, the `--force` flag that existed for the upload alone, and `docs/screenshots.md`.
 
 Official operations cover screenshot/preview set creation and deletion, asset reservation,
 upload commit/update, reads, and deletion: `appScreenshotSets_*`, `appScreenshots_*`,
-`appPreviewSets_*`, and `appPreviews_*`.
+`appPreviewSets_*`, and `appPreviews_*`. Re-checked on 2026-08-21 against Apple's published
+schemas: `AppScreenshot.Attributes` carries `assetDeliveryState`, `assetToken`, `assetType`,
+`fileName`, `fileSize`, `imageAsset`, `sourceFileChecksum` and `uploadOperations` — the last
+being what makes the reserve/upload/commit flow official and not merely the reads —
+`AppScreenshotSet.Attributes` carries `screenshotDisplayType`, `AppPreviewSet.Attributes`
+carries `previewType`, `AppPreview.Attributes` carries `uploadOperations` too, and Apple's
+`ScreenshotDisplayType` enum is the same 33 values this client had obtained from a 409. No
+field was left to narrow to.
 
-Commands affected: `screenshots`, `previews`, `screenshot-set`, `upload-screenshot`, and
-`delete-screenshot`. Remove `docs/screenshots.md` after the commands are removed and link
-users to Apple's app-metadata API documentation.
+`uploadPart` and `UploadOperation` in `src/http.ts` **stay**: draft attachments run the same
+three steps against `resolutionCenterMessageAttachments`, and that is a retained gap.
 
 ### Users and invitations — *removed 2026-08-21*
 

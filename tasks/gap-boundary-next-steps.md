@@ -234,9 +234,62 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
       `npm run build` are clean; `rg` finds no `invit`, `--role`, `allApps` or
       `provisioning` in `src/`; `test/gap-requests.test.ts` and `test/gap-shapes.test.ts`
       were not edited.
-   3. **Screenshots and previews** — self-contained module, but it owns the asset-upload
-      orchestration and `uploadPart`, so check what else reserves assets first: draft
-      attachments do, and they are a keep.
+   3. **Screenshots and previews** — *Done, 2026-08-21.* `src/screenshots.ts` (190 lines)
+      and `docs/screenshots.md` are deleted; `src/index.ts` loses the export; `src/api.ts`
+      loses `listVersionLocalizationsWithAssets`, `listScreenshotSets`, `listPreviewSets`,
+      `createScreenshotSet`, `reserveScreenshot`, `completeScreenshot`, `deleteScreenshot`,
+      `deleteScreenshotSet`, `findScreenshotSet`, `uploadScreenshot` and
+      `UploadScreenshotOptions` (206 lines) with the `versionAssets`, `screenshotSets` and
+      `previewSets` entries in `INCLUDES` and `SIDELOADS`; `src/cli.ts` loses `screenshots`,
+      `previews`, `screenshot-set`, `upload-screenshot` and `delete-screenshot` with the
+      `--force` flag, which existed for the upload alone.
+
+      **The entanglement this slice was ordered late for did not bite.** `uploadPart` and
+      `UploadOperation` live in `src/http.ts`, not in the screenshot code, and `attachToDraft`
+      reserves, sends parts and commits through them against
+      `resolutionCenterMessageAttachments`. So the asset-upload transport — the presigned
+      `object-storage.apple.com` legs that deliberately carry no cookie — is retained by a
+      gap that owns it in its own right, and only the orchestration on top of it left.
+      `VND_API_CONTENT_TYPE` sat inside the deleted region and was kept, since the draft
+      writes send it too.
+
+      The audit was restated first. Checked 2026-08-21 against Apple's published schemas:
+      `AppScreenshot.Attributes` carries `assetDeliveryState`, `assetToken`, `assetType`,
+      `fileName`, `fileSize`, `imageAsset`, `sourceFileChecksum` and **`uploadOperations`**,
+      `AppScreenshotSet.Attributes` carries `screenshotDisplayType`,
+      `AppPreviewSet.Attributes` carries `previewType`, `AppPreview.Attributes` carries
+      `uploadOperations` as well, and create/modify/list/delete for screenshots and their
+      sets are all documented operations. `uploadOperations` is the decisive one: it means
+      Apple serves the reservation *with its upload instructions*, so the whole three-step
+      write is official, not just the reads. **No field to narrow to.**
+
+      Two things worth noting for the record. `SCREENSHOT_DISPLAY_TYPES` was obtained by
+      POSTing an invalid display type and reading the enum out of the 409 — a nice piece of
+      work, and Apple's published `ScreenshotDisplayType` turns out to be exactly the same
+      33 values, so it was a private route to something published. And `SCREENSHOT_SIZES`,
+      the one thing here with no API behind it at all, was a hand transcription of the
+      version page's drop-zone captions covering three zone families out of 33; a pre-flight
+      size check is a client convenience, not a capability Apple's API lacks, so it is not a
+      gap under this file's rule.
+
+      Evidence rescued into `docs/evidence.md` before `docs/screenshots.md` was deleted: the
+      `assetDeliveryState` progression (`UPLOAD_COMPLETE` at commit, `COMPLETE` after
+      processing, when `sourceFileChecksum` and a `downloadUrl` appear) and the fact that
+      skipping the commit leaves an invisible reservation — both about the resource, so both
+      hold for the official API; the iris-only refusals `GET appScreenshotSets/{id}` → 404
+      and `appScreenshots?filter[appScreenshotSet]=` → 403, labelled as an iris quirk since
+      Apple documents the by-id read; and where `SCREENSHOT_SIZES` came from.
+
+      `docs/logging.md` and the `audit()` comment in `src/log.ts` both used
+      `upload-screenshot` as their worked example and now use the draft-attachment flow,
+      which exercises the same `asset.part` records. The confirmation set in `docs/writing.md`
+      loses `delete-screenshot`, leaving two deletes.
+
+      **No test changed, because there were none.** The most involved write in the tree —
+      pre-flight checks, set creation, multi-part upload, commit — had no coverage at all;
+      `npm test` is 119 pass, 0 fail before and after. `npm run typecheck` and `npm run build`
+      are clean, `rg` finds no screenshot or preview reference left in `src/`, and
+      `test/gap-requests.test.ts` and `test/gap-shapes.test.ts` were not edited.
    4. **Metadata, app information, categories, age ratings, content rights.**
    5. **Submission management** — unblocked by step 3: `report` no longer reads a
       submission, and `listReviewSubmissions` has no caller left in `src/report.ts`.

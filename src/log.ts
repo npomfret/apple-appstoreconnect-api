@@ -103,7 +103,7 @@ export type Phase = 'start' | 'ok' | 'error';
  * Records one step of a change to live data. Always emitted, and marked `audit` so the
  * trail can be sieved out of everything else:
  *
- *     asc upload-screenshot ... 2>&1 >/dev/null | jq -c 'select(.audit)'
+ *     asc send-reply ... 2>&1 >/dev/null | jq -c 'select(.audit)'
  */
 export function audit(action: string, phase: Phase, fields: Fields = {}): void {
   write(phase === 'error' ? 'error' : 'info', action, { audit: true, phase, ...fields }, true);

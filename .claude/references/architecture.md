@@ -20,7 +20,6 @@ operation; `docs/evidence.md` is the source of truth.
 | CLI and confirmations | `cli.ts`, `confirm.ts` | stdout is data; destructive/irreversible actions preview and refuse without TTY or `--yes`. |
 | Structured redacted logging | `log.ts` | Audit records cannot be disabled; sensitive values are scrubbed. |
 | Digests and rendering | `report.ts` | Convert denormalized resources into stable useful summaries. |
-| Screenshot local checks | `screenshots.ts` | Incomplete display-size knowledge must not reject a valid asset by guessing. |
 
 ## Safety invariants
 

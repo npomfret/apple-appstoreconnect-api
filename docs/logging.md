@@ -12,7 +12,7 @@ is a field, so you can filter on `.event` without matching on prose that might g
 reworded later:
 
 ```ts
-log.warn('screenshot.check', { fileName, displayType, problem, forced });
+log.info('draft.attachment.reserved', { attachmentId, parts: operations.length });
 ```
 
 **Every change to live data is audited**, and audit records are emitted whatever the level
@@ -20,18 +20,18 @@ is set to — an audit trail you can turn down isn't one. They carry `"audit":tr
 `phase` of `start`, `ok` or `error`:
 
 ```sh
-node dist/cli.js upload-screenshot ... 2>&1 >/dev/null | jq -c 'select(.audit)'
+node dist/cli.js save-draft <threadId> "..." --attach shot.png 2>&1 >/dev/null | jq -c 'select(.audit)'
 ```
 
 ```json
-{"event":"screenshot.upload","audit":true,"phase":"start","displayType":"APP_IPHONE_65","fileName":"shot.png","dimensions":"1242 × 2688"}
-{"event":"http.write","audit":true,"phase":"start","method":"POST","url":".../appScreenshots","body":{...}}
+{"event":"draft.attach","audit":true,"phase":"start","draftId":"...","fileName":"shot.png","fileSize":52384}
+{"event":"http.write","audit":true,"phase":"start","method":"POST","url":".../resolutionCenterMessageAttachments","body":{...}}
 {"event":"asset.part","audit":true,"phase":"ok","host":"object-storage.apple.com/...","offset":0,"length":52384,"status":200}
-{"event":"screenshot.upload","audit":true,"phase":"ok","ms":1832}
+{"event":"draft.attach","audit":true,"phase":"ok","ms":1832}
 ```
 
-Records nest: the semantic action (`screenshot.upload`, `version.build.set`,
-`screenshot.delete`) brackets the transport-level `http.write` entries. The transport one
+Records nest: the semantic action (`draft.attach`, `message.send`,
+`draft.attachment.delete`) brackets the transport-level `http.write` entries. The transport one
 is what makes coverage complete — every mutation in the client funnels through the single
 `request` in `src/http.ts`, so nothing can write without being recorded. The semantic ones
 add the intent. What counts as a mutation is worked out once there, from the method with its
