@@ -5,10 +5,9 @@ the official App Store Connect API: Resolution Center threads, messages, rejecti
 and replies, plus unread review-message counts, version state-change history and the App
 Privacy questionnaire.
 
-The repository currently also contains older private implementations of capabilities that
-Apple **does** officially expose, including apps, versions and builds.
-Those are legacy overlap, not the intended product surface, and are
-scheduled for removal in
+The private implementations of capabilities Apple **does** officially expose have all been
+removed — the last of them, apps, versions, builds and review details, on 2026-08-21. What
+remains of that work is in
 [tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md). The boundary
 was last audited on 2026-08-20 against Apple's OpenAPI specification 4.4.1.
 
@@ -89,6 +88,14 @@ Official replacements:
   `submissions`, `submission`, `items`, `resolve-item`, `submit` and `cancel-submission`
   commands have been **removed**; this is where they went, down to the `resolved`,
   `submitted` and `canceled` attributes spelled exactly as the private calls spelled them.
+- [Apps](https://developer.apple.com/documentation/appstoreconnectapi/apps),
+  [App Store versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions)
+  and [builds](https://developer.apple.com/documentation/appstoreconnectapi/builds)
+  — app records, version records, build selection and processing state. The `apps`, `app`,
+  `versions`, `version`, `builds`, `set-build` and `review-details` commands have been
+  **removed**; this is where they went. `AppStoreVersionUpdateRequest` carries the same
+  `build` relationship `set-build` sent, and the build picker's `filter[isAppStoreCandidate]`
+  is spelled `filter[buildAudienceType]=APP_STORE_ELIGIBLE` officially.
 - [Users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
   [user invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
   — team access, roles, app visibility, invitations and revocation. The `invites` and
@@ -103,23 +110,16 @@ Official replacements:
 | | |
 | --- | --- |
 | `report` | private threads/messages/rejections/draft throughout. All three starting points — an app id, `--thread`, `--submission` — read only the Resolution Center; the submission's own state and dates are Apple's to serve and are left out |
-| `apps`, `app` | **legacy official overlap** — app records |
 | `inbox` | private unread App Review/Resolution Center message counts — an `apps` request narrowed to the two `messageCount` fieldsets and nothing else |
-| `versions`, `version` | **legacy official overlap** — app versions |
-| `history` | private version state-change history, including initiator and time in state |
-| `review-details` | **legacy official overlap** — App Review Information |
+| `history <versionId>` | private version state-change history, including initiator and time in state |
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
 | `privacy` | App Privacy declarations, and whether they're live |
 | `get` | any endpoint at all, mapped or not |
 
-**Writing** — most of these are copied from a capture of the browser doing it:
-
-Only the Resolution Center draft/attachment/reply commands below are within the intended
-gap-only boundary. The other writes duplicate official operations and are pending removal.
+**Writing** — all of these are copied from a capture of the browser doing it, except `patch`:
 
 | | |
 | --- | --- |
-| `builds`, `set-build` | attach a build to a version — [docs/writing.md](docs/writing.md) |
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
 | `send-reply` | send it — [docs/replying.md](docs/replying.md) |
 | `patch` | any PATCH, for anything not mapped |
@@ -128,17 +128,19 @@ gap-only boundary. The other writes duplicate official operations and are pendin
 shows you the whole draft and reads it again after you answer, in case the browser autosaved
 over it in the meantime. The two deletes ask too. `--yes` answers for you, and still prints
 what it answered for; a command whose own input is a pipe is asked on the terminal rather
-than refused, and with no terminal at all they stop rather than assume. Nothing else asks: a
-bad `set-build` is one more `set-build` away from being right.
+than refused, and with no terminal at all they stop rather than assume. `patch` does not
+ask, which is a known gap rather than a judgement that it is safe.
 
 The lower-level commands print denormalized JSON, or the untouched JSON:API document with
-`--raw`; the digests (`report`, `builds`, `history`, `privacy`) take `--json` instead. Ids
-chain between commands, which is what makes scripting it possible.
+`--raw`; the digests (`report`, `history`, `privacy`) take `--json` instead. Ids chain
+between commands, which is what makes scripting it possible — and since the command that
+listed versions was official and went, `report --json` is now where a `versionId` comes
+from.
 
 ## Docs
 
 - [Reading](docs/reading.md) — every read command and the endpoint behind it
-- [Writing](docs/writing.md) — builds, versions, and what asks before it acts
+- [Writing](docs/writing.md) — the retained write surface, and what asks before it acts
 - [Replying to App Review](docs/replying.md) — Resolution Center drafts, attachments, and sending
 - [Logging and the audit trail](docs/logging.md) — structured logs, and why every write is recorded
 - [As a library](docs/library.md) — importing it instead of shelling out

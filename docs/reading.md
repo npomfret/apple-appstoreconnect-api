@@ -1,22 +1,21 @@
 # Reading
 
-> **Boundary notice (audited 2026-08-20, Apple OpenAPI 4.4.1):** the current CLI includes
-> legacy private reads for capabilities Apple now exposes officially. Only Resolution
-> Center threads/messages/rejections/drafts, unread review-message counts, version
-> state-change history, and App Privacy questionnaire data were confirmed as official API
-> gaps. See [the removal task](../tasks/remove-official-api-overlap.md). Until it lands, the
-> command table documents current behavior; it is not a recommendation to use private APIs
-> for official capabilities. Use Apple's official
-> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
-> API for the overlapping reads. The Xcode Cloud, invitation, screenshot/preview, App
-> Information and review-submission reads that used to be on this page have already been
-> removed; Apple's
+> **Boundary notice (re-audited 2026-08-21, Apple OpenAPI 4.4.1, generated 2026-07-15, 966
+> paths, 1,393 schemas):** every read left on this page is one the official API has no
+> equivalent for — Resolution Center threads, messages, rejections and drafts; unread
+> review-message counts; version state-change history; and the App Privacy questionnaire.
+> The last of the legacy overlap went with the app, version, build and review-detail slice.
+> Apple's
+> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
+> [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings),
+> [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
 > [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
 > [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
-> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
-> [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
-> and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
-> APIs are where they went.
+> [App Store Versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions),
+> [Builds](https://developer.apple.com/documentation/appstoreconnectapi/builds) and
+> [Apps](https://developer.apple.com/documentation/appstoreconnectapi/apps) APIs are where
+> the removed reads went. They need an API key rather than this client's cookie. See
+> [the removal task](../tasks/remove-official-api-overlap.md).
 
 ```sh
 node dist/cli.js report                 # the useful one — digest of every review conversation
@@ -69,12 +68,7 @@ document):
 
 | Command | Endpoint |
 | --- | --- |
-| `apps` | `apps` |
 | `inbox` | `apps?fields[apps]=appStoreVersionMetrics,betaReviewMetrics&fields[appStoreVersionMetrics]=messageCount` |
-| `app [appId]` | `apps/{appId}` |
-| `versions [appId]` | `apps/{appId}/appStoreVersions?filter[platform]=` |
-| `version [versionId]` | `appStoreVersions/{id}` |
-| `review-details [versionId]` | `appStoreVersions/{id}` → `appStoreReviewDetails/{id}` |
 | `threads [appId]` | `apps/{appId}/resolutionCenterThreads` |
 | `thread <submissionId>` | `resolutionCenterThreads?filter[reviewSubmission]={id}` |
 | `messages <threadId>` | `resolutionCenterThreads/{id}/resolutionCenterMessages` |
@@ -103,12 +97,22 @@ operations, and every attribute this client read back — a submission's `platfo
 and `submittedDate`, an item's `state` — is on Apple's own schema. All of them need an API
 key rather than this client's cookie.
 
-`appId` defaults to the one scraped from the captured request's `Referer`; `versionId`
-defaults to the version being edited, and refuses to choose between two of them. It used to
-prefer the version attached to an open review submission, which cost a read of
-`apps/{id}/reviewSubmissions` — official, so it went with that slice. On an app whose
-current version is in front of Apple *and* which has a newer draft open, the default is now
-the draft. Name the version to be certain.
+The same has now happened to the reads this page was built around. `apps`, `app`, `versions`,
+`version`, `builds` and `review-details` are gone: `apps`, `apps/{id}`,
+`apps/{id}/appStoreVersions`, `appStoreVersions/{id}`, `builds` and
+`appStoreReviewDetails/{id}` are all official operations, and every attribute read back —
+a version's `platform`, `versionString`, `appStoreState`, `appVersionState` and
+`downloadable`, a build's `version`, `uploadedDate`, `processingState` and `expired`, a
+review detail's contact, demo account and notes — is on Apple's own schema. The build
+picker's four filters survive the move too, with one rename: Apple spells
+`filter[isAppStoreCandidate]=true` as `filter[buildAudienceType]=APP_STORE_ELIGIBLE`.
+
+`appId` still defaults to the one scraped from the captured request's `Referer`. **`versionId`
+no longer defaults at all** — `asc history <versionId>` requires it. Working it out meant
+reading `apps/{id}/appStoreVersions`, which is the official call above, so the convenience
+went with it rather than being the one duplicate kept for its own sake. That call is where
+to get the id from:
+`GET /v1/apps/{id}/appStoreVersions?filter[appStoreState]=PREPARE_FOR_SUBMISSION`.
 
 Two things about App Store metadata are worth carrying over to whichever client reads it,
 because they are properties of the records rather than of this one. It is split across two
@@ -119,34 +123,21 @@ live one and the one being prepared, with the live one listed first: read that o
 get what the store says rather than what you last edited, and write to it and Apple refuses
 with a `409`. `asc get appInfos` still shows both, with a `state` telling them apart.
 
-The ids chain together, which is what makes scripting possible:
+The ids chain together, which is what makes scripting possible — and is now the way to get
+a version id out of this client at all, since the command that listed versions was official
+and went:
 
 ```sh
 node dist/cli.js report --json          # -> threadId, versionId
 node dist/cli.js draft <threadId>       # -> the unsent reply and its attachment ids
+node dist/cli.js history <versionId>    # -> how long each state actually lasted
 ```
-
-## App Review Information
-
-```sh
-node dist/cli.js review-details          # contact, demo account, notes to the reviewer
-node dist/cli.js review-details --reveal # including the demo account password
-```
-
-Worth reading on any rejection: "we were unable to sign in" and "we couldn't locate the
-feature" are complaints about this record rather than about the build. It also lists the
-`appStoreReviewAttachments` given to the reviewer.
-
-The demo account password is blanked unless you ask for it. Everything here prints to
-stdout, and a live credential left in terminal scrollback is a worse problem than having
-to pass a flag. The account *name* is shown — it's the pair that's the credential, and
-knowing which account Apple was given is usually the point.
 
 ## History
 
 ```sh
-node dist/cli.js history                 # every state this version has passed through
-node dist/cli.js history --json
+node dist/cli.js history <versionId>     # every state this version has passed through
+node dist/cli.js history <versionId> --json
 ```
 
 ```

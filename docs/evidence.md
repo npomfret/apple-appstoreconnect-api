@@ -3,28 +3,31 @@
 This is an undocumented, private API, and the calls here are not all equally well
 evidenced. This page says which is which.
 
-It is not all unique functionality. An audit on 2026-08-20 against Apple's official
-OpenAPI specification 4.4.1 found that submissions, versions/builds, metadata and App
-Information, screenshots/previews, users/invitations, and all Xcode Cloud code duplicate
-official operations. Xcode Cloud, the invitations, the screenshots and previews, the
-metadata and App Information code, and the review submissions and their items have since
-been removed; the rest are pending removal, and the exact inventory and official operation
-mapping is in
-[the removal task](../tasks/remove-official-api-overlap.md). Evidence that a
-private call works is not a reason to retain it when Apple supports the capability. The
+It was not all unique functionality. An audit on 2026-08-20 against Apple's official OpenAPI
+specification 4.4.1 found that submissions, versions/builds, metadata and App Information,
+screenshots/previews, users/invitations, and all Xcode Cloud code duplicate official
+operations. All of it has now been removed — Xcode Cloud, the invitations, the screenshots
+and previews, the metadata and App Information code, the review submissions and their items,
+and last the apps, versions, builds and review details. Evidence that a private call works
+was never a reason to retain it when Apple supports the capability. What is left is the
+gap-only surface, re-audited against 4.4.1 on 2026-08-21. The exact inventory and official
+operation mapping is in [the removal task](../tasks/remove-official-api-overlap.md), and the
 official replacements are Apple's
 [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
 [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
+[App Store Versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions),
+[Builds](https://developer.apple.com/documentation/appstoreconnectapi/builds),
+[Apps](https://developer.apple.com/documentation/appstoreconnectapi/apps),
 [Users and Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
 and [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
 API collections.
 
 ## What isn't captured yet
 
-The captured writes are the version PATCH behind `set-build`, the Resolution Center draft
-behind `save-draft` and `delete-draft`, and sending it (`send-reply`). The four App
-Information page PATCHes and the submission-item resolve were captured too, and that code
-has since been removed — see below.
+The captured writes on the retained surface are the Resolution Center draft behind
+`save-draft` and `delete-draft`, and sending it (`send-reply`). The version PATCH behind
+`set-build`, the four App Information page PATCHes and the submission-item resolve were
+captured too, and all of that code has since been removed — see below.
 
 What's left uncaptured on the retained surface is `delete-attachment`, which was probed
 rather than recorded. The submission writes that used to be listed here — creating a
@@ -129,12 +132,38 @@ list is the tested one and an override is not.
   promoting one. What no recording here settles is a thread's own *attributes* — nothing in
   this client reads one, and `threadType` appears only as a filter value, so treat any
   attribute on a thread resource as unmapped.
-- `getReviewDetails`.
-- From one attach-a-build-and-save: `listBuilds`, `listBuildCandidates` and the `set-build`
-  PATCH body.
 - From the History, Trust & Safety and Growth tabs: `listVersionStateChanges` (the browser
-  sends no query at all; the `limit` is ours, and tested), `listAppVersions`,
-  `listDataUsages` and `getDataUsagePublishState`.
+  sends no query at all; the `limit` is ours, and tested), `listDataUsages` and
+  `getDataUsagePublishState`.
+- The version page, its build picker and one attach-a-build-and-save were all recorded, and
+  **that code has been removed** — `listApps`, `getApp`, `listAppVersions`, `getVersion`,
+  `getReviewDetails`, `findReviewDetails`, `redactReviewDetails`, `listBuilds`,
+  `listBuildCandidates`, `updateVersion`, `setVersionBuild`, `fetchBuilds`, `formatBuilds`
+  and the `apps`, `app`, `versions`, `version`, `builds`, `set-build` and `review-details`
+  commands went with it. Re-checked 2026-08-21 against 4.4.1: `GET /v1/apps`,
+  `GET /v1/apps/{id}`, `GET /v1/apps/{id}/appStoreVersions`, `GET /v1/appStoreVersions/{id}`,
+  `GET /v1/builds`, `GET /v1/appStoreReviewDetails/{id}` and `PATCH /v1/appStoreVersions/{id}`
+  are all official, and `AppStoreVersionUpdateRequest` carries the `build` relationship the
+  `set-build` PATCH body sent. Four include names and one filter had no official schema —
+  `displayableVersions`, `resetRatingsRequest`, `gameCenterConfiguration`,
+  `ageRatingDeclaration` *as a relationship of a version* (officially it hangs off
+  `AppInfo`), and `filter[isAppStoreCandidate]` — but nothing here read any of them, so
+  narrowing to them would have narrowed to nothing. The filter has an official spelling in
+  any case: `filter[buildAudienceType]=APP_STORE_ELIGIBLE`.
+
+  **Where the reviewer's complaints actually point.** "We were unable to sign in" and "we
+  couldn't locate the feature" are complaints about the App Review Information record — the
+  contact, the demo account and the notes — rather than about the build. That record also
+  lists the `appStoreReviewAttachments` the reviewer was given. It is worth reading on any
+  rejection, and now reads officially.
+
+  **The demo account password is a live credential in a read.** It comes back on the record
+  and this client blanked it unless asked, because everything printed goes to stdout and a
+  password left in terminal scrollback is a worse problem than a flag. The account *name*
+  was shown: it is the pair that is the credential, and which account Apple was given is
+  usually the point. Whatever reads this record next has the same problem. `log.ts` still
+  scrubs `demoAccountPassword` here, because it can still arrive through `asc get` and
+  `asc patch`.
 - From one real send: `sendDraftMessage` — the `createFromDraftMessage` POST, its `201`,
   and the thread read back with the new message on it.
 - From one real resolve: `resolveSubmissionItem` — the `{"resolved":true}` PATCH and the

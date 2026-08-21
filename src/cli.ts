@@ -5,10 +5,8 @@ import { denormalize, denormalizeAll, Denormalized, Document } from './jsonapi';
 import { Query } from './http';
 import {
   buildReport,
-  fetchBuilds,
   fetchHistory,
   fetchPrivacy,
-  formatBuilds,
   formatHistory,
   formatPrivacy,
   formatReport,
@@ -25,19 +23,10 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc report --thread <id>    The same digest for one thread
   asc report --submission <id>
                               The same, starting from a submission id you already have
-  asc apps                    List every app on the account
   asc inbox                   Unread message counts per app — where to look first
-  asc app [appId]             Show one app
-  asc versions [appId]        List the app's editable versions — where version ids come from
-  asc version [versionId]     Show one App Store version and everything hanging off it
-  asc history [versionId]     The version's submission history: every state it passed through,
+  asc history <versionId>     The version's submission history: every state it passed through,
                               who moved it, and how long each one lasted
   asc privacy [appId]         App Privacy declarations and whether they are published
-  asc builds [versionId]      Builds you can attach to a version, newest first, with the
-                              current one marked "*" — the version page's build picker
-  asc review-details [versionId]
-                              App Review Information: reviewer contact, demo account and
-                              notes. The demo password is hidden unless --reveal
   asc threads [appId]         List Resolution Center threads on an app
   asc thread <submissionId>   Find the thread behind a review submission
   asc messages <threadId>     List Resolution Center messages in a thread
@@ -47,8 +36,6 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc get <path> [k=v ...]    Raw GET against /iris/v1 for probing unmapped endpoints
 
 Writes (these change your live App Store Connect data):
-  asc set-build <versionId> <buildId|none>
-                              Attach a build to a version — the version page's Save button
   asc save-draft <threadId> <text|-> [--attach file ...]
                               Write the reply to Apple into the thread's draft box, with
                               attachments. "-" reads the text from stdin. This does NOT
@@ -63,10 +50,9 @@ This reaches Apple and cannot be undone. It shows what it is about to send and a
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
-  --json                      For "report", "builds", "history" and "privacy": emit JSON
+  --json                      For "report", "history" and "privacy": emit JSON
                               instead of the digest
   --yes                       Skip the confirmation prompt on the commands that ask
-  --reveal                    For "review-details": print the demo account password
   --attach <file>             For "save-draft": a file to attach. Repeat for several
 
 Logging goes to stderr as one JSON object per line, so stdout stays pipeable:
@@ -160,47 +146,6 @@ function requireAppId(session: Session, given: string | undefined): string {
 }
 
 /**
- * The version a command acts on when none was named: the one being edited.
- *
- * It used to prefer the version attached to an open review submission, read off
- * `appStoreVersionForReview`. That route was a call to `apps/{id}/reviewSubmissions`, which
- * Apple serves officially, so it left with the submission slice. The difference shows on an
- * app whose current version is in front of Apple *and* which has a newer draft open: this
- * now picks the draft. Name the version to be certain.
- */
-async function versionUnderReview(session: Session, appId: string): Promise<string> {
-  // Live versions come back from this call too, and on a multi-platform app so does one
-  // per platform, so narrow to the drafts and refuse to guess between two of them.
-  const versions = denormalizeAll(await api.listAppVersions(session, appId));
-  const drafts = versions.filter(
-    (version) => !(api.LIVE_VERSION_STATES as readonly string[]).includes(String(version['appStoreState'] ?? ''))
-  );
-
-  if (drafts.length === 0) {
-    throw new Error('No version in progress — pass one: asc version <versionId>');
-  }
-  if (drafts.length > 1) {
-    const choices = drafts.map((v) => `  ${v.id}  ${v['platform']} ${v['versionString']}`).join('\n');
-    throw new Error(`More than one version is in progress — say which:\n${choices}`);
-  }
-
-  log.debug('using the version in progress', { versionId: drafts[0]!.id });
-  return drafts[0]!.id;
-}
-
-/**
- * The version to act on: the one named on the command line, or else the one under review.
- *
- * The app id is only looked up when that fallback is actually needed. Asking for it up
- * front refuses `asc version <versionId>` on a capture that carries no app — a bare
- * `Cookie:` line makes one of those, and it is a supported way to do it — and refuses it
- * with advice there is no argument to follow.
- */
-async function requireVersionId(session: Session, given: string | undefined): Promise<string> {
-  return given ?? versionUnderReview(session, requireAppId(session, undefined));
-}
-
-/**
  * What `send-reply` shows before it asks. The whole body, not a preview of it: this is the
  * last look anyone gets at a message that can't be edited or taken back afterwards.
  */
@@ -291,9 +236,8 @@ async function main(argv: string[]): Promise<number> {
   const { values: submissionIds, rest: positional } = takeOption(afterThread, '--submission');
   const raw = positional.includes('--raw');
   const json = positional.includes('--json');
-  const reveal = positional.includes('--reveal');
   const yes = positional.includes('--yes');
-  const flags = new Set(['--raw', '--json', '--reveal', '--yes']);
+  const flags = new Set(['--raw', '--json', '--yes']);
   const args = positional.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
 
@@ -323,41 +267,16 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
-    case 'apps': {
-      const session = loadSession();
-      emit(await api.listApps(session), raw);
-      return 0;
-    }
-
     case 'inbox': {
       const session = loadSession();
       emit(await api.listAppMetrics(session), raw);
       return 0;
     }
 
-    case 'app': {
-      const session = loadSession();
-      emit(await api.getApp(session, requireAppId(session, rest[0])) as Document, raw);
-      return 0;
-    }
-
-    case 'version': {
-      const session = loadSession();
-      const versionId = await requireVersionId(session, rest[0]);
-      emit(await api.getVersion(session, versionId) as Document, raw);
-      return 0;
-    }
-
-    case 'builds': {
-      const session = loadSession();
-      const builds = await fetchBuilds(session, await requireVersionId(session, rest[0]));
-      console.log(json ? JSON.stringify(builds, null, 2) : formatBuilds(builds));
-      return 0;
-    }
-
     case 'history': {
       const session = loadSession();
-      const changes = await fetchHistory(session, await requireVersionId(session, rest[0]));
+      const versionId = requireArg(rest[0], 'versionId', 'history <versionId>');
+      const changes = await fetchHistory(session, versionId);
       console.log(json ? JSON.stringify(changes, null, 2) : formatHistory(changes));
       return 0;
     }
@@ -366,21 +285,6 @@ async function main(argv: string[]): Promise<number> {
       const session = loadSession();
       const privacy = await fetchPrivacy(session, requireAppId(session, rest[0]));
       console.log(json ? JSON.stringify(privacy, null, 2) : formatPrivacy(privacy));
-      return 0;
-    }
-
-    case 'versions': {
-      const session = loadSession();
-      emit(await api.listAppVersions(session, requireAppId(session, rest[0])), raw);
-      return 0;
-    }
-
-    case 'set-build': {
-      const session = loadSession();
-      const versionId = requireArg(rest[0], 'versionId', 'set-build <versionId> <buildId>');
-      const buildId = requireArg(rest[1], 'buildId', 'set-build <versionId> <buildId>');
-      const document = await api.setVersionBuild(session, versionId, buildId === 'none' ? null : buildId);
-      emit(document as Document, raw);
       return 0;
     }
 
@@ -461,18 +365,6 @@ async function main(argv: string[]): Promise<number> {
       const path = requireArg(rest[0], 'path', 'patch appStoreVersions/<id> \'{"data":...}\'');
       const body = requireArg(rest[1], 'json', 'patch appStoreVersions/<id> \'{"data":...}\'');
       console.log(JSON.stringify(await api.rawPatch(session, path, JSON.parse(body)), null, 2));
-      return 0;
-    }
-
-    case 'review-details': {
-      const session = loadSession();
-      const versionId = await requireVersionId(session, rest[0]);
-      const document = await api.findReviewDetails(session, versionId);
-      if (!document) {
-        log.error('reviewDetails.notFound', { versionId });
-        return 1;
-      }
-      emit(reveal ? document : api.redactReviewDetails(document), raw);
       return 0;
     }
 

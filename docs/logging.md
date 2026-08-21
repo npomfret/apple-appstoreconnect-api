@@ -57,9 +57,11 @@ Credentials are scrubbed two ways, because one of them has to catch what the oth
 
 By field name: `cookie`, `x-csrf-itc`, `myacinfo`, `itctx` and friends, wherever they appear
 and however deeply nested — plus `demoAccountPassword`, which is a body attribute rather
-than a header and can arrive through `asc patch`. That list is `REVIEW_DETAIL_SECRETS` in
-`src/log.ts`, shared with the redaction that hides the same field from `review-details`
-output, so the two can't drift apart.
+than a header and can arrive through `asc get` or `asc patch`. That list is
+`REVIEW_DETAIL_SECRETS` in `src/log.ts`. It used to be shared with a `review-details`
+command that hid the same field from its own output; that command has gone, because Apple
+serves the record officially, and the rule stayed. A redaction is the wrong thing to drop
+on the grounds that the caller you knew about has left.
 
 By value: the query parameters that authorise a presigned upload — `Signature`,
 `AWSAccessKeyId`, `X-Amz-Signature` and the rest — are replaced in *every* string logged.

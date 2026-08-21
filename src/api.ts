@@ -23,7 +23,6 @@ import { audited, log, REVIEW_DETAIL_SECRETS } from './log';
  */
 const INCLUDES = {
   messages: ['fromActor', 'rejections', 'resolutionCenterMessageAttachments'],
-  reviewDetails: ['appStoreReviewAttachments', 'appStoreVersion'],
   draftMessage: ['resolutionCenterMessageAttachments', 'fromActor'],
   rejections: [
     'appCustomProductPageVersion',
@@ -43,12 +42,9 @@ const INCLUDES = {
     'appBundleVersion',
     'rejectionAttachments',
   ],
-  builds: ['icons', 'preReleaseVersion', 'buildBundles'],
-  apps: ['appStoreIcon', 'displayableVersions'],
   // Narrowed from the capture: the browser also asks for `reviewSubmissions`, which Apple
   // serves officially at GET /v1/apps/{id}/reviewSubmissions. See listAppMetrics.
   appMetrics: ['appStoreVersionMetrics', 'betaReviewMetrics'],
-  app: ['gameCenterDetail'],
   threads: [
     'appStoreVersions',
     'app',
@@ -56,20 +52,7 @@ const INCLUDES = {
     'build',
     'betaBackgroundAssetReviewSubmission',
   ],
-  appVersions: ['alternativeDistributionPackage'],
   dataUsages: ['category', 'purpose', 'grouping', 'dataProtection'],
-  version: [
-    'app',
-    'routingAppCoverage',
-    'resetRatingsRequest',
-    'appStoreVersionSubmission',
-    'appStoreVersionPhasedRelease',
-    'appStoreVersionLocalizations',
-    'ageRatingDeclaration',
-    'appStoreReviewDetail',
-    'gameCenterConfiguration',
-    'appClipDefaultExperience',
-  ],
 } as const;
 
 /**
@@ -86,9 +69,7 @@ const SIDELOADS = {
   messages: { rejections: 2000, resolutionCenterMessageAttachments: 1000 },
   draftMessage: { resolutionCenterMessageAttachments: 1000 },
   rejections: { rejectionAttachments: 1000 },
-  apps: { displayableVersions: 20 },
   threads: { appStoreVersions: 2000 },
-  version: { appStoreVersionLocalizations: 50 },
 } as const;
 
 /**
@@ -118,13 +99,11 @@ function sideloadLimits<D extends Readonly<Record<string, number>>>(
 
 /**
  * Which attributes of a resource type come back — JSON:API's `fields[type]`, copied from
- * the browser with the rest of each query. An empty list is not "all of them": it asks for
- * that type to be identified by id alone, which is how the version page names a review
- * detail record without pulling the demo-account credentials in it.
+ * the browser with the rest of each query.
  *
- * Every call that sends one takes a `fields` option. Widening one is safe; narrowing one
- * past what the browser asked for will start removing attributes this client's own
- * formatting reads, so `report.ts` is the thing to check before trimming.
+ * One call sends one now. It is the only place a fieldset does real work here: it is what
+ * keeps `listAppMetrics` a read of two private counters rather than a listing of the apps
+ * they hang off. Widening it would put an official app read back.
  */
 const FIELDSETS = {
   // `fields[apps]` naming only relationships is what makes this a gap read rather than an
@@ -135,23 +114,6 @@ const FIELDSETS = {
     appStoreVersionMetrics: ['messageCount'],
     betaReviewMetrics: ['messageCount', 'platform'],
   },
-  appVersions: {
-    appStoreVersions: [
-      'appStoreState',
-      'appVersionState',
-      'versionString',
-      'platform',
-      'downloadable',
-      'alternativeDistributionPackage',
-    ],
-  },
-  version: {
-    apps: ['isOrEverWasMadeForKids'],
-    appStoreReviewDetails: [],
-    gameCenterConfigurations: [],
-    appClipDefaultExperiences: [],
-  },
-  reviewDetails: { appStoreVersions: [] },
 } as const;
 
 /** The fieldsets one call sends, as an option: any subset of them, each a new attribute list. */
@@ -230,18 +192,6 @@ export const THREAD_TYPES = [
   'APP_MESSAGE_INFORMATIONAL',
 ] as const;
 
-/** Every app on the account. */
-export function listApps(
-  session: Session,
-  options: { include?: readonly string[]; limit?: number; sideloads?: SideloadLimits<typeof SIDELOADS.apps> } = {}
-): Promise<Document<Resource[]>> {
-  return get(session, 'apps', {
-    include: includeList(INCLUDES.apps, options.include),
-    limit: options.limit ?? 200,
-    ...sideloadLimits(SIDELOADS.apps, options.sideloads),
-  });
-}
-
 /**
  * Unread-message counts per app — what the App Store Connect home page badges with.
  * The cheapest way to ask "has Apple said anything anywhere?" without walking threads.
@@ -278,14 +228,6 @@ export function listAppMetrics(
   });
 }
 
-export function getApp(
-  session: Session,
-  appId: string,
-  options: { include?: readonly string[] } = {}
-): Promise<Document<Resource>> {
-  return get(session, `apps/${appId}`, { include: includeList(INCLUDES.app, options.include) });
-}
-
 /** Resolution Center threads on an app, optionally narrowed to one version. */
 export function listThreads(
   session: Session,
@@ -302,37 +244,6 @@ export function listThreads(
     ...sideloadLimits(SIDELOADS.threads, options.sideloads),
     'filter[threadType]': [...(options.threadTypes ?? THREAD_TYPES)],
     'filter[appStoreVersion]': options.appStoreVersionId,
-  });
-}
-
-/**
- * Version states that mean "on the store", not "being worked on". A version in one of
- * these is not the one you want to edit.
- */
-export const LIVE_VERSION_STATES = [
-  'READY_FOR_SALE',
-  'REPLACED_WITH_NEW_VERSION',
-  'REMOVED_FROM_SALE',
-  'DEVELOPER_REMOVED_FROM_SALE',
-] as const;
-
-/**
- * Enough of each version to tell them apart, and no more — what the version switcher in
- * the header runs on. The cheap way to find a version id; `getVersion` has the rest.
- *
- * One current version per platform, plus whatever is live: an account with a Mac build
- * gets its READY_FOR_SALE versions back here alongside the iOS one being edited. Pass a
- * platform, or filter on `appStoreState`, before assuming the first is the one you meant.
- */
-export function listAppVersions(
-  session: Session,
-  appId: string,
-  options: { include?: readonly string[]; platform?: string; fields?: Fieldsets<typeof FIELDSETS.appVersions> } = {}
-): Promise<Document<Resource[]>> {
-  return get(session, `apps/${appId}/appStoreVersions`, {
-    include: includeList(INCLUDES.appVersions, options.include),
-    'filter[platform]': options.platform,
-    ...fieldsets(FIELDSETS.appVersions, options.fields),
   });
 }
 
@@ -380,153 +291,11 @@ export function getDataUsagePublishState(session: Session, appId: string): Promi
 }
 
 /**
- * The version page's own view of a version: state, release settings, and the ids of
- * everything hanging off it. The counterpart to `updateVersion`.
- */
-export function getVersion(
-  session: Session,
-  versionId: string,
-  options: {
-    include?: readonly string[];
-    sideloads?: SideloadLimits<typeof SIDELOADS.version>;
-    fields?: Fieldsets<typeof FIELDSETS.version>;
-  } = {}
-): Promise<Document<Resource>> {
-  return get(session, `appStoreVersions/${versionId}`, {
-    include: includeList(INCLUDES.version, options.include),
-    ...sideloadLimits(SIDELOADS.version, options.sideloads),
-    ...fieldsets(FIELDSETS.version, options.fields),
-  });
-}
-
-/**
- * The App Review Information panel: who Apple contacts, the demo account the reviewer
- * signs in with, and the notes explaining how to reach the feature under test.
- *
- * Worth reading on any rejection — "we were unable to sign in" or "we couldn't locate
- * the feature" are complaints about this record rather than about the build.
- */
-export function getReviewDetails(
-  session: Session,
-  reviewDetailId: string,
-  options: { include?: readonly string[]; fields?: Fieldsets<typeof FIELDSETS.reviewDetails> } = {}
-): Promise<Document<Resource>> {
-  return get(session, `appStoreReviewDetails/${reviewDetailId}`, {
-    include: includeList(INCLUDES.reviewDetails, options.include),
-    // The version is wanted as an identifier only, not expanded — as the browser asks.
-    ...fieldsets(FIELDSETS.reviewDetails, options.fields),
-  });
-}
-
-/**
- * Reaches the review details from a version, which is the only route to them: the id
- * exists solely as a relationship on the version.
- */
-export async function findReviewDetails(
-  session: Session,
-  versionId: string
-): Promise<Document<Resource> | undefined> {
-  const version = await getVersion(session, versionId);
-  const related = version.data.relationships?.appStoreReviewDetail?.data as
-    | ResourceIdentifier
-    | undefined;
-  if (!related?.id) return undefined;
-  return getReviewDetails(session, related.id);
-}
-
-/**
- * Blanks the demo account password. Every command here prints to stdout, and a live
- * credential sitting in terminal scrollback is a worse problem than having to ask for it.
- * The account name is left alone — it's the pair that's the credential, and knowing which
- * account Apple was given is usually the point.
- *
- * What counts as a secret is `REVIEW_DETAIL_SECRETS` in `log.ts`, so that hiding it from a
- * command's output and hiding it from the log can't drift apart.
- */
-export function redactReviewDetails(document: Document<Resource>): Document<Resource> {
-  const attributes = document.data?.attributes;
-  if (!attributes) return document;
-  for (const field of REVIEW_DETAIL_SECRETS) {
-    if (attributes[field]) attributes[field] = '[redacted — pass --reveal to show]';
-  }
-  return document;
-}
-
-/**
- * The build a version currently points at — one, or none at all. This filter does not
- * offer the alternatives; `listBuildCandidates` is the one that lists those. Re-read it
- * after `setVersionBuild` to confirm the change landed.
- */
-export function listBuilds(
-  session: Session,
-  versionId: string,
-  options: { include?: readonly string[] } = {}
-): Promise<Document<Resource[]>> {
-  return get(session, 'builds', {
-    'filter[appStoreVersion]': versionId,
-    include: includeList(INCLUDES.builds, options.include),
-  });
-}
-
-/**
- * What the version page's build picker offers: App Store eligible, finished processing,
- * on the given platform, newest first. The build already attached normally appears here
- * too, but isn't guaranteed to — a build can stay attached after ageing out of the list,
- * which is why `fetchBuilds` reads both.
- *
- * The limit of 10 is the picker's own; raise it to see further back.
- */
-export function listBuildCandidates(
-  session: Session,
-  appId: string,
-  options: { include?: readonly string[]; platform?: string; limit?: number } = {}
-): Promise<Document<Resource[]>> {
-  return get(session, 'builds', {
-    include: includeList(INCLUDES.builds, options.include),
-    limit: options.limit ?? 10,
-    'filter[app]': appId,
-    'filter[preReleaseVersion.platform]': options.platform,
-    'filter[isAppStoreCandidate]': true,
-    'filter[processingState]': 'VALID',
-  });
-}
-
-export interface VersionUpdate {
-  attributes?: Record<string, unknown>;
-  relationships?: Record<string, { data: ResourceIdentifier | ResourceIdentifier[] | null }>;
-}
-
-/**
- * Saves a change to a version — this is what the version page's Save button does.
- * The body only carries what changed; anything omitted is left alone.
- */
-export function updateVersion(
-  session: Session,
-  versionId: string,
-  update: VersionUpdate
-): Promise<Document<Resource>> {
-  return patch(session, `appStoreVersions/${versionId}`, {
-    data: { type: 'appStoreVersions', id: versionId, ...update },
-  });
-}
-
-/** Attaches a build to a version, or detaches the current one with `null`. */
-export function setVersionBuild(
-  session: Session,
-  versionId: string,
-  buildId: string | null
-): Promise<Document<Resource>> {
-  return audited('version.build.set', { versionId, buildId }, () =>
-    updateVersion(session, versionId, {
-      relationships: { build: { data: buildId === null ? null : { type: 'builds', id: buildId } } },
-    })
-  );
-}
-
-/**
- * Most iris writes send application/vnd.api+json — the Resolution Center drafts and their
- * attachments all do. The version PATCH behind `updateVersion` is the odd one out and
- * sends plain application/json. Both were copied from the browser rather than reasoned about.
+ * Every retained iris write sends this, and each one names it explicitly. The odd one out
+ * was the version PATCH behind `updateVersion`, which sent plain application/json; it left
+ * with the version slice. So the `application/json` fallback in `headersFor` is now
+ * reachable only through `rawPatch` — something for step 5 to settle rather than for this
+ * file to assume.
  */
 const VND_API_CONTENT_TYPE = 'application/vnd.api+json';
 

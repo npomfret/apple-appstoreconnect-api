@@ -1,19 +1,19 @@
 # As a library
 
-> **Boundary notice:** exports for apps, versions and builds are legacy official overlap
-> and will be removed. The Xcode Cloud, invitation, screenshot/preview,
-> metadata/App Information and review-submission exports have already gone — use Apple's
+> **Boundary notice:** the exports for apps, versions, builds and review details have now
+> gone, along with the Xcode Cloud, invitation, screenshot/preview, metadata/App Information
+> and review-submission ones. Use Apple's
+> [Apps](https://developer.apple.com/documentation/appstoreconnectapi/apps),
+> [App Store Versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions),
+> [Builds](https://developer.apple.com/documentation/appstoreconnectapi/builds),
 > [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
 > [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
 > [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
 > [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
 > and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
-> APIs.
-> New callers should use this library only for the official gaps listed in
-> [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md). For overlapping
-> functionality, use Apple's
-> [App Store Connect API reference](https://developer.apple.com/documentation/appstoreconnectapi/)
-> directly.
+> APIs instead. What this library exports is the official gaps listed in
+> [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md): Resolution
+> Center, unread message counts, version state history and App Privacy.
 
 ```ts
 import { loadSession, buildReport, listMessages, denormalizeAll } from './src';
@@ -85,11 +85,10 @@ copying if you build your own.
   limit by default, as the browser doesn't, so a long thread comes back cut off at the end,
   which is the end you wanted. Pass `{ limit }` to see past it.
 - So are the fieldsets. `{ fields }` is keyed by resource type and replaces one
-  `fields[type]` list, again defaulting to the captured one:
-  `getVersion(session, versionId, { fields: { appStoreReviewDetails: ['contactEmail'] } })`
-  expands a record the version page asks for by id alone. Widening is the safe direction;
-  narrowing past the browser's list will start removing attributes `report.ts` reads, so
-  check what formats a call before trimming it.
+  `fields[type]` list, again defaulting to the captured one. One call sends one now:
+  `listAppMetrics`, where the fieldset is what keeps the read down to two private counters
+  instead of a listing of the apps they hang off. Widening that one would put an official
+  app read back.
 - Query strings are built by hand rather than with `URLSearchParams`: Apple wants literal
   `[`, `]` and `,`, which `URLSearchParams` would percent-encode.
 - A path is a path — `appStoreVersions/{id}` — always relative to

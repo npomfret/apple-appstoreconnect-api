@@ -16,11 +16,14 @@ export type Fields = Record<string, unknown>;
 const ORDER: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
 /**
- * Fields on a review detail record that must not be printed. Named here rather than beside
- * the read that fetches them because both places that hide a secret should agree on what
- * one is: `redactReviewDetails` keeps the password out of a command's output, and this
- * keeps the same field out of the log when it arrives some other way — through `asc patch`,
- * say, whose body is audited verbatim.
+ * Fields on a review detail record that must not be printed.
+ *
+ * There is no longer a command here that reads one: `review-details` and the
+ * `redactReviewDetails` that paired with it went with the version slice, because Apple
+ * serves `GET /v1/appStoreReviewDetails/{id}` officially. This stays anyway, and is not a
+ * leftover. The demo-account password still reaches this process through `asc get` and
+ * `asc patch`, whose bodies are audited verbatim, and a redaction rule is the wrong thing
+ * to remove on the grounds that the caller you knew about has gone.
  */
 export const REVIEW_DETAIL_SECRETS = ['demoAccountPassword'] as const;
 
