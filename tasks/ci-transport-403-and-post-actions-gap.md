@@ -5,12 +5,21 @@
 **Reported, not authorised.** Findings from outside this repository, gathered on
 2026-08-21 while trying to answer a question in `super-funmax-music`: is the TestFlight
 Internal Testing post-action set on our Xcode Cloud workflow, and can it be set from a
-script. No code here was changed. Two defects and one boundary correction, each with the
-evidence that produced it.
+script. No code was changed by the investigation. Two defects and one boundary correction,
+each with the evidence that produced it.
 
-The boundary correction matters most, because
-[remove-official-api-overlap.md](remove-official-api-overlap.md) currently schedules the
-code carrying it for deletion.
+The Xcode Cloud removal subsequently landed in commit `9d7c514`. `src/ci.ts`, the `ci`
+transport base and all `ci-*` commands are gone. This task therefore no longer proposes
+fixing the old implementation in place: if `post_actions` is accepted as a gap worth
+retaining, the work is to restore the smallest read-only slice that exposes that field,
+without restoring the official-API duplicates that were deliberately removed.
+
+A new Safari Network capture was made after this task was written and is stored privately
+as `tmp/appstoreconnect.apple.com- post-actions.har`. Its presence is recorded here, but its
+contents have **not** been reviewed and are not yet evidence this task can make claims from.
+The operating contract forbids an agent from reading, printing, copying, logging, committing
+or modifying a HAR. See "Capture handoff" below for the safe way to turn it into reviewable
+evidence.
 
 ## Defect 1 — every `/ci/api` request is refused
 
@@ -85,29 +94,110 @@ and never observably firing, and the reason it could not be diagnosed is precise
 `ciWorkflows` has no field to read back. `post_actions: []` above is the first direct
 evidence either way.
 
-`src/ci.ts:84` already types the field. It should be treated as a keep-list capability and
-tested as one, and the Xcode Cloud slice of the removal task should be re-scoped to remove
-the parts Apple genuinely covers while retaining post-action read. That is a decision for
-whoever owns the boundary, not something this file settles.
+Before removal, `src/ci.ts:84` typed the field as `unknown[]`. The finding was that it should
+be treated as a keep-list candidate and tested as one while the parts Apple genuinely covers
+remain removed. That is a decision for whoever owns the boundary, not something this file
+settles.
+
+That code has now been removed, but the boundary question is unchanged. The implementation
+decision should distinguish these scopes:
+
+| Proposed work | Is a populated capture required? |
+| --- | --- |
+| Correct the old `/ci/api` content type if a CI transport is restored | No — the header bisect above is direct evidence |
+| Keep a raw `post_actions: unknown[]` read and report only empty/non-empty | No — the live empty read already establishes the field |
+| Identify and render a TestFlight Internal Testing post-action | Yes — its populated shape must be observed |
+| Add or remove a post-action from a script | Yes — the browser's PUT body and read-back are mandatory evidence, followed by a separate write-safety decision |
+
+The read is the coherent first boundary. It answers whether anything is configured without
+inventing a request body or restoring build, repository, test-result and run-report features
+that Apple already exposes officially. A convenient app-id-to-product-id lookup would itself
+restore an official duplicate, so the command and library shape — explicit product/workflow
+IDs versus private discovery — needs owner approval before implementation.
 
 ## What is still unknown
 
 - **The shape of a populated `post_actions` entry.** Every capture available here has the
   array empty — including the recorded `PUT`, whose body carries `post_actions: []` both
-  before and after. Nothing should be written into that array on a guess.
+  before and after. The new HAR may settle this, but it has not been safely reviewed yet.
+  Nothing should be typed, interpreted or written into that array on a guess.
 - **Whether the write is safe to map.** `docs/xcode-cloud.md` already argues this well: the
   `PUT workflows-v15/{id}` is a full-document replace and anything omitted is destroyed, on
-  the workflow that builds every push. Nothing found today weakens that argument.
-- A capture of the browser adding a TestFlight Internal Testing post-action would settle
-  the first point and is the cheapest next step. Read-back alone — after somebody ticks the
-  box in the web UI — is enough for the verification use case, and needs no write at all.
+  the workflow that builds every push. That document was removed with the old feature, but
+  the risk remains. Capturing the browser making the change establishes shape; it does not
+  by itself authorise or make a scripted full-document replace safe.
+- **What the new HAR contains.** A useful read capture has a successful
+  `GET .../workflows-v15/{workflowId}` whose response contains a populated
+  `content.post_actions`. A useful write capture additionally has the initial GET, the
+  browser's `PUT .../workflows-v15/{workflowId}` with populated `post_actions`, a successful
+  response, and a subsequent GET showing the saved value. Until a human confirms which of
+  those are present, do not describe the flow as captured.
+
+Read-back alone — after somebody sets the option in the web UI — is enough for the
+verification use case and requires no write from this client. Mapping a write is a separate,
+higher-risk project.
+
+## Capture handoff
+
+The raw HAR is credential material, not a repository fixture. Safari may include the full
+session cookie, per-request Apple signatures, repository URLs, account identities and the
+workflow's environment variables. It stays under `tmp/`, is never committed, and is not
+opened by an agent. A browser's "sanitised" export still deserves the same treatment because
+sanitising authentication headers does not necessarily remove workflow content.
+
+A human should inspect the capture locally and provide a minimal redacted extract containing
+only:
+
+1. The method and `/ci/api/.../workflows-v15/{workflowId}` path, with team, product and
+   workflow IDs replaced by `{TEAM}`, `{PRODUCT}` and `{WORKFLOW}`.
+2. The request `content-type`; omit every authentication, cookie, signature, CSRF and team
+   header value.
+3. The populated `post_actions` JSON from the GET response and, if present, from the PUT
+   request. Preserve field names and enum-like values, but replace real beta-group IDs,
+   names and other account-specific identifiers with descriptive placeholders.
+4. The response status and the populated `post_actions` value from the read-back GET.
+5. A short statement of the browser action that caused it: for example, adding TestFlight
+   Internal Testing, which group was selected in generic terms, and whether the workflow was
+   restored afterwards.
+
+Do not copy the whole workflow body into the repository: the PUT is a full document and may
+carry unrelated environment or repository configuration. Once the redacted extract exists,
+invent a small test fixture from that shape; never use the HAR itself in tests.
+
+For a future Safari capture, open Web Inspector before the action, select Network's **Live
+Activity**, clear it, disable caches, and reload the page. Safari keeps HAR Export disabled
+until it has captured a completed main-page request. Then make the single intended UI change,
+wait for all requests to finish, reload once for read-back, and export the Network log into
+`tmp/`. If the setting is already populated, the reload/read-only capture is safer and is
+enough for the retained read.
+
+## Implementation gate and verification
+
+No `/ci/api` code is authorised by this task alone. Before implementation, the owner needs
+to approve both the gap boundary and the public command/library shape. If approved, the
+minimum read-only implementation should:
+
+- restore a closed `/ci/api` base without restoring generic access to Xcode Cloud;
+- omit `application/vnd.api+json` on CI reads from the outset;
+- classify CI 403s separately from the Iris session-expiry heuristic;
+- expose `post_actions` conservatively, leaving unknown fields intact;
+- add invented fixtures for empty and, once redacted evidence exists, populated arrays;
+- test the exact path, headers and CI-specific 403 message locally with stubbed `fetch`;
+- update `docs/evidence.md` and user documentation with the capture's actual evidence level;
+- run `npm run typecheck`, `npm test` and `npm run build`;
+- perform at most a read-only live verification with a fresh session.
+
+A scripted PUT is not part of that minimum. It would require its own design and approval:
+read-modify-write of the entire current workflow, preservation of fields the client does not
+understand, a before/after confirmation, complete write auditing, non-TTY refusal, and a
+post-write read-back. Do not make a live write merely to verify an implementation.
 
 ## Friction worth fixing while here
 
-- `docs/xcode-cloud.md` names `x-apple-signature` as the thing most likely to break these
-  calls. It is the first place a reader looks when they see a 403, and today it sent me to
-  the wrong hypothesis while a header this client controls was the cause. A line pointing
-  at the content-type would have saved the detour.
+- The removed `docs/xcode-cloud.md` named `x-apple-signature` as the thing most likely to
+  break these calls. If a narrow post-action read is restored, its replacement documentation
+  must lead with the known content-type failure and retain the signature uncertainty as a
+  separate caveat.
 - Nothing distinguishes "this capture cannot reach `/ci/api`" from "this capture is dead".
   `asc status` could say which APIs the session actually answers on, given the two are now
   known to fail independently.
