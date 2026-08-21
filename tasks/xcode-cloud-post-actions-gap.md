@@ -12,10 +12,10 @@ fixing an implementation in place. If `post_actions` is accepted as a gap worth 
 the work is to restore the smallest read-only slice that exposes that one field, without
 restoring the official-API duplicates that were deliberately removed.
 
-A browser recording of the post-actions screen was made after this task was written, is held
-privately outside the repository, and **was read here on 2026-08-21** through an extractor.
-It turned out to be a write capture, in both directions, with read-backs. What it establishes
-is in "What the recording settled" below.
+A browser recording of the post-actions screen is held privately outside the repository and
+**was read here on 2026-08-21** through an extractor. It turned out to be a write capture, in
+both directions, with read-backs. What it establishes is in "What the recording settled"
+below.
 
 ## What a restored transport must not repeat
 
@@ -76,16 +76,12 @@ and never observably firing, and the reason it could not be diagnosed is precise
 `ciWorkflows` has no field to read back. `post_actions: []` above is the first direct
 evidence either way.
 
-Before removal, `src/ci.ts:84` typed the field as `unknown[]`. The finding was that it should
-be treated as a keep-list candidate and tested as one while the parts Apple genuinely covers
-remain removed. That is a decision for whoever owns the boundary, not something this file
-settles.
-
-That code has now been removed, but the boundary question is unchanged. Three scopes are
-now waiting on nothing but the owner: correcting the `/ci/api` content type if a CI
-transport is restored, a raw `post_actions: unknown[]` read reporting only empty or
-non-empty, and rendering a TestFlight Internal Testing post-action by name. Adding or
-removing one from a script needs a write design of its own on top of that approval.
+Whether that is worth a private call is a decision for whoever owns the boundary, not
+something this file settles. Three scopes wait on nothing but that decision: correcting the
+`/ci/api` content type if a CI transport is restored, a raw `post_actions: unknown[]` read
+reporting only empty or non-empty, and rendering a TestFlight Internal Testing post-action by
+name. Adding or removing one from a script needs a write design of its own on top of that
+approval.
 
 The read is the coherent first boundary. It answers whether anything is configured without
 inventing a request body or restoring build, repository, test-result and run-report features

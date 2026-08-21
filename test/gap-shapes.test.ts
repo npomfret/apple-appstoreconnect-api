@@ -246,11 +246,13 @@ describe('what Apple attached', () => {
     });
 
     assert.deepEqual(digest.attachments, [
-      { fileName: 'crash.mp4', fileSize: 2048, downloadUrl: 'https://example.invalid/a-1' },
+      { id: 'a-1', fileName: 'crash.mp4', fileSize: 2048, downloadUrl: 'https://example.invalid/a-1' },
     ]);
   });
 
-  test('the same file on two messages is listed once', async () => {
+  // Two attachments under one name is not a contrived case: it is the shape of every
+  // messages response recorded from the browser, which carries three files under two names.
+  test('two files that share a name are two files, since the id is the identity', async () => {
     const digest = await report({
       messages: [
         message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, ['a-1']),
@@ -259,7 +261,23 @@ describe('what Apple attached', () => {
       attachments: [attachment('a-1', 'crash.mp4', 2048), attachment('a-2', 'crash.mp4', 2048)],
     });
 
-    assert.equal(digest.attachments.length, 1);
+    assert.equal(digest.attachments.length, 2);
+    assert.deepEqual(
+      digest.attachments.map((file) => file.downloadUrl),
+      ['https://example.invalid/a-2', 'https://example.invalid/a-1']
+    );
+  });
+
+  test('one file sideloaded onto two messages is still one file', async () => {
+    const digest = await report({
+      messages: [
+        message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, ['a-1']),
+        message('m-2', '2026-04-28T09:00:00-07:00', '<p>And again.</p>', APPLE, ['a-1']),
+      ],
+      attachments: [attachment('a-1', 'crash.mp4', 2048)],
+    });
+
+    assert.deepEqual(digest.attachments.map((file) => file.id), ['a-1']);
   });
 });
 

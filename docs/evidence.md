@@ -65,6 +65,16 @@ list is the tested one and an override is not.
   kind is likely to exist unseen, and `report` prints "sender not recognised" for anything
   that is neither rather than assuming. The digest read the id and not the type until that
   day, matching on the prefix `APPLE`, which no recording ever supported.
+
+  What an attachment carries was read the same day: `fileName`, `fileSize`, `downloadUrl`,
+  `assetToken`, `sourceFileChecksum`, `uploadOperations` and `assetDeliveryState`, the same
+  seven on all 34 in four recordings, with the last four null on everything Apple sent. Every
+  messages response there carries **three attachments under two names** — two of them on one
+  message, same name, same byte count, different ids and different download URLs. So a file
+  name is not an identity, and `report` keys the digest's attachment list by the id: keying it
+  by name reported two files where iris had listed three, and dropped one of the two download
+  URLs. Whether those two are the same bytes twice or two files that happen to match is not
+  something a recording can settle, and the digest does not have to guess to list them.
 - `listThreads` — the app's Resolution Center thread list, and since the thread-first
   rebuild the starting point of `report`. The include list, the seven `filter[threadType]`
   values and `limit[appStoreVersions]=2000` are the browser's own. Two things that query

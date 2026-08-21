@@ -49,6 +49,12 @@ one side. There is an `apiKeyId` field beside `actorType`, null in every capture
 third kind probably exists and has not been seen — and being wrong here would mean the
 digest telling you the thread is waiting on Apple when it is waiting on you.
 
+`attachments` lists what Apple attached, one entry per file, identified by iris's own id and
+carrying a download URL. Two entries can share a file name and that is not a repeat: every
+recorded thread has a message with two attachments of the same name, and a reviewer attaching
+`IMG_4821.png` in one round and a different `IMG_4821.png` in the next would look the same.
+The id is what tells them apart, and `--json` carries it.
+
 The version each conversation is about comes off the thread's own `appStoreVersions`, which
 is a to-many relationship: a thread about two versions names both rather than having one
 picked for it, and `--json` carries the full list as `versions` alongside the singular

@@ -9,6 +9,8 @@ export interface Guideline {
 }
 
 export interface Attachment {
+  /** iris's own id for the file, which is what makes two of them different. */
+  id: string;
   fileName: string;
   fileSize?: number;
   downloadUrl?: string;
@@ -177,16 +179,33 @@ function collectGuidelines(rejections: Denormalized[]): Guideline[] {
   return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
 }
 
+/**
+ * Everything Apple attached to the conversation, keyed by the id iris gave it.
+ *
+ * The id is the identity, and a file name is not. Every messages response recorded from the
+ * browser carries three attachments under two names: two of them sit on the same message
+ * with the same name and the same byte count, and have different ids and different download
+ * URLs. Keying this by name collapsed those two into one, so the digest said "attachments
+ * (2)" where iris had said three and dropped one of the two download URLs — and a reviewer
+ * attaching `IMG_4821.png` in one round and a different `IMG_4821.png` in the next is the
+ * same collapse over files that are not alike at all.
+ *
+ * Nothing is lost by the change: an attachment belongs to one message, and no id occurs
+ * twice in any recording. The map is what stops a document that sideloaded one twice from
+ * listing it twice, which is the only duplicate there is evidence for.
+ */
 function collectAttachments(messages: Denormalized[]): Attachment[] {
-  const byName = new Map<string, Attachment>();
+  const byId = new Map<string, Attachment>();
 
   for (const message of messages) {
     const attachments = message['resolutionCenterMessageAttachments'];
     if (!Array.isArray(attachments)) continue;
     for (const attachment of attachments as Array<Record<string, unknown>>) {
+      const id = asString(attachment['id']);
       const fileName = asString(attachment['fileName']);
-      if (!fileName || byName.has(fileName)) continue;
-      byName.set(fileName, {
+      if (!id || !fileName || byId.has(id)) continue;
+      byId.set(id, {
+        id,
         fileName,
         fileSize: typeof attachment['fileSize'] === 'number' ? attachment['fileSize'] : undefined,
         downloadUrl: asString(attachment['downloadUrl']),
@@ -194,7 +213,7 @@ function collectAttachments(messages: Denormalized[]): Attachment[] {
     }
   }
 
-  return [...byName.values()];
+  return [...byId.values()];
 }
 
 /**

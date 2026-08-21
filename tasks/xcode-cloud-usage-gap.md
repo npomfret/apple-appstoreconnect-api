@@ -129,12 +129,11 @@ equivalent, and one boolean is thin.
 
 This is the part to weigh before agreeing to any of it.
 
-1. **The `/ci/api` transport base was deliberately removed.** Slice 4.1 deleted
-   `API_BASES.ci`, `getCi`, the `api === 'ci'` header branch and the non-JSON:API `items`
-   page shape, leaving a one-member set; step 5 then removed the set itself, on 2026-08-21,
-   so the transport now has a single `BASE_URL` constant and no notion of a second API at
-   all. Every call above needs the whole mechanism reintroduced, not just an entry added
-   to it. It is a real reversal of a decision already taken, not an addition beside it.
+1. **The `/ci/api` transport base was deliberately removed.** `src/http.ts` now has a
+   single `BASE_URL` constant, one content type and no notion of a second API at all — no
+   base map, no per-base header branch, no non-JSON:API page shape. Every call above needs
+   that whole mechanism reintroduced, not just an entry added to it. It is a real reversal
+   of a decision already taken, not an addition beside it.
 2. **`/ci/api` is not JSON:API.** Sending `content-type: application/vnd.api+json` to it is
    answered **403** — the header bisect is in
    [xcode-cloud-post-actions-gap.md](xcode-cloud-post-actions-gap.md), and it is why every
@@ -143,7 +142,7 @@ This is the part to weigh before agreeing to any of it.
    inherit the wrong one.
 3. **These are team-scoped, not app-scoped.** `.claude/references/architecture.md` records
    that everything mapped is about an app, the People page having been the one account-wide
-   corner and having left with slice 4.2. Every call here is `/{teamId}/…`. Accepting them
+   corner and having gone with the invitations slice. Every call here is `/{teamId}/…`. Accepting them
    reopens an account-wide surface that was closed on purpose. **That is a product call for
    the owner.**
 4. **The team id has to come from somewhere.** It is discoverable:
@@ -159,7 +158,7 @@ If the answer is "the minutes, and nothing else", the honest slice is one read-o
 command — `asc usage` — over `usage/summary` and optionally `usage/days`, with the team id
 taken from a flag rather than discovered, so no *third* base is needed and no personal data
 is fetched. That is roughly: bringing back a base map and a per-base content-type rule —
-both of which step 5 collapsed to constants — plus one plain-JSON page shape, one command,
+both of which the transport now holds as single constants — plus one plain-JSON page shape, one command,
 and the note in `docs/evidence.md` that it was recorded from the browser on 2026-08-21 and
 never written to.
 
