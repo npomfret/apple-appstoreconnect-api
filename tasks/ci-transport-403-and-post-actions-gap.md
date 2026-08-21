@@ -192,6 +192,17 @@ read-modify-write of the entire current workflow, preservation of fields the cli
 understand, a before/after confirmation, complete write auditing, non-TTY refusal, and a
 post-write read-back. Do not make a live write merely to verify an implementation.
 
+## A second `/ci/api` surface, recorded separately
+
+A browser recording of the Xcode Cloud **Usage** page, studied 2026-08-21 at the owner's
+direction, found thirteen more `/ci/api` reads — compute-minute usage against the plan,
+per-user Xcode Cloud capabilities, infrastructure-validation opt-in state and team/PLA
+status — none of which Apple serves officially. They are written up in
+[xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md). They share this file's blocker
+exactly: the base is gone, and the content-type defect above is why it never worked while
+it was there. If either that file or this one is acted on, the transport work is done once
+for both.
+
 ## Friction worth fixing while here
 
 - The removed `docs/xcode-cloud.md` named `x-apple-signature` as the thing most likely to
