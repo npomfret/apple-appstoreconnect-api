@@ -66,6 +66,49 @@ describe('denormalize', () => {
     assert.ok('appMessageThreadDetail' in thread);
   });
 
+  // JSON:API says a resource cannot carry an attribute or relationship named `type` or
+  // `id`, which is what makes flattening one safe. Apple's `providers` resource, recorded
+  // from the browser, carries an attribute named `type` anyway — nothing here reads that
+  // resource, but the merge is exported and what it returns is printed as data.
+  test('an attribute named like the identity does not rewrite it', () => {
+    const document: Document<Resource> = {
+      data: {
+        type: 'providers',
+        id: 'p1',
+        attributes: { type: 'ITUNES_CONNECT', id: 'not-the-id', name: 'Acme' },
+      },
+    };
+
+    const provider = denormalize(document, document.data);
+
+    assert.equal(provider.type, 'providers');
+    assert.equal(provider.id, 'p1');
+    assert.equal(provider.name, 'Acme');
+  });
+
+  // The relationships are written after the attributes, so they had the same reach.
+  test('a relationship named like the identity does not rewrite it either', () => {
+    const document: Document<Resource> = {
+      data: {
+        type: 'threads',
+        id: 't1',
+        relationships: { id: { data: { type: 'apps', id: 'app-1' } } },
+      },
+      included: [{ type: 'apps', id: 'app-1', attributes: { name: 'Funmax' } }],
+    };
+
+    const thread = denormalize(document, document.data);
+
+    assert.equal(thread.type, 'threads');
+    assert.equal(thread.id, 't1');
+  });
+
+  // The identity is written twice, so it must not move: `asc get` prints this, and a
+  // resource whose type and id turned up at the end of the object would read as a diff.
+  test('the identity is still the first thing in the object', () => {
+    assert.deepEqual(Object.keys(thread).slice(0, 2), ['type', 'id']);
+  });
+
   test('a cycle stops at a stub instead of recurring forever', () => {
     const document: Document<Resource> = {
       data: {

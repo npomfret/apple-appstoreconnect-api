@@ -56,7 +56,13 @@ under one name — every recording here has such a message — so deduplicating 
 of them.
 
 `denormalize` splices JSON:API `included` resources into their relationships, so you can
-read `thread.app.name` instead of hand-joining sideloads.
+read `thread.app.name` instead of hand-joining sideloads. Flattening a resource that way is
+safe because JSON:API forbids an attribute or relationship named `type` or `id`; **where a
+resource breaks that rule, the document's identity wins and the colliding member is
+dropped** — it was the other way round until 2026-08-21. Apple does break it: a `providers`
+resource recorded from the browser carries an attribute named `type`. Nothing here reads that
+resource, so this changes nothing any command prints; it means `type` and `id` on a
+denormalized resource are always what the document said it was.
 
 `loadSession()` reads and parses the capture file — `tmp/curl.txt`, or `ASC_CURL_PATH` —
 every time you call it; nothing is cached on disk. Call it once and keep the `Session`,

@@ -45,7 +45,10 @@ function expand(resource: Resource, index: Map<string, Resource>, seen: Set<stri
   if (seen.has(self)) return { type: resource.type, id: resource.id };
 
   const nextSeen = new Set(seen).add(self);
-  const out: Denormalized = { type: resource.type, id: resource.id, ...(resource.attributes ?? {}) };
+  // What the document said this resource is. Held apart from the merge below and written
+  // again at the end, for the reason on the return.
+  const identity = { type: resource.type, id: resource.id };
+  const out: Denormalized = { ...identity, ...(resource.attributes ?? {}) };
 
   for (const [name, relationship] of Object.entries(resource.relationships ?? {})) {
     const data = relationship?.data;
@@ -63,7 +66,27 @@ function expand(resource: Resource, index: Map<string, Resource>, seen: Set<stri
     }
   }
 
-  return out;
+  /**
+   * The identity is the document's, and a field does not get to rewrite it — it did until
+   * 2026-08-21, when attributes were spliced in over the top of `type` and `id` and the
+   * relationships after them.
+   *
+   * Flattening a resource this way is only safe because JSON:API puts attributes,
+   * relationships, `type` and `id` in one namespace and forbids the collision. Apple does
+   * not always hold to it: a `providers` resource recorded from the browser carries an
+   * attribute *named* `type`, and merging that lifted a display string over the resource
+   * type that `key`, the cycle guard and every caller walking the result read. Those five
+   * recordings are sideloaded into `olympus/v1/actors`, which this client never calls — so
+   * nothing reaches it today, and the reason to fix it is not that something does. It is
+   * that the shape is Apple's rather than hypothetical, the merge is exported for callers
+   * that are not this repo's, and `asc get` prints what comes out of here as data.
+   *
+   * The colliding attribute is dropped, which is the same answer JSON:API's own rule gives:
+   * a member named `type` or `id` is not a field. Keeping both would need somewhere else to
+   * put it, which is an output shape nothing has asked for. `type` and `id` keep the
+   * position they were given above and the value they are given here.
+   */
+  return { ...out, ...identity };
 }
 
 /** Denormalizes a whole document's primary data. */
