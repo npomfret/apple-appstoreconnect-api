@@ -57,6 +57,14 @@ list is the tested one and an override is not.
   option is how to look further. Whether iris reports a total to check against is per
   endpoint, and not something any recording here settles — the warning uses one when it is
   offered and falls back to "the page is exactly as long as we asked for" when it isn't.
+  The `fromActor` include is what tells Apple's messages from your own, and the responses
+  were re-read for it on 2026-08-21: every actor carries an `actorType`, it is `APPLE` or
+  `USER` across 29 actors in five recordings, Apple's own actor has the literal id `APPLE`
+  and no name or email against it, and yours is an opaque 41-character id. That is a
+  *sample*, not a schema. The same actors carry an `apiKeyId`, null in all 29, so a third
+  kind is likely to exist unseen, and `report` prints "sender not recognised" for anything
+  that is neither rather than assuming. The digest read the id and not the type until that
+  day, matching on the prefix `APPLE`, which no recording ever supported.
 - `listThreads` — the app's Resolution Center thread list, and since the thread-first
   rebuild the starting point of `report`. The include list, the seven `filter[threadType]`
   values and `limit[appStoreVersions]=2000` are the browser's own. Two things that query

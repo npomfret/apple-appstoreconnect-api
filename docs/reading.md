@@ -40,6 +40,15 @@ Timestamps are shortened to the minute and keep the zone Apple stamped them in r
 being moved into yours — `--json` carries them exactly as they arrived. Apple sends two
 shapes, an offset on a version's state changes and `Z` on a message, and both render.
 
+`(from Apple)` and `(from you)` come from `actorType` on the message's own actor, which the
+messages response sideloads. Every actor in every recording carries it and it is `APPLE` or
+`USER`; Apple's is additionally the literal id `APPLE`, which is what a message whose actor
+was not sideloaded falls back to. An actor of any other kind prints `(sender not
+recognised)` and leaves `lastMessageFromApple` unset in `--json` rather than defaulting to
+one side. There is an `apiKeyId` field beside `actorType`, null in every capture, so a
+third kind probably exists and has not been seen — and being wrong here would mean the
+digest telling you the thread is waiting on Apple when it is waiting on you.
+
 The version each conversation is about comes off the thread's own `appStoreVersions`, which
 is a to-many relationship: a thread about two versions names both rather than having one
 picked for it, and `--json` carries the full list as `versions` alongside the singular

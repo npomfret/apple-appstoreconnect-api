@@ -19,7 +19,7 @@ import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import { Document, Resource } from '../src/jsonapi';
-import { buildReport, fetchPrivacy, SubmissionReport } from '../src/report';
+import { buildReport, fetchPrivacy, formatReport, SubmissionReport } from '../src/report';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const APP = '123';
@@ -51,12 +51,31 @@ function threads(...versionIds: string[]): Document<Resource[]> {
 
 const THREADS = threads('v-1.4.0');
 
+/**
+ * An actor as the messages response sideloads it. `actorType` is what says which side sent
+ * a message; the recordings carry `APPLE` or `USER` and nothing else, Apple's own actor has
+ * the literal id `APPLE` and no name or email against it, and `apiKeyId` is null on both.
+ * Invented values, recorded shape.
+ */
+function actor(id: string, actorType: string): Resource {
+  const person =
+    actorType === 'USER'
+      ? { userFirstName: 'Nick', userLastName: 'Example', userEmail: 'nick@example.com' }
+      : { userFirstName: null, userLastName: null, userEmail: null };
+
+  return { type: 'actors', id, attributes: { actorType, apiKeyId: null, ...person } };
+}
+
+const APPLE = 'APPLE';
+const YOU = 'ACTOR_0000';
+const ACTORS = [actor(APPLE, 'APPLE'), actor(YOU, 'USER')];
+
 /** One message, with an actor and any attachments hung off it. */
 function message(
   id: string,
   createdDate: string,
   messageBody: string,
-  actor: string,
+  actorId: string,
   attachments: string[] = []
 ): Resource {
   return {
@@ -64,7 +83,7 @@ function message(
     id,
     attributes: { createdDate, messageBody },
     relationships: {
-      fromActor: { data: { type: 'actors', id: actor } },
+      fromActor: { data: { type: 'actors', id: actorId } },
       resolutionCenterMessageAttachments: {
         data: attachments.map((attachmentId) => ({ type: 'resolutionCenterMessageAttachments', id: attachmentId })),
       },
@@ -89,13 +108,16 @@ interface Thread {
   attachments?: Resource[];
   rejections?: Resource[];
   draft?: Resource | null;
+  /** The sideloaded actors, which the recorded response always carries. */
+  actors?: Resource[];
 }
 
 /** Answers each leg of the report chain from `thread`, and hands back the one report. */
 async function report(thread: Thread): Promise<SubmissionReport> {
   const stub = stubFetch((call) => {
     if (call.url.includes('/resolutionCenterMessages')) {
-      return { body: { data: thread.messages ?? [], included: thread.attachments ?? [] } };
+      const included = [...(thread.attachments ?? []), ...(thread.actors ?? ACTORS)];
+      return { body: { data: thread.messages ?? [], included } };
     }
     if (call.url.includes('/resolutionCenterDraftMessage')) return { body: { data: thread.draft ?? null } };
     if (call.url.includes('/reviewRejections')) return { body: { data: thread.rejections ?? [] } };
@@ -116,8 +138,8 @@ describe('the conversation, as a digest', () => {
   // Same hazard as the history timeline: 01:30-07:00 is 08:30Z and came first,
   // 01:00-08:00 is 09:00Z and came second. As text they sort the other way round.
   const dst = [
-    message('m-1', '2026-11-01T01:30:00-07:00', '<p>We are still seeing the crash.</p>', 'APPLE_REVIEW'),
-    message('m-2', '2026-11-01T01:00:00-08:00', '<p>A new build is on the way.</p>', 'ACTOR_0000'),
+    message('m-1', '2026-11-01T01:30:00-07:00', '<p>We are still seeing the crash.</p>', APPLE),
+    message('m-2', '2026-11-01T01:00:00-08:00', '<p>A new build is on the way.</p>', YOU),
   ];
 
   test('the latest message is the latest in time, not in text', async () => {
@@ -127,10 +149,53 @@ describe('the conversation, as a digest', () => {
     assert.equal(digest.lastMessageFromApple, false);
   });
 
-  test('Apple is recognised by the actor id, and their last word is kept separately', async () => {
+  test("Apple is recognised by the actor's own type, and their last word is kept separately", async () => {
     const digest = await report({ messages: dst });
 
     assert.equal(digest.lastAppleMessage, 'We are still seeing the crash.');
+  });
+
+  // Which side sent the last message is the line in the digest that decides whether you
+  // act. It used to be read off the actor id with a prefix match, which meant anything
+  // unfamiliar came out as "you" — the tool saying you had already replied when you had
+  // not. `actorType` says it outright, and no answer is better than a confident wrong one.
+  test('an actor of a kind no capture has shown is not quietly reported as you', async () => {
+    const machine = actor('SOMETHING_ELSE', 'API_KEY');
+    const digest = await report({
+      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>Automated.</p>', 'SOMETHING_ELSE')],
+      actors: [machine],
+    });
+
+    assert.equal(digest.lastMessageDate, '2026-04-27T15:51:00-07:00');
+    assert.equal(digest.lastMessageFromApple, undefined);
+    assert.match(formatReport([digest]), /last msg {3}2026-04-27 15:51-07:00 \(sender not recognised\)/);
+  });
+
+  test('an id that merely begins with Apple is not Apple', async () => {
+    const digest = await report({
+      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>Hello.</p>', 'APPLESEED_LTD')],
+      actors: [actor('APPLESEED_LTD', 'USER')],
+    });
+
+    assert.equal(digest.lastMessageFromApple, false);
+    assert.equal(digest.lastAppleMessage, undefined);
+  });
+
+  test('an actor that was not sideloaded falls back to the id, and only to the recorded one', async () => {
+    const bare = await report({
+      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>We are still seeing the crash.</p>', APPLE)],
+      actors: [],
+    });
+
+    assert.equal(bare.lastMessageFromApple, true);
+    assert.equal(bare.lastAppleMessage, 'We are still seeing the crash.');
+
+    const opaque = await report({
+      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>Any news?</p>', YOU)],
+      actors: [],
+    });
+
+    assert.equal(opaque.lastMessageFromApple, undefined);
   });
 
   test('message bodies arrive as HTML and are read as text', async () => {
@@ -140,7 +205,7 @@ describe('the conversation, as a digest', () => {
           'm-1',
           '2026-04-27T15:51:00-07:00',
           '<p>Guideline 2.1</p><ul><li>The app crashed</li><li>on iPad&nbsp;Air</li></ul>',
-          'APPLE_REVIEW'
+          APPLE
         ),
       ],
     });
@@ -150,7 +215,7 @@ describe('the conversation, as a digest', () => {
 
   test('a thread with nothing from Apple has no Apple message rather than the wrong one', async () => {
     const digest = await report({
-      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>Any news?</p>', 'ACTOR_0000')],
+      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>Any news?</p>', YOU)],
     });
 
     assert.equal(digest.lastAppleMessage, undefined);
@@ -176,7 +241,7 @@ describe('the conversation, as a digest', () => {
 describe('what Apple attached', () => {
   test('attachments are collected off the messages that carry them', async () => {
     const digest = await report({
-      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', 'APPLE_REVIEW', ['a-1'])],
+      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, ['a-1'])],
       attachments: [attachment('a-1', 'crash.mp4', 2048)],
     });
 
@@ -188,8 +253,8 @@ describe('what Apple attached', () => {
   test('the same file on two messages is listed once', async () => {
     const digest = await report({
       messages: [
-        message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', 'APPLE_REVIEW', ['a-1']),
-        message('m-2', '2026-04-28T09:00:00-07:00', '<p>And again.</p>', 'APPLE_REVIEW', ['a-2']),
+        message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, ['a-1']),
+        message('m-2', '2026-04-28T09:00:00-07:00', '<p>And again.</p>', APPLE, ['a-2']),
       ],
       attachments: [attachment('a-1', 'crash.mp4', 2048), attachment('a-2', 'crash.mp4', 2048)],
     });
@@ -254,7 +319,7 @@ describe('starting without an official read', () => {
    * thread-first rebuild a change of entry point rather than a change of answer.
    */
   const messages = [
-    message('m-1', '2026-04-27T15:51:00-07:00', '<p>We are still seeing the crash.</p>', 'APPLE_REVIEW'),
+    message('m-1', '2026-04-27T15:51:00-07:00', '<p>We are still seeing the crash.</p>', APPLE),
   ];
 
   async function from(target: Parameters<typeof buildReport>[1]) {

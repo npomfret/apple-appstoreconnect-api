@@ -44,6 +44,12 @@ export interface SubmissionReport {
   threadId?: string;
   /** Apple's stamp, verbatim. `--json` carries it as it arrived; only the digest shortens it. */
   lastMessageDate?: string;
+  /**
+   * True when Apple sent the last message, false when your side did. Absent when there is
+   * no last message *or* when its actor was neither of the two kinds the captures show —
+   * the two are told apart by `lastMessageDate`, which is set in the second case and not
+   * the first. It is deliberately not a plain boolean: see `senderOf`.
+   */
   lastMessageFromApple?: boolean;
   /** Apple's most recent message, tags stripped. */
   lastAppleMessage?: string;
@@ -87,13 +93,41 @@ function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-function isAppleActor(message: Denormalized): boolean {
+/** Who sent a message. `unknown` is a real answer here, not a placeholder — see `senderOf`. */
+type Sender = 'apple' | 'you' | 'unknown';
+
+/**
+ * Which side a message came from, which is the most consequential thing the digest says.
+ *
+ * `fromActor` is in the include list, so the actor arrives with its attributes rather than
+ * as a reference, and `actorType` is the field that answers this. Every actor in every
+ * Resolution Center response recorded from the browser carries it, and it is `APPLE` or
+ * `USER`: 29 actors across five recordings, no third value. Apple's is additionally the
+ * literal id `APPLE`, with no name or email against it, and that id is the fallback below
+ * for a `fromActor` that arrived as a bare reference because nothing sideloaded it.
+ *
+ * Neither test is a prefix match, and this does not read the id when it has the attribute.
+ * It used to do both — `id.toUpperCase().startsWith('APPLE')` — which was a guess about a
+ * field that never had to carry the question, since `actorType` was beside it the whole
+ * time and says so outright.
+ *
+ * The third answer is not padding. An `apiKeyId` attribute sits beside `actorType`, null in
+ * every capture, so an actor standing for an API key is probably a value nobody here has
+ * seen — and the digest must not print a sender it does not recognise as though it were
+ * you. That mistake is the tool saying the thread is waiting on Apple when it is waiting on
+ * you, which is the one thing it exists to get right.
+ */
+function senderOf(message: Denormalized): Sender {
   const from = message['fromActor'];
-  if (from && typeof from === 'object') {
-    const id = (from as { id?: unknown }).id;
-    if (typeof id === 'string') return id.toUpperCase().startsWith('APPLE');
-  }
-  return false;
+  if (!from || typeof from !== 'object') return 'unknown';
+
+  const { actorType, id } = from as { actorType?: unknown; id?: unknown };
+  if (actorType === 'APPLE') return 'apple';
+  if (actorType === 'USER') return 'you';
+  if (actorType !== undefined) return 'unknown';
+
+  // No attributes: this is a bare reference, and the id is all there is to go on.
+  return id === 'APPLE' ? 'apple' : 'unknown';
 }
 
 /**
@@ -262,10 +296,13 @@ async function addThread(
   const latest = messages[0];
   if (latest) {
     report.lastMessageDate = asString(latest['createdDate']);
-    report.lastMessageFromApple = isAppleActor(latest);
+    // Left unset when the sender is not one of the two recorded kinds, so that a caller
+    // reading the JSON cannot mistake "we could not tell" for "not Apple".
+    const sender = senderOf(latest);
+    if (sender !== 'unknown') report.lastMessageFromApple = sender === 'apple';
   }
 
-  const latestFromApple = messages.find(isAppleActor);
+  const latestFromApple = messages.find((message) => senderOf(message) === 'apple');
   const body = latestFromApple && asString(latestFromApple['messageBody']);
   if (body) report.lastAppleMessage = htmlToText(body);
 
@@ -495,8 +532,11 @@ export function formatReport(reports: SubmissionReport[]): string {
       if (report.submissionId) lines.push(`  thread     ${report.threadId ?? 'none'}`);
 
       if (report.lastMessageDate) {
-        const who = report.lastMessageFromApple ? 'Apple' : 'you';
-        lines.push(`  last msg   ${shortDate(report.lastMessageDate)} (from ${who})`);
+        const who =
+          report.lastMessageFromApple === undefined
+            ? 'sender not recognised'
+            : `from ${report.lastMessageFromApple ? 'Apple' : 'you'}`;
+        lines.push(`  last msg   ${shortDate(report.lastMessageDate)} (${who})`);
       }
       if (report.hasDraftReply) lines.push('  draft      an unsent reply is waiting');
 

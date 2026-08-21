@@ -56,12 +56,10 @@ The Xcode Cloud slice was removed on 2026-08-21 on the stated grounds that the o
 exposes CI products, workflows, repositories, build runs, actions, issues and test results,
 and can create and update workflows.
 
-That is right about workflows in general and **wrong about the field that matters**.
-Checked on 2026-08-21 against Apple's published schema for `CiWorkflow.Attributes`
-(`developer.apple.com/tutorials/data/documentation/appstoreconnectapi/ciworkflow/attributes-data.dictionary.json`):
-`actions`, `clean`, `containerFilePath`, `description`, `isEnabled`, `isLockedForEditing`,
-`lastModifiedDate`, `name`, and the start conditions. No post-action field.
-`CiWorkflow.Relationships` carries no `betaGroups` either.
+That is right about workflows in general and **wrong about the field that matters**. The
+check that settles it is against the 4.4.1 document itself and is under "What the recording
+settled" below. The weaker check this file originally carried — against Apple's published
+`CiWorkflow.Attributes` page — has been superseded by it and is not repeated here.
 
 The private document does carry it. Read live today from
 `GET ci/api/teams/{team}/products/{product}/workflows-v15`:
@@ -84,15 +82,16 @@ be treated as a keep-list candidate and tested as one while the parts Apple genu
 remain removed. That is a decision for whoever owns the boundary, not something this file
 settles.
 
-That code has now been removed, but the boundary question is unchanged. The implementation
-decision should distinguish these scopes:
+That code has now been removed, but the boundary question is unchanged. This table used to
+sort the scopes by whether a populated capture was needed; the recording answered that for
+every row, so the column now says what each would still have to settle:
 
-| Proposed work | Is a populated capture required? |
+| Proposed work | What it still waits on |
 | --- | --- |
-| Correct the old `/ci/api` content type if a CI transport is restored | No — the header bisect above is direct evidence |
-| Keep a raw `post_actions: unknown[]` read and report only empty/non-empty | No — the live empty read already establishes the field |
-| Identify and render a TestFlight Internal Testing post-action | Satisfied — the populated shape is recorded below |
-| Add or remove a post-action from a script | Evidence satisfied below, both directions. The write-safety decision is separate and still owed |
+| Correct the old `/ci/api` content type if a CI transport is restored | Owner approval |
+| Keep a raw `post_actions: unknown[]` read and report only empty/non-empty | Owner approval |
+| Identify and render a TestFlight Internal Testing post-action | Owner approval |
+| Add or remove a post-action from a script | A write design of its own, on top of that |
 
 The read is the coherent first boundary. It answers whether anything is configured without
 inventing a request body or restoring build, repository, test-result and run-report features
@@ -215,7 +214,7 @@ minimum read-only implementation should:
 - omit `application/vnd.api+json` on CI reads from the outset;
 - classify CI 403s separately from the Iris session-expiry heuristic;
 - expose `post_actions` conservatively, leaving unknown fields intact;
-- add invented fixtures for empty and, once redacted evidence exists, populated arrays;
+- add invented fixtures for both the empty and the populated array, from the shape above;
 - test the exact path, headers and CI-specific 403 message locally with stubbed `fetch`;
 - update `docs/evidence.md` and user documentation with the capture's actual evidence level,
   leading with the content-type failure above rather than the signature caveat;
