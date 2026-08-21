@@ -21,7 +21,7 @@ node dist/cli.js report --submission <id>   # the thread behind a submission id
 ```
 thread     74533c00-b29e-3041-826a-1a221f522ecc
   version    1.0.21
-  last msg   2026-05-17T12:25:06.31Z (from Apple)
+  last msg   2026-05-17 12:25Z (from Apple)
   guidelines
     4.1.0   Design: Copycats
     4.2.2   Design: Minimum Functionality
@@ -35,6 +35,10 @@ Every route in is a private one. An app id — the default, taken from the captu
 lists the app's Resolution Center threads; `--submission` filters that same list by
 `filter[reviewSubmission]`; `--thread` skips discovery entirely. None of them reads a
 resource Apple's official API serves.
+
+Timestamps are shortened to the minute and keep the zone Apple stamped them in rather than
+being moved into yours — `--json` carries them exactly as they arrived. Apple sends two
+shapes, an offset on a version's state changes and `Z` on a message, and both render.
 
 The version each conversation is about comes off the thread's own `appStoreVersions`, which
 is a to-many relationship: a thread about two versions names both rather than having one

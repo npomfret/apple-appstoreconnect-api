@@ -1,18 +1,19 @@
 /**
- * The history timeline, which is where Apple's timestamps have to be treated as moments
- * rather than as text.
+ * The digest, which is where Apple's own strings get read by a person.
  *
- * Apple stamps them in local wall-clock time with the offset of that moment, so twice a
- * year the string order and the chronological order disagree. Sorting the text put the
- * states in the wrong order and made the "held for" column negative — no error, just a
- * wrong answer about how long a review took.
+ * Two kinds of thing go wrong here and neither raises anything. Timestamps arrive as local
+ * wall-clock time with the offset of that moment, so twice a year the string order and the
+ * chronological order disagree: sorting the text put the states in the wrong order and made
+ * the "held for" column negative. And a message body arrives as HTML, where the difference
+ * between what a reviewer typed and what is shown to you is a decoding step. Both are
+ * wrong answers rather than errors, which is why they are worth a test.
  */
 
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import { Document, Resource } from '../src/jsonapi';
-import { fetchHistory } from '../src/report';
+import { fetchHistory, formatReport, htmlToText, SubmissionReport } from '../src/report';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 function change(id: string, state: string, date: string | undefined, initiator: string): Resource {
@@ -88,5 +89,82 @@ describe('ordering state changes', () => {
 
   test('no recorded changes is an empty history, not an error', async () => {
     assert.deepEqual(await history([]), []);
+  });
+});
+
+describe('decoding a message body', () => {
+  test('tags become the layout they stood for', () => {
+    assert.equal(
+      htmlToText('<p>Your app crashed.</p><ul><li>iPad Air</li><li>iOS 18.2</li></ul>'),
+      'Your app crashed.\n  - iPad Air\n  - iOS 18.2'
+    );
+  });
+
+  test('the entities Apple sends are decoded', () => {
+    assert.equal(
+      htmlToText('<p>Terms&nbsp;&amp; Conditions &quot;as&#39;is&quot; &lt;b&gt;</p>'),
+      'Terms & Conditions "as\'is" <b>'
+    );
+  });
+
+  test('an escaped entity is decoded once, not twice', () => {
+    // "&amp;lt;" is how a reviewer who typed the characters "&lt;" reaches us. Decoding the
+    // ampersand first and then re-reading the result showed them a "<" they never wrote.
+    assert.equal(
+      htmlToText('<p>Write &amp;lt;name&amp;gt; where the name goes, and &amp;amp; for an and.</p>'),
+      'Write &lt;name&gt; where the name goes, and &amp; for an and.'
+    );
+  });
+
+  test('an entity outside the set is left alone rather than guessed at', () => {
+    assert.equal(htmlToText('<p>Waiting&hellip;</p>'), 'Waiting&hellip;');
+  });
+
+  test('a decoded angle bracket is text, not a tag to strip', () => {
+    assert.equal(htmlToText('<p>Remove &lt;script&gt; from the page</p>'), 'Remove <script> from the page');
+  });
+});
+
+describe('rendering the digest', () => {
+  function report(lastMessageDate: string | undefined): SubmissionReport {
+    return {
+      threadId: 'thread-1',
+      lastMessageDate,
+      lastMessageFromApple: true,
+      versions: [],
+      guidelines: [],
+      attachments: [],
+      hasDraftReply: false,
+    };
+  }
+
+  function lastMessageLine(date: string | undefined): string | undefined {
+    return formatReport([report(date)])
+      .split('\n')
+      .find((line) => line.trim().startsWith('last msg'));
+  }
+
+  test('a stamp with an offset keeps the offset', () => {
+    const line = lastMessageLine('2026-04-25T07:34:29-07:00');
+
+    assert.equal(line, '  last msg   2026-04-25 07:34-07:00 (from Apple)');
+  });
+
+  test('a UTC stamp with a fraction of a second is shortened, not mangled', () => {
+    // Cutting at fixed positions made this "2026-05-17 12:25.31Z", which reads as a time
+    // and is not one.
+    const line = lastMessageLine('2026-05-17T12:25:06.31Z');
+
+    assert.equal(line, '  last msg   2026-05-17 12:25Z (from Apple)');
+  });
+
+  test('a stamp in neither shape is shown as it arrived', () => {
+    const line = lastMessageLine('sometime on Tuesday');
+
+    assert.equal(line, '  last msg   sometime on Tuesday (from Apple)');
+  });
+
+  test('no last message means no line about one', () => {
+    assert.equal(lastMessageLine(undefined), undefined);
   });
 });

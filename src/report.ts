@@ -42,6 +42,7 @@ export interface SubmissionReport {
   /** Every version the report is about. Empty when its source named none. */
   versions: VersionRef[];
   threadId?: string;
+  /** Apple's stamp, verbatim. `--json` carries it as it arrived; only the digest shortens it. */
   lastMessageDate?: string;
   lastMessageFromApple?: boolean;
   /** Apple's most recent message, tags stripped. */
@@ -51,19 +52,33 @@ export interface SubmissionReport {
   hasDraftReply: boolean;
 }
 
+/**
+ * The entities Apple's editor emits, decoded in one pass.
+ *
+ * One pass because a chain of replacements is not a decoder: `&amp;` has to run somewhere
+ * in it, and everything after it then reads its output. `&amp;lt;` — which is how a
+ * reviewer who typed the four characters `&lt;` arrives here — came out as `&lt;` and then
+ * as `<`, a character nobody wrote. Anything outside this set is left exactly as it stands
+ * rather than guessed at; these are the ones the message bodies have shown.
+ */
+const ENTITIES: Record<string, string> = {
+  '&nbsp;': ' ',
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+};
+
 /** Apple sends message bodies as fragments of HTML; the digest wants readable text. */
 export function htmlToText(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|h[1-6]|li)>/gi, '\n')
     .replace(/<li[^>]*>/gi, '  - ')
+    // Tags first, so that a decoded "<" is read as the text it is and not as markup.
     .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+    .replace(/&(?:nbsp|amp|lt|gt|quot|#39);/g, (entity) => ENTITIES[entity] ?? entity)
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -301,10 +316,26 @@ export async function fetchHistory(session: Session, versionId: string): Promise
   return changes;
 }
 
-/** "2026-04-25T07:34:29-07:00" -> "2026-04-25 07:34-07:00", keeping the offset honest. */
+/** Day, minute, and the zone it was said in — with the seconds and any fraction dropped. */
+const TIMESTAMP = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}(?:\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
+
+/**
+ * "2026-04-25T07:34:29-07:00" -> "2026-04-25 07:34-07:00", keeping the offset honest.
+ *
+ * Apple stamps two ways and both are rendered here. A version's state change carries a local
+ * offset, as above; a Resolution Center message carries `Z` and a fraction of a second, and
+ * `2026-05-17T12:25:06.31Z` shortens to `2026-05-17 12:25Z`. Cutting at fixed positions did
+ * the first shape and made the second read `12:25.31Z`, so the parts are matched instead.
+ *
+ * The zone is shown rather than resolved into whichever one the reader is sitting in: around
+ * a daylight-saving change that is the difference between two stamps that look an hour apart
+ * and two that are, and this is read beside Apple's own UI. A stamp in neither shape is
+ * printed as it arrived — one this doesn't recognise is one to show, not one to cut into
+ * something that is no longer a time.
+ */
 function shortDate(date: string | undefined): string {
   if (!date) return 'unknown date';
-  return `${date.slice(0, 10)} ${date.slice(11, 16)}${date.slice(19)}`;
+  return date.replace(TIMESTAMP, '$1 $2$3');
 }
 
 /** Rounds a span to its largest useful unit — exact seconds mean nothing after a day. */
@@ -452,7 +483,7 @@ export function formatReport(reports: SubmissionReport[]): string {
 
       if (report.lastMessageDate) {
         const who = report.lastMessageFromApple ? 'Apple' : 'you';
-        lines.push(`  last msg   ${report.lastMessageDate} (from ${who})`);
+        lines.push(`  last msg   ${shortDate(report.lastMessageDate)} (from ${who})`);
       }
       if (report.hasDraftReply) lines.push('  draft      an unsent reply is waiting');
 
