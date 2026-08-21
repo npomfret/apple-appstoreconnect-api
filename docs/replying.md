@@ -82,8 +82,10 @@ Neither the POST nor the PATCH response mentions attachments, so the draft is re
 end; that GET is what the command prints.
 
 `delete-draft` takes a thread id rather than a draft id, because the draft id is never shown
-in the UI. Attachments go with the draft: after one was deleted this way, a GET of the
-attachment it carried returned 404.
+in the UI — and since a thread id says nothing about what is in the box, it prints the draft
+in full before it asks, the same way `send-reply` does. Nothing keeps a copy afterwards.
+Attachments go with the draft: after one was deleted this way, a GET of the attachment it
+carried returned 404.
 
 Draft ids are *derived from the thread*, not random. Deleting a draft and starting another
 on the same thread returned the identical UUID with a fresh `createdDate` — and both it and

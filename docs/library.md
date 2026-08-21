@@ -56,7 +56,9 @@ and `denormalizeAll` are for.
 `confirm()` from `src/confirm.ts` is there if you want the same guard — it asks on the
 terminal even when stdin is carrying something else, and refuses when there is no terminal
 to ask on. `findSendableDraft()` is the read half of `sendDraftReply()`, so you can show a
-draft and ask before sending the thing you just showed. That is all `send-reply` does —
+draft and ask before sending the thing you just showed; `findDeletableDraft()` is the same
+half of `discardDraftReply()`, and differs in one thing — an empty draft is still one to
+delete. That is all `send-reply` does —
 plus one more `findSendableDraft()` after the answer, since the send posts a reference to
 the draft rather than its text, and the box autosaves while your prompt is on screen. Worth
 copying if you build your own.

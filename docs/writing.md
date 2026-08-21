@@ -21,8 +21,16 @@ escape hatch, restricted to the private families — see
 ## Confirmations
 
 One command reaches Apple in a way this client cannot walk back — `send-reply` — and it
-prints what it is about to do and asks. So do the two deletes (`delete-draft`,
-`delete-attachment`), which destroy data rather than publish it.
+prints what it is about to do and asks. So do the two deletes, which destroy data rather
+than publish it.
+
+How much each of them can show you differs, and it is worth knowing which you are getting.
+`delete-draft` prints the draft in full, attachments and all, exactly as `send-reply` does:
+the id you typed is a thread's, and it says nothing about the words in the box, which
+nothing keeps a copy of once they are gone. `delete-attachment` prints the id you passed and
+no more — nothing here reads a single attachment, so there is no file name to put beside it
+that didn't come off a draft you had already read. `asc draft <threadId>` is where those ids
+and their names are listed together, and is worth a look first.
 
 What is about to happen is printed either way, `--yes` included. That flag says the answer
 is already decided, not that there is nothing worth recording — `send-reply` prints the

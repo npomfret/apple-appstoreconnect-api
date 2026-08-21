@@ -43,7 +43,8 @@ Writes (these change your live App Store Connect data):
                               attachments. "-" reads the text from stdin. This does NOT
                               send it — see send-reply
   asc delete-attachment <id>  Remove one attachment from a draft
-  asc delete-draft <threadId> Throw the thread's draft away, attachments and all
+  asc delete-draft <threadId> Throw the thread's draft away, attachments and all — printed
+                              in full first, since nothing keeps a copy
 
 This reaches Apple and cannot be undone. It shows what it is about to send and asks first;
 --yes answers for you:
@@ -148,8 +149,9 @@ function requireAppId(session: Session, given: string | undefined): string {
 }
 
 /**
- * What `send-reply` shows before it asks. The whole body, not a preview of it: this is the
- * last look anyone gets at a message that can't be edited or taken back afterwards.
+ * What the two commands that act on a whole draft show before they ask. The whole body,
+ * not a preview of it: it is the last look anyone gets either way — `send-reply` can't be
+ * edited or taken back afterwards, and `delete-draft` leaves no copy of what it threw away.
  */
 function describeDraft(threadId: string, draft: Denormalized): string[] {
   const body = String(draft['messageBody'] ?? '');
@@ -345,20 +347,34 @@ async function main(argv: string[]): Promise<number> {
     case 'delete-draft': {
       const session = loadSession();
       const threadId = requireArg(rest[0], 'threadId', 'delete-draft <threadId>');
+
+      // Read here rather than letting `discardDraftReply` do it in one call, for the same
+      // reason as send-reply: what is in the box is the whole of what the question is
+      // about. A thread id names the draft but says nothing about the words in it, and
+      // nothing keeps a copy of those once the answer is yes.
+      const document = await api.findDeletableDraft(session, threadId);
+      const draft = denormalize(document, document.data);
+
       await confirm({
-        question: `Delete the draft on thread ${threadId}, attachments and all?`,
+        question: `Delete this draft on thread ${threadId}, attachments and all?`,
+        detail: describeDraft(threadId, draft),
         yes,
       });
-      const draftId = await api.discardDraftReply(session, threadId);
-      console.error(`Deleted draft ${draftId} and its attachments.`);
+
+      await api.deleteDraftMessage(session, draft.id);
+      console.error(`Deleted draft ${draft.id} and its attachments.`);
       return 0;
     }
 
     case 'delete-attachment': {
       const session = loadSession();
       const id = requireArg(rest[0], 'attachmentId', 'delete-attachment <attachmentId>');
+      // The id is the whole of the preview: nothing here reads one attachment on its own,
+      // so there is no file name to show you that didn't come off the draft in the first
+      // place. `asc draft <threadId>` is where the ids and their names are listed together.
       await confirm({ question: `Delete attachment ${id}?`, yes });
       await api.deleteMessageAttachment(session, id);
+      console.error(`Deleted attachment ${id}.`);
       return 0;
     }
 

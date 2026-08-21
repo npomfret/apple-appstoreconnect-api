@@ -488,12 +488,38 @@ export async function saveDraftReply(session: Session, reply: DraftReply): Promi
 }
 
 /**
+ * The thread's draft box, having established there is something in it to delete.
+ *
+ * All that is checked is that a draft exists. An empty one is still worth deleting, unlike
+ * sending, which is why this and `findSendableDraft` are two reads rather than one: the
+ * question each is asked before is a different question.
+ *
+ * Split out of `discardDraftReply` for the same reason the send is split — the CLI needs
+ * the draft in its hands to show you what is about to go. The whole document comes back
+ * rather than the draft alone because the attachments are sideloaded beside it, and they
+ * go with it.
+ */
+export async function findDeletableDraft(
+  session: Session,
+  threadId: string
+): Promise<Document<Resource>> {
+  const document = await getDraftMessage(session, threadId);
+  const draft = document.data;
+
+  if (!draft) throw new Error(`Thread ${threadId} has no draft to delete`);
+
+  return { ...document, data: draft };
+}
+
+/**
  * Deletes the thread's draft, attachments and all, and says which one went. Addressed by
  * thread because that is the id you have; the draft id is never shown in the UI.
+ *
+ * **No confirmation and nothing kept.** The CLI's `delete-draft` is these same two steps
+ * with the draft printed and a question in between.
  */
 export async function discardDraftReply(session: Session, threadId: string): Promise<string> {
-  const draft = (await getDraftMessage(session, threadId)).data;
-  if (!draft) throw new Error(`Thread ${threadId} has no draft to delete`);
+  const draft = (await findDeletableDraft(session, threadId)).data;
   await deleteDraftMessage(session, draft.id);
   return draft.id;
 }

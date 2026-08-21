@@ -449,6 +449,45 @@ describe('saving a reply', () => {
     }
   });
 
+  // The read half, which `delete-draft` needs on its own: the confirmation is about the
+  // words in the box, and a thread id says nothing about those.
+  test('the draft to be deleted comes back with its attachments beside it', async () => {
+    const stub = stubFetch(() => ({
+      body: {
+        data: { type: 'resolutionCenterDraftMessages', id: DRAFT },
+        included: [{ type: 'resolutionCenterMessageAttachments', id: ATTACHMENT }],
+      },
+    }));
+    try {
+      const document = await api.findDeletableDraft(SESSION, THREAD);
+
+      assert.equal(document.data.id, DRAFT);
+      assert.deepEqual(
+        document.included?.map((one) => one.id),
+        [ATTACHMENT]
+      );
+      assert.equal(stub.calls.length, 1, 'reading it deleted nothing');
+      assert.equal(stub.calls[0]!.method, 'GET');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  // The two reads differ in exactly this, which is why they are two.
+  test('an empty draft is still one to delete, though not one to send', async () => {
+    const stub = stubFetch(() => ({
+      body: {
+        data: { type: 'resolutionCenterDraftMessages', id: DRAFT, attributes: { messageBody: '   ' } },
+      },
+    }));
+    try {
+      assert.equal((await api.findDeletableDraft(SESSION, THREAD)).data.id, DRAFT);
+      await assert.rejects(() => api.findSendableDraft(SESSION, THREAD), /is empty/);
+    } finally {
+      stub.restore();
+    }
+  });
+
   test('discarding needs a draft to discard and says which one went', async () => {
     const stub = stubFetch(() => ({ body: { data: null } }));
     try {
