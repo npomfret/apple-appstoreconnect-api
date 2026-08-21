@@ -1,11 +1,12 @@
 /**
  * The digest, which is where Apple's own strings get read by a person.
  *
- * Two kinds of thing go wrong here and neither raises anything. Timestamps arrive as local
- * wall-clock time with the offset of that moment, so twice a year the string order and the
- * chronological order disagree: sorting the text put the states in the wrong order and made
- * the "held for" column negative. And a message body arrives as HTML, where the difference
- * between what a reviewer typed and what is shown to you is a decoding step. Both are
+ * Three kinds of thing go wrong here and none of them raises anything. Timestamps arrive as
+ * local wall-clock time with the offset of that moment, so twice a year the string order and
+ * the chronological order disagree: sorting the text put the states in the wrong order and
+ * made the "held for" column negative. A message body arrives as HTML, where the difference
+ * between what a reviewer typed and what is shown to you is a decoding step. And a span gets
+ * rounded twice, which prints lengths that do not exist: "60m", "23h 60m". All three are
  * wrong answers rather than errors, which is why they are worth a test.
  */
 
@@ -13,7 +14,14 @@ import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import { Document, Resource } from '../src/jsonapi';
-import { fetchHistory, formatReport, htmlToText, SubmissionReport } from '../src/report';
+import {
+  fetchHistory,
+  formatHistory,
+  formatReport,
+  htmlToText,
+  StateChange,
+  SubmissionReport,
+} from '../src/report';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 function change(id: string, state: string, date: string | undefined, initiator: string): Resource {
@@ -89,6 +97,52 @@ describe('ordering state changes', () => {
 
   test('no recorded changes is an empty history, not an error', async () => {
     assert.deepEqual(await history([]), []);
+  });
+});
+
+describe('how long a state was held', () => {
+  // The last column of the timeline. Rounding it down to a unit and up in the remainder
+  // decides the two independently, so the remainder could reach a whole unit and be printed
+  // as one — a length nobody can read back as a time.
+  const waiting: StateChange = {
+    state: 'WAITING_FOR_REVIEW',
+    date: '2026-04-25T05:46:00-07:00',
+    byApple: false,
+  };
+
+  function held(seconds: number): string {
+    const line = formatHistory([{ ...waiting, heldForSeconds: seconds }]).split('\n')[0];
+
+    return line.trim().split(/\s{2,}/).pop() ?? '';
+  }
+
+  test('a state held just under an hour is an hour, not sixty minutes', () => {
+    assert.equal(held(3599), '1h');
+    assert.equal(held(3570), '1h');
+  });
+
+  test('the carry keeps going, so just under a day is a day', () => {
+    assert.equal(held(86399), '1d');
+    // 1d 23h 40m, which used to round its own remainder up to "1d 24h".
+    assert.equal(held(171600), '2d');
+  });
+
+  test('a span that does not land on a unit still shows the remainder', () => {
+    assert.equal(held(3660), '1h 1m');
+    assert.equal(held(90000), '1d 1h');
+    assert.equal(held(1180800), '13d 16h');
+  });
+
+  test('under a minute is counted in seconds, exactly', () => {
+    assert.equal(held(0), '0s');
+    assert.equal(held(45), '45s');
+    assert.equal(held(59), '59s');
+  });
+
+  test('the state it is in now has no length to report', () => {
+    const line = formatHistory([waiting]);
+
+    assert.equal(line.trim().split(/\s{2,}/).pop(), '(current)');
   });
 });
 

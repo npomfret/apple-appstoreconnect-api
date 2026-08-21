@@ -338,18 +338,31 @@ function shortDate(date: string | undefined): string {
   return date.replace(TIMESTAMP, '$1 $2$3');
 }
 
-/** Rounds a span to its largest useful unit — exact seconds mean nothing after a day. */
+/**
+ * Rounds a span to its largest useful unit — exact seconds mean nothing after a day.
+ *
+ * The rounding happens before the split, not after. Taking the whole part of the large unit
+ * and then rounding what was left over separately means the two are decided independently,
+ * so the remainder can round up to a full unit and be printed as one: 59m 59s came out as
+ * "60m", 23h 59m 59s as "23h 60m", and 1d 23h 40m as "1d 24h". Every one of those is a
+ * carry that was calculated and then not made.
+ */
 function duration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  if (seconds < 86400) {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.round((seconds % 3600) / 60);
-    return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+
+  if (minutes < 24 * 60) {
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return rest ? `${hours}h ${rest}m` : `${hours}h`;
   }
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.round((seconds % 86400) / 3600);
-  return hours ? `${days}d ${hours}h` : `${days}d`;
+
+  const hours = Math.round(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest ? `${days}d ${rest}h` : `${days}d`;
 }
 
 /** Renders the history as a timeline. */
