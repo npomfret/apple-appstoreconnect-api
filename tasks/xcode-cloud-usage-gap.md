@@ -138,11 +138,11 @@ This is the part to weigh before agreeing to any of it.
    all. Every call above needs the whole mechanism reintroduced, not just an entry added
    to it. It is a real reversal of a decision already taken, not an addition beside it.
 2. **`/ci/api` is not JSON:API.** Sending `content-type: application/vnd.api+json` to it is
-   answered **403** — that is the defect recorded in
-   [ci-transport-403-and-post-actions-gap.md](ci-transport-403-and-post-actions-gap.md),
-   and it is why every `ci-*` command in this repository was broken for its whole life. A
-   restored base must carry a per-base content-type rule, and the retained iris writes must
-   not be able to inherit the wrong one.
+   answered **403** — the header bisect is in
+   [xcode-cloud-post-actions-gap.md](xcode-cloud-post-actions-gap.md), and it is why every
+   `ci-*` command in this repository was refused for its whole life. A restored base must
+   carry a per-base content-type rule, and the retained iris writes must not be able to
+   inherit the wrong one.
 3. **These are team-scoped, not app-scoped.** `.claude/references/architecture.md` records
    that everything mapped is about an app, the People page having been the one account-wide
    corner and having left with slice 4.2. Every call here is `/{teamId}/…`. Accepting them

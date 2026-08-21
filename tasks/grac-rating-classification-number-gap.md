@@ -70,6 +70,6 @@ honestly be built, and it would be a read of a field nothing else in this client
 
 This is the second field-level keep found while removing a slice whole. The first is
 `CiWorkflow.post_actions` in
-[ci-transport-403-and-post-actions-gap.md](ci-transport-403-and-post-actions-gap.md),
-handled the same way: take the slice out, record the field, decide on retention on its own
-evidence rather than in the middle of a deletion.
+[xcode-cloud-post-actions-gap.md](xcode-cloud-post-actions-gap.md), handled the same way:
+take the slice out, record the field, decide on retention on its own evidence rather than
+in the middle of a deletion.
