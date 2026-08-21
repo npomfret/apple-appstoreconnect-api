@@ -39,6 +39,15 @@ lists every version its thread names in `versions: VersionRef[]`, and fills the 
 `version`/`versionId` only when there is exactly one — a thread about two versions is not
 reduced to one of them.
 
+`guidelines: Guideline[]` is the rules the thread's rejections cite, lowest number first and
+each one once, as `{ code, description }`. `code` is Apple's own `4.1.0` and `description` is
+Apple's own `Design: Copycats` — the section's name is the front of the description, not a
+field of its own. Apple does send a `reasonSection`, but it is the code with its last segment
+cut off (`4.1`), so it carries nothing `code` doesn't; it is read only as the code for a
+reason that arrives without one. A rejection has no date — `reasons` is its only attribute —
+so where two rejections cite the same code, the first wording is kept and there is no later
+one to prefer.
+
 `attachments: Attachment[]` is every file on the thread, from the messages *and* from the
 rejections — Apple hangs them off both, on `resolutionCenterMessageAttachments` and
 `rejectionAttachments`, and they are the same resource type either way. It is keyed by iris's

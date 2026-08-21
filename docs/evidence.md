@@ -84,6 +84,19 @@ list is the tested one and an override is not.
   fetched them and read none of them until 2026-08-21. The two sets are disjoint in both
   recordings; whether they can overlap is not settled, and the list is keyed by id either
   way.
+
+  What a rejection itself carries was read on 2026-08-21, across 64 reasons on four
+  rejections in four recordings: **`reasons` is its only attribute** — no date, no state, no
+  round — and `appStoreVersion` is the only relationship that ever arrives populated, of the
+  sixteen the browser's include list asks for. All four rejections on the recorded thread
+  name the same version, so nothing there shows a thread's rejections spanning versions. A
+  reason carries exactly `reasonCode`, `reasonSection` and `reasonDescription`, all strings
+  and none null. `reasonSection` is **`reasonCode` with its last segment removed** — `4.1`
+  against `4.1.0`, digits and dots in both — and the section's readable name is instead the
+  first word of `reasonDescription`, ahead of a colon: `Design: Copycats`. `Guideline`
+  carried a `section` field holding the numeric prefix until that day, which no output
+  printed. Because rejections are undated, a code cited by two of them has no "latest"
+  wording to prefer, and `report` keeps the first.
 - `listThreads` — the app's Resolution Center thread list, and since the thread-first
   rebuild the starting point of `report`. The include list, the seven `filter[threadType]`
   values and `limit[appStoreVersions]=2000` are the browser's own. Two things that query

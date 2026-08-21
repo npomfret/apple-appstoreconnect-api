@@ -3,8 +3,18 @@ import * as api from './api';
 import { denormalizeAll, Denormalized } from './jsonapi';
 
 export interface Guideline {
+  /**
+   * Apple's own guideline number, `4.1.0` — the whole of what identifies the rule cited.
+   *
+   * The reason it arrives on carries a `reasonSection` beside it, and that is this with the
+   * last segment cut off rather than a second fact: `4.1` against `4.1.0`, digits and dots
+   * both. It is read here only as a fallback for a reason with no code at all.
+   */
   code: string;
-  section: string;
+  /**
+   * Apple's own wording, `Design: Copycats` — the section's name and the rule's, as sent.
+   * The readable half of `4.1` is in here, not in a field of its own.
+   */
   description: string;
 }
 
@@ -159,6 +169,29 @@ function sortByDateDesc(items: Denormalized[], field: string): Denormalized[] {
   return [...items].sort((a, b) => byInstant(b[field], a[field]));
 }
 
+/**
+ * The guidelines a thread's rejections cite, lowest number first and each one once.
+ *
+ * **There is no section field, because `reasonSection` was never one.** Every reason in
+ * every recording carries exactly `reasonCode`, `reasonSection` and `reasonDescription`,
+ * all three strings and none of them null — and the section is the code with its last
+ * segment removed, `4.1` beside `4.1.0`, digits and dots in both. So it is a prefix of a
+ * field already here and tells a caller nothing. What anyone reading `guideline.section`
+ * would expect from the name is the section's *title*, and that is the first word of
+ * `reasonDescription`, ahead of a colon: `Design: Copycats`. This type carried a `section`
+ * holding `4.1` until 2026-08-21 — printed by nothing, and promising the half it did not
+ * have.
+ *
+ * It is still read once, as the code for a reason that arrived without one, since `4.1` is
+ * a guideline you can look up and nothing is not. No recorded reason is missing a code, so
+ * that branch is a guard rather than an observation.
+ *
+ * **Deduplicating by code** is what the map is for, and both duplicates it covers are
+ * recorded: one rejection cites the same code twice inside its own `reasons`, and the four
+ * rejections on the recorded thread cite two codes between them. The first wording wins,
+ * and there is no better rule available — `reasons` is a rejection's *only* attribute, so
+ * nothing dates them and nothing says which citation came last.
+ */
 function collectGuidelines(rejections: Denormalized[]): Guideline[] {
   const byCode = new Map<string, Guideline>();
 
@@ -168,11 +201,7 @@ function collectGuidelines(rejections: Denormalized[]): Guideline[] {
     for (const reason of reasons as Array<Record<string, unknown>>) {
       const code = asString(reason['reasonCode']) ?? asString(reason['reasonSection']);
       if (!code || byCode.has(code)) continue;
-      byCode.set(code, {
-        code,
-        section: asString(reason['reasonSection']) ?? code,
-        description: asString(reason['reasonDescription']) ?? '',
-      });
+      byCode.set(code, { code, description: asString(reason['reasonDescription']) ?? '' });
     }
   }
 

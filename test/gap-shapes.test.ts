@@ -295,7 +295,7 @@ describe('what Apple attached', () => {
       messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, ['a-1'])],
       attachments: [attachment('a-1', 'crash.mp4', 2178995)],
       rejections: [
-        rejection('r-1', [{ reasonCode: '4.1', reasonSection: 'Design', reasonDescription: 'Copycats' }], ['a-2', 'a-3']),
+        rejection('r-1', [{ reasonCode: '4.1.0', reasonSection: '4.1', reasonDescription: 'Design: Copycats' }], ['a-2', 'a-3']),
       ],
       rejectionAttachments: [attachment('a-2', 'screenshot-1.png', 60283), attachment('a-3', 'screenshot-2.png', 55679)],
     });
@@ -310,7 +310,7 @@ describe('what Apple attached', () => {
     const digest = await report({
       messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, ['a-1'])],
       attachments: [attachment('a-1', 'crash.mp4', 2048)],
-      rejections: [rejection('r-1', [{ reasonCode: '4.1', reasonSection: 'Design', reasonDescription: 'Copycats' }])],
+      rejections: [rejection('r-1', [{ reasonCode: '4.1.0', reasonSection: '4.1', reasonDescription: 'Design: Copycats' }])],
     });
 
     assert.deepEqual(digest.attachments.map((file) => file.id), ['a-1']);
@@ -330,46 +330,54 @@ describe('what Apple attached', () => {
 });
 
 describe('the guidelines behind a rejection', () => {
+  // The shape of a reason is the recorded one: a dotted code, a `reasonSection` that is that
+  // code with its last segment cut off, and a description carrying the section's title ahead
+  // of a colon. Nothing reads the section but the fallback in the last test below.
   test('every reason on every rejection becomes one guideline, lowest number first', async () => {
     const digest = await report({
       rejections: [
         rejection('r-1', [
-          { reasonCode: '4.3.0', reasonSection: 'Design', reasonDescription: 'Spam' },
-          { reasonCode: '2.1', reasonSection: 'Performance', reasonDescription: 'App Completeness' },
+          { reasonCode: '4.3.0', reasonSection: '4.3', reasonDescription: 'Design: Spam' },
+          { reasonCode: '2.1.0', reasonSection: '2.1', reasonDescription: 'Performance: App Completeness' },
         ]),
         rejection('r-2', [
-          { reasonCode: '1.2', reasonSection: 'Safety', reasonDescription: 'User-Generated Content' },
+          { reasonCode: '1.2.0', reasonSection: '1.2', reasonDescription: 'Safety: User-Generated Content' },
         ]),
       ],
     });
 
     assert.deepEqual(
       digest.guidelines.map((guideline) => guideline.code),
-      ['1.2', '2.1', '4.3.0']
+      ['1.2.0', '2.1.0', '4.3.0']
     );
-    assert.equal(digest.guidelines[1]!.section, 'Performance');
-    assert.equal(digest.guidelines[1]!.description, 'App Completeness');
+    assert.equal(digest.guidelines[1]!.description, 'Performance: App Completeness');
   });
 
+  // Both duplicates here are recorded ones: one rejection repeats a code inside its own
+  // `reasons`, and the four rejections on the recorded thread cite two codes between them.
+  // Nothing dates a rejection, so the first wording is the only one there is a rule for.
   test('the same guideline cited twice is reported once', async () => {
     const digest = await report({
       rejections: [
-        rejection('r-1', [{ reasonCode: '2.1', reasonSection: 'Performance', reasonDescription: 'First' }]),
-        rejection('r-2', [{ reasonCode: '2.1', reasonSection: 'Performance', reasonDescription: 'Second' }]),
+        rejection('r-1', [
+          { reasonCode: '2.1.0', reasonSection: '2.1', reasonDescription: 'Performance: First' },
+          { reasonCode: '2.1.0', reasonSection: '2.1', reasonDescription: 'Performance: Repeat' },
+        ]),
+        rejection('r-2', [{ reasonCode: '2.1.0', reasonSection: '2.1', reasonDescription: 'Performance: Second' }]),
       ],
     });
 
-    assert.deepEqual(digest.guidelines, [
-      { code: '2.1', section: 'Performance', description: 'First' },
-    ]);
+    assert.deepEqual(digest.guidelines, [{ code: '2.1.0', description: 'Performance: First' }]);
   });
 
+  // A guard, not an observation: every recorded reason carries all three fields. A section
+  // is still a guideline you can look up, which is why it beats dropping the reason.
   test('a reason with no code falls back to its section rather than being dropped', async () => {
     const digest = await report({
-      rejections: [rejection('r-1', [{ reasonSection: 'Legal', reasonDescription: 'Privacy' }])],
+      rejections: [rejection('r-1', [{ reasonSection: '5.1', reasonDescription: 'Legal: Privacy' }])],
     });
 
-    assert.deepEqual(digest.guidelines, [{ code: 'Legal', section: 'Legal', description: 'Privacy' }]);
+    assert.deepEqual(digest.guidelines, [{ code: '5.1', description: 'Legal: Privacy' }]);
   });
 
   test('a thread with no rejections has no guidelines, which is not an error', async () => {

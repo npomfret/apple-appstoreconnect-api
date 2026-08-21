@@ -49,6 +49,12 @@ one side. There is an `apiKeyId` field beside `actorType`, null in every capture
 third kind probably exists and has not been seen — and being wrong here would mean the
 digest telling you the thread is waiting on Apple when it is waiting on you.
 
+The `guidelines` block is Apple's own guideline number and Apple's own wording for it, side
+by side and unedited — `Design:` is the front of the text Apple sent, not something composed
+here. Each code appears once however many of the thread's rejections cite it. `--json` carries
+the pair as `{ code, description }` and nothing else: the `reasonSection` Apple sends beside
+them is the code with its last segment removed, so it says nothing `code` does not.
+
 `attachments` lists what Apple attached, one entry per file, identified by iris's own id and
 carrying a download URL. It covers both places Apple attaches things — the messages, and the
 rejection itself, which is where the marked-up screenshots hang. In the recorded thread those
