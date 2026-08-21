@@ -6,8 +6,8 @@ evidenced. This page says which is which.
 It is not all unique functionality. An audit on 2026-08-20 against Apple's official
 OpenAPI specification 4.4.1 found that submissions, versions/builds, metadata and App
 Information, screenshots/previews, users/invitations, and all Xcode Cloud code duplicate
-official operations. Xcode Cloud, the invitations and the screenshots and previews have
-since been removed; the rest are pending removal, and the exact inventory and official operation mapping is in
+official operations. Xcode Cloud, the invitations, the screenshots and previews, and the
+metadata and App Information code have since been removed; the rest are pending removal, and the exact inventory and official operation mapping is in
 [the removal task](../tasks/remove-official-api-overlap.md). Evidence that a
 private call works is not a reason to retain it when Apple supports the capability. The
 official replacements are Apple's
@@ -19,16 +19,14 @@ API collections.
 
 ## What isn't captured yet
 
-The captured writes are the version PATCH behind `set-build`, all four App Information page
-PATCHes — `set-metadata`, `set-categories`, `set-age-rating`, `set-content-rights` — the
-Resolution Center draft behind `save-draft` and `delete-draft`, sending it (`send-reply`)
-and resolving a submission item (`resolve-item`).
+The captured writes are the version PATCH behind `set-build`, the Resolution Center draft
+behind `save-draft` and `delete-draft`, sending it (`send-reply`) and resolving a submission
+item (`resolve-item`). The four App Information page PATCHes were captured too, and that
+code has since been removed — see below.
 
-What's left uncaptured, and so the part to read about before use: the **version half of
-`set-metadata`** — a description, keywords, promo text or what's new — **creating a
-submission and adding a version to it** (the two POSTs inside `submit`), and
-`cancel-submission`. Record any of them in the browser and they can be put on the same
-footing as the rest.
+What's left uncaptured, and so the part to read about before use: **creating a submission
+and adding a version to it** (the two POSTs inside `submit`), and `cancel-submission`.
+Record either in the browser and they can be put on the same footing as the rest.
 
 The **submit PATCH itself is no longer a guess**, though it is still not a capture — see
 "Confirmed by running it" below.
@@ -115,7 +113,7 @@ list is the tested one and an override is not.
   promoting one. What no recording here settles is a thread's own *attributes* — nothing in
   this client reads one, and `threadType` appears only as a filter value, so treat any
   attribute on a thread resource as unmapped.
-- `listAppInfos` and `getReviewDetails`.
+- `getReviewDetails`.
 - From one attach-a-build-and-save: `listBuilds`, `listBuildCandidates` and the `set-build`
   PATCH body.
 - From the History, Trust & Safety and Growth tabs: `listVersionStateChanges` (the browser
@@ -125,52 +123,67 @@ list is the tested one and an override is not.
   and the thread read back with the new message on it.
 - From one real resolve: `resolveSubmissionItem` — the `{"resolved":true}` PATCH and the
   `READY_FOR_REVIEW` that comes back.
-- From one Save on the App Information page:
-  - the `appInfoLocalizations` PATCH behind `set-metadata`. Plain `application/json`, the
-    `{"data":{type,id,attributes}}` envelope with the id repeated inside, and only the
-    edited fields in it — which is what `setMetadataField` sends. The browser put `name`
-    and `subtitle` in one body where this client writes one field per call; a
-    single-attribute body is a subset of the recorded one, not a different shape.
-  - `PATCH appInfos/{id}`, same `application/json`, setting categories through
-    **relationships** rather than attributes: `primaryCategory`, `secondaryCategory`,
-    `primarySubcategoryOne`, `primarySubcategoryTwo`, each a
-    `{"type":"appCategories","id":"GAMES"}` linkage where the id is the category's name.
-    Only the relationships being changed are sent.
-    Behind `set-categories`.
-  - `GET appInfos/{id}` read back with
-    `include=primaryCategory,primarySubcategoryOne,primarySubcategoryTwo,secondaryCategory,secondarySubcategoryOne,secondarySubcategoryTwo`
-    — verbatim what `categories` sends.
-  - `PATCH apps/{appId}` setting the `contentRightsDeclaration` attribute, behind
-    `set-content-rights`.
-  - `PATCH ageRatingDeclarations/{id}` sending all 29 questionnaire answers in one body,
-    behind `set-age-rating`. The body this client builds was replayed offline against the
-    recording and is **identical to it byte for byte**, key order included — the question
-    list in `AGE_RATING_QUESTIONS` is that body's own order. Note what that list is *not*:
-    those 29 are one app's questionnaire on one account, and nothing seen here says every
-    app is asked the same set. So they only order a body; which questions exist comes from
-    the attributes of the declaration Apple returns for the app being edited — its
-    attributes and not a denormalized view of it, since that would fold the record's
-    relationships in among the answers.
-  - the page's own two reads, behind `app-info`/`categories`/`age-rating` and
-    `territory-ratings`: `GET apps/{appId}/appInfos` with the category includes plus
-    `ageRatingDeclaration,app` and `fields[apps]=isOrEverWasMadeForKids`, and `GET
-    appInfos/{id}/territoryAgeRatings?include=territory&limit=500`.
+- One Save on the App Information page was recorded, both of its reads with it, and **that
+  code has been removed** — `listAppInfos`, `listAppInfoLocalizations`, `findEditableAppInfo`,
+  `pickEditableAppInfo`, `listAppInfoPage`, `getAppInfoCategories`, `setAppCategories`,
+  `findAgeRatingDeclaration`, `listTerritoryAgeRatings`, `ageRatingAnswersFrom`,
+  `parseAgeRatingAnswers`, `setAgeRating`, `setContentRights`, `listVersionLocalizations`,
+  `findMetadataField`, `setMetadataField`, `fetchMetadata` and the `metadata`,
+  `set-metadata`, `app-info`, `categories`, `set-categories`, `age-rating`,
+  `set-age-rating`, `territory-ratings` and `set-content-rights` commands all went with it.
+  Re-checked on 2026-08-21 against specification 4.4.1, re-downloaded that day and still
+  4.4.1 with the same 966 paths and 1,393 schemas: `GET /v1/apps/{id}/appInfos`,
+  `GET` and `PATCH /v1/appInfos/{id}`, `GET /v1/appInfos/{id}/appInfoLocalizations`,
+  `PATCH /v1/appInfoLocalizations/{id}`,
+  `GET /v1/appStoreVersions/{id}/appStoreVersionLocalizations`,
+  `PATCH /v1/appStoreVersionLocalizations/{id}`, `PATCH /v1/ageRatingDeclarations/{id}`,
+  `GET /v1/appInfos/{id}/territoryAgeRatings` and `PATCH /v1/apps/{id}` are all official.
+  Field for field: `AppInfoLocalization.Attributes` is `locale`, `name`, `subtitle`,
+  `privacyPolicyUrl`, `privacyPolicyText`, `privacyChoicesUrl`;
+  `AppStoreVersionLocalization.Attributes` is `locale`, `description`, `keywords`,
+  `promotionalText`, `whatsNew`, `marketingUrl`, `supportUrl`; `AppInfo.Relationships`
+  carries all six category slots and `AppInfoUpdateRequest` writes to exactly those six;
+  `App.Attributes` carries `contentRightsDeclaration` and `isOrEverWasMadeForKids`; and
+  `TerritoryAgeRating` is `appStoreAgeRating` with a `territory`. Every command here was a
+  private route to a published one.
 
-  Two details of `set-categories` are *not* in that recording: the browser set
-  `primaryCategory`, `secondaryCategory` and both primary subcategories, so
-  `secondarySubcategoryOne`/`Two` are taken on the symmetry of the include list, and
-  clearing a slot borrows the `{"data":null}` form that `set-build none` was captured
-  using. Both are labelled in `setAppCategories`.
+  **One attribute was not.** `AgeRatingDeclaration.Attributes` has 29 properties and so did
+  the recorded body, but they are not the same 29: Apple has `ageRatingOverride`, which the
+  recording did not carry, and the recording had **`gracRatingClassificationNumber`** — the
+  Korean GRAC classification number — which occurs nowhere in 4.4.1 (its only `grac` tokens
+  are subscription *grace* periods) and is absent from the published
+  `AgeRatingDeclaration.Attributes`. By this repository's own rule that is a keep narrowed
+  to one field, and it left with the rest anyway: the only recorded write is the whole
+  questionnaire in one body, so writing that field back means resending 28 fields Apple
+  serves officially. Retention is an open question and is not settled by this page — see
+  [tasks/grac-rating-classification-number-gap.md](../tasks/grac-rating-classification-number-gap.md).
 
-  What the recording covers is the request *shapes*, not the range of answers. Every
-  frequency question came back `"NONE"` and content rights came back
-  `DOES_NOT_USE_THIRD_PARTY_CONTENT`, so the values on the other side of those questions —
-  `INFREQUENT_OR_MILD`, `FREQUENT_OR_INTENSE`, `USES_THIRD_PARTY_CONTENT` — are Apple's
-  public API documentation, not evidence from here. Both commands check the field names and
-  pass the values through: a value iris won't take is a 4xx, which beats this client
-  refusing a legitimate answer it has never seen. `set-age-rating` insists on a complete
-  questionnaire for the same reason in reverse — no partial body was ever recorded, so
-  whether an omitted answer is left alone or cleared is simply unknown.
+  Four observations outlive the code, and the first three are about the records rather than
+  about this client, so they hold for the official API too.
+
+  **The first `appInfos` record is the live one, and it refuses writes.** A shipped app has
+  two — the live one and the one being prepared — and the live one is listed first. A PATCH
+  aimed there comes back `409 ENTITY_ERROR.ATTRIBUTE.INVALID.INVALID_STATE`, "The field
+  'subtitle' can not be modified in the current state". Picking by position is picking the
+  wrong record; the removed code picked by `state` instead, and any client reading or
+  writing these records has the same choice to make.
+
+  **The questionnaire is one app's, not the questionnaire.** The 29 recorded questions came
+  off a single app on a single account, and nothing observed says every app is asked the same
+  set — which is why the removed code read the question list off the declaration Apple
+  returned rather than off a list of its own. Apple's published set differing by one attribute
+  from the recorded one is that argument being right about something.
+
+  **Categories are relationships whose id is the category's name.** `{"type":"appCategories",
+  "id":"GAMES"}`, six slots, only the games categories using the subcategory ones — and
+  `AppInfoUpdateRequest` takes them the same way, so this reads across unchanged.
+
+  **The recording covered shapes, not the range of answers.** Every frequency question came
+  back `"NONE"` and content rights `DOES_NOT_USE_THIRD_PARTY_CONTENT`, so
+  `INFREQUENT_OR_MILD`, `FREQUENT_OR_INTENSE` and `USES_THIRD_PARTY_CONTENT` were always
+  Apple's public documentation rather than evidence from here. Nothing was ever recorded
+  about a *partial* age-rating body either, which is why the removed command insisted on a
+  complete one.
 - One invitation sent on the People page was recorded and mapped, and **that code has been
   removed** — `listUserInvitations`, `inviteUser`, `UserInvite`, the `invites` and `invite`
   commands, `test/invite.test.ts` and `docs/people.md` all went with it. It was well
@@ -253,18 +266,6 @@ list is the tested one and an override is not.
 
 ## Calls that are probe-only, and so likelier to shift
 
-- `listVersionLocalizations` (the path form — the browser uses a filter on the collection
-  instead) and `listAppInfoLocalizations`.
-- `setMetadataField` is captured on its app info half (above) but **not on its version
-  half**: no recording of a `appStoreVersionLocalizations` PATCH exists. That one still
-  rests on the captured version PATCH's envelope, down to the `application/json`, with
-  field names read off captured responses — now with the app info capture showing the same
-  envelope on a localization, which is the closest thing to a witness it has. **Both halves
-  have been run**: each was PATCHed with the value it already held — a real request that
-  changed nothing — and both returned 200 with the record intact. The one
-  thing that test flushed out is worth knowing: the *first* `appInfos` record is the live
-  one, and writing to it is refused with `409
-  ENTITY_ERROR.ATTRIBUTE.INVALID.INVALID_STATE`. `findEditableAppInfo` picks by state now.
 - `submit` (`createReviewSubmission`, `addSubmissionItem`, `submitReviewSubmission`) and
   `cancelReviewSubmission` are **the least evidenced writes here, and among the most
   consequential**. No recording, and no way to rehearse one: the only test is a real
@@ -274,10 +275,9 @@ list is the tested one and an override is not.
   it. `asc submit --dry-run` prints the plan without sending, and a failed run says which
   of the three steps it reached, because a half-made submission on the account is the
   outcome worth being able to see.
-- `deleteScreenshot`, `deleteScreenshotSet` and `deleteMessageAttachment` were **probed,
-  not captured** — no browser request for any of them was ever copied. They work
-  (`deleteMessageAttachment` returns a 204 and the attachment is gone on the next read),
-  but they're the least evidenced calls here, and they destroy live data.
+- `deleteMessageAttachment` was **probed, not captured** — no browser request for it was
+  ever copied. It works (a 204, and the attachment is gone on the next read), but it is the
+  least evidenced call here, and it destroys live data.
 - `sendDraftMessage` and `resolveSubmissionItem` are certain in shape — both were recorded
   from the real thing — but **this client has never run either**. Everything up to the
   point of no return has been exercised against live data: the draft is read back, the

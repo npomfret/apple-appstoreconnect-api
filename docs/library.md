@@ -1,11 +1,12 @@
 # As a library
 
-> **Boundary notice:** exports for submissions, versions, builds, metadata and App
-> Information are legacy official overlap and will be removed. The Xcode Cloud, invitation
-> and screenshot/preview exports have already gone — use Apple's
+> **Boundary notice:** exports for submissions, versions and builds are legacy official
+> overlap and will be removed. The Xcode Cloud, invitation, screenshot/preview and
+> metadata/App Information exports have already gone — use Apple's
 > [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
-> [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
-> and [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
+> [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
+> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
+> and [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
 > APIs.
 > New callers should use this library only for the official gaps listed in
 > [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md). For overlapping
@@ -105,13 +106,11 @@ build your own.
   it. Whether a request mutates decides its headers and whether it lands in the audit trail,
   so it's settled once from the normalised name; anything that isn't one of the five is
   refused rather than guessed at.
-- **Nothing from the account the captures came from is baked in.** Every id, category,
-  locale, platform and territory reaches a request from an argument or from the session,
-  and the values in the recordings work as examples in help text and nowhere else. The
-  constants that *are* hard-coded are Apple's own schema — resource and field names, state
-  names, include lists, filter values — never one app's data. The age-rating
-  questionnaire is the case worth remembering: the recorded 29 questions order a body,
-  while which questions exist is read back off the app being edited.
+- **Nothing from the account the captures came from is baked in.** Every id, locale,
+  platform and territory reaches a request from an argument or from the session, and the
+  values in the recordings work as examples in help text and nowhere else. The constants
+  that *are* hard-coded are Apple's own schema — resource and field names, state names,
+  include lists, filter values — never one app's data.
 - A 403 from iris doesn't always mean the session died — it's also how an unsupported
   filter is refused. `src/http.ts` tells them apart by whether the body is a JSON:API
   error document, so a bad query no longer reads as "log in again".

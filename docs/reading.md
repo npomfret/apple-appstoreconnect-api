@@ -9,11 +9,12 @@
 > for official capabilities. Use Apple's official
 > [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
 > and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
-> APIs for the overlapping reads. The Xcode Cloud, invitation and screenshot/preview reads
-> that used to be on this page have already been removed; Apple's
+> APIs for the overlapping reads. The Xcode Cloud, invitation, screenshot/preview and App
+> Information reads that used to be on this page have already been removed; Apple's
 > [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
-> [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
-> and [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
+> [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
+> [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
+> and [Age Ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
 > APIs are where they went.
 
 ```sh
@@ -75,11 +76,6 @@ document):
 | `items <submissionId>` | `reviewSubmissions/{id}/items` |
 | `versions [appId]` | `apps/{appId}/appStoreVersions?filter[platform]=` |
 | `version [versionId]` | `appStoreVersions/{id}` |
-| `metadata [versionId]` | `apps/{appId}/appInfos` + `appStoreVersions/{id}/appStoreVersionLocalizations` |
-| `app-info [appId]` | `apps/{appId}/appInfos?include=ageRatingDeclaration,app,primaryCategory,…&fields[apps]=isOrEverWasMadeForKids` |
-| `categories [appId]` | the same request, narrowed to the six category slots |
-| `age-rating [appId]` | the same request, narrowed to the age-rating questionnaire |
-| `territory-ratings [appId]` | `appInfos/{id}/territoryAgeRatings?include=territory&limit=500` |
 | `review-details [versionId]` | `appStoreVersions/{id}` → `appStoreReviewDetails/{id}` |
 | `threads [appId]` | `apps/{appId}/resolutionCenterThreads` |
 | `thread <submissionId>` | `resolutionCenterThreads?filter[reviewSubmission]={id}` |
@@ -98,31 +94,31 @@ and pending invitations at
 The `screenshots` and `previews` reads have gone the same way: `appScreenshotSets`,
 `appScreenshots`, `appPreviewSets` and `appPreviews` are all
 [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
-resources, down to the `uploadOperations` the upload flow ran on. All of them need an API
-key rather than this client's cookie.
+resources, down to the `uploadOperations` the upload flow ran on. So have `metadata`,
+`app-info`, `categories`, `age-rating` and `territory-ratings`: `appInfos`,
+`appInfoLocalizations`, `appStoreVersionLocalizations`, the six category relationships,
+`ageRatingDeclarations` and `appInfos/{id}/territoryAgeRatings` are all official, attribute
+for attribute. All of them need an API key rather than this client's cookie.
 
 `appId` defaults to the one scraped from the captured request's `Referer`; `versionId`
 defaults to the version attached to the first open submission — one extra request, the
 app's submissions, which name their version. With no open submission it falls back to the
 version being edited, and refuses to choose between two of them.
 
-App Store metadata is split across two records and `metadata` merges them per locale:
-**name** and **subtitle** hang off `appInfos`, while description, keywords, promotional
-text and what's-new hang off the version. For a metadata rejection the name and subtitle
-are usually the point, so don't read only the version half.
-
-A shipped app has *two* `appInfos` records — the live one and the one being prepared — and
-the live one comes back first. `metadata` reads the editable one, so what it shows is what
-you last edited rather than what the store currently says. Ask for `appInfos` through `get`
-and you'll see both, with a `state` telling them apart. Between versions there may be only
-the live record, and then reads answer from it and log an `appInfo.noneEditable` warning —
-a write aimed there is the one Apple refuses with a `409`.
+Two things about App Store metadata are worth carrying over to whichever client reads it,
+because they are properties of the records rather than of this one. It is split across two
+of them — **name** and **subtitle** hang off `appInfos`, while description, keywords,
+promotional text and what's-new hang off the version — so a 4.1 metadata rejection is often
+about the half the version doesn't have. And a shipped app has *two* `appInfos` records, the
+live one and the one being prepared, with the live one listed first: read that one and you
+get what the store says rather than what you last edited, and write to it and Apple refuses
+with a `409`. `asc get appInfos` still shows both, with a `state` telling them apart.
 
 The ids chain together, which is what makes scripting possible:
 
 ```sh
 node dist/cli.js report --json          # -> threadId, versionId
-node dist/cli.js metadata               # -> localizationId per locale
+node dist/cli.js draft <threadId>       # -> the unsent reply and its attachment ids
 ```
 
 ## App Review Information

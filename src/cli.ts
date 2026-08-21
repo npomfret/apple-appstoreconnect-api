@@ -1,13 +1,12 @@
 import { readFileSync } from 'fs';
 import { CURL_PATH, describeSession, loadSession, Session } from './session';
 import { Cancelled, confirm } from './confirm';
-import { denormalize, denormalizeAll, Denormalized, Document, Resource } from './jsonapi';
+import { denormalize, denormalizeAll, Denormalized, Document } from './jsonapi';
 import { Query } from './http';
 import {
   buildReport,
   fetchBuilds,
   fetchHistory,
-  fetchMetadata,
   fetchPrivacy,
   formatBuilds,
   formatHistory,
@@ -39,17 +38,6 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc privacy [appId]         App Privacy declarations and whether they are published
   asc builds [versionId]      Builds you can attach to a version, newest first, with the
                               current one marked "*" — the version page's build picker
-  asc metadata [versionId]    Per-locale name, subtitle, description and keywords (defaults
-                              to the version under review)
-  asc app-info [appId]        The whole App Information page in one request: both app info
-                              records with their categories and age-rating declarations
-  asc categories [appId]      The app's App Store categories: primary and secondary, each
-                              with the two subcategory slots only games use
-  asc age-rating [appId]      The age-rating questionnaire as JSON, in the shape
-                              "set-age-rating" reads back — pipe it to a file and edit it
-  asc territory-ratings [appId]
-                              The rating Apple worked out for each territory from that
-                              questionnaire
   asc review-details [versionId]
                               App Review Information: reviewer contact, demo account and
                               notes. The demo password is hidden unless --reveal
@@ -72,30 +60,6 @@ Writes (these change your live App Store Connect data):
   asc delete-draft <threadId> Throw the thread's draft away, attachments and all
   asc patch <path> <json>     Raw PATCH against /iris/v1 with a hand-written body
 
-  asc set-metadata <locale> <field> <value|-> [versionId]
-                              Change one metadata field for one locale. name, subtitle and
-                              the privacy URLs are app-wide; description, keywords,
-                              promotionalText, whatsNew, marketingUrl and supportUrl belong
-                              to the version. Shows you the old value and asks
-
-  asc set-categories [--primary X] [--primary-sub-1 X] [--primary-sub-2 X]
-                     [--secondary X] [--secondary-sub-1 X] [--secondary-sub-2 X] [appId]
-                              Change the app's App Store categories. Only the slots you
-                              name are touched; "none" clears one. Categories belong to the
-                              app, so a change is live at once, not when a version ships.
-                              Shows the before and after and asks
-
-  asc set-age-rating <file|-> [appId]
-                              Replace the age-rating questionnaire from a JSON object of
-                              answers. Every question has to be present — start from
-                              "asc age-rating". Shows which answers change and asks. Apple
-                              recomputes every territory's rating from it
-  asc set-content-rights <declaration> [appId]
-                              Answer the third-party content question.
-                              DOES_NOT_USE_THIRD_PARTY_CONTENT is the captured value;
-                              USES_THIRD_PARTY_CONTENT comes from Apple's public API docs
-                              and is unproven here. Shows the old answer and asks
-
 These reach Apple and cannot be undone. Each shows what it is about to do and asks first;
 --yes answers for you:
   asc send-reply <threadId>   Send the thread's draft to App Review. No unsend, no edit
@@ -117,10 +81,6 @@ Options:
   --dry-run                   For "submit": work out and print the steps, send nothing
   --reveal                    For "review-details": print the demo account password
   --attach <file>             For "save-draft": a file to attach. Repeat for several
-  --primary <category>        For "set-categories", with --primary-sub-1, --primary-sub-2,
-                              --secondary, --secondary-sub-1 and --secondary-sub-2: the
-                              category name Apple uses as the id, e.g. GAMES, GAMES_TRIVIA,
-                              MUSIC. "none" clears the slot
 
 Logging goes to stderr as one JSON object per line, so stdout stays pipeable:
   ASC_LOG=debug|info|warn|error|off   default info
@@ -151,10 +111,10 @@ function readStdin(): string {
  * The text behind a `<text|->` argument — typed, or piped in — and never empty.
  *
  * Empty is refused from either source. An empty reply is refused by App Store Connect
- * itself, and an empty metadata value is the destructive case: a here-doc that expanded to
- * nothing looks exactly like deliberately blank text, and with `--yes` it would overwrite a
- * description Apple keeps no copy of. Clearing a field is not an operation any capture
- * covers, so it isn't one this offers by accident — `asc patch` is there for that.
+ * itself, and a here-doc that expanded to nothing looks exactly like deliberately blank
+ * text: it would put an empty body in the draft box, over whatever was in it, and nothing
+ * keeps a copy of that. Emptying a field is not an operation any capture covers, so it
+ * isn't one this offers by accident — `asc patch` is there for that.
  */
 function requireText(given: string, what: string): string {
   const text = given === '-' ? readStdin() : given;
@@ -249,7 +209,7 @@ async function versionUnderReview(session: Session, appId: string): Promise<stri
   );
 
   if (drafts.length === 0) {
-    throw new Error('No open submission and no version in progress — pass one: asc metadata <versionId>');
+    throw new Error('No open submission and no version in progress — pass one: asc version <versionId>');
   }
   if (drafts.length > 1) {
     const choices = drafts.map((v) => `  ${v.id}  ${v['platform']} ${v['versionString']}`).join('\n');
@@ -335,35 +295,6 @@ async function describeItem(session: Session, itemId: string): Promise<string[]>
     log.debug('item.describe.failed', { itemId, error });
     return [];
   }
-}
-
-/**
- * What `set-metadata` shows before it asks. Both values in full: Apple keeps no history,
- * so this printout is the only copy of the old text anyone gets.
- */
-function describeMetadataChange(target: api.MetadataField, value: string): string[] {
-  const rule = '─'.repeat(72);
-  const scope =
-    target.resource === 'appInfoLocalizations'
-      ? 'the app itself — this changes what is on the store now'
-      : 'this version — it ships when the version does';
-
-  return [
-    '',
-    `  field:   ${target.field} (${target.locale})`,
-    `  record:  ${target.resource}/${target.localizationId}`,
-    `  scope:   ${scope}`,
-    '',
-    '  now:',
-    rule,
-    target.current ?? '(empty)',
-    rule,
-    '  becomes:',
-    rule,
-    value.trimEnd(),
-    rule,
-    '',
-  ];
 }
 
 /** What `submit` is about to do, step by step — also the whole of `--dry-run`. */
@@ -459,106 +390,10 @@ function takeOption(argv: string[], name: string): { values: string[]; rest: str
   return { values, rest };
 }
 
-/** The flag that sets each category slot, in the order the App Information page lists them. */
-const CATEGORY_FLAGS: ReadonlyArray<{ flag: string; slot: api.AppCategorySlot; label: string }> = [
-  { flag: '--primary', slot: 'primaryCategory', label: 'primary' },
-  { flag: '--primary-sub-1', slot: 'primarySubcategoryOne', label: '  sub 1' },
-  { flag: '--primary-sub-2', slot: 'primarySubcategoryTwo', label: '  sub 2' },
-  { flag: '--secondary', slot: 'secondaryCategory', label: 'secondary' },
-  { flag: '--secondary-sub-1', slot: 'secondarySubcategoryOne', label: '  sub 1' },
-  { flag: '--secondary-sub-2', slot: 'secondarySubcategoryTwo', label: '  sub 2' },
-];
-
-/**
- * Reads the `--primary`/`--secondary` family out of the arguments. Unlike `--attach` these
- * are one-shot: naming a slot twice is a typo, not two categories.
- */
-function takeCategoryOptions(argv: string[]): { update: api.AppCategoryUpdate; rest: string[] } {
-  const update: api.AppCategoryUpdate = {};
-  let rest = argv;
-
-  for (const { flag, slot } of CATEGORY_FLAGS) {
-    const taken = takeOption(rest, flag);
-    rest = taken.rest;
-    if (taken.values.length > 1) throw new Error(`${flag} was given more than once`);
-    const value = taken.values[0];
-    if (value !== undefined) update[slot] = value === 'none' ? null : value;
-  }
-
-  return { update, rest };
-}
-
-/**
- * The App Information page in one request, narrowed to the record that can be edited.
- * Everything on that page — categories, age rating, and the ids the writes need — comes
- * out of this.
- *
- * The document is kept alongside the record because the two commands built on it want
- * different things. Categories are relationships and read best spliced in; the age-rating
- * declaration is a record in its own right, and splicing it into anything would mix its
- * relationships in among the answers.
- */
-interface AppInfoPage {
-  document: Document<Resource[]>;
-  appInfo: Resource;
-}
-
-async function readAppInfoPage(session: Session, appId: string): Promise<AppInfoPage> {
-  const document = await api.listAppInfoPage(session, appId);
-  return { document, appInfo: api.pickEditableAppInfo(document.data, appId) };
-}
-
-/** The editable record with its six category relationships resolved, ready to print. */
-function withCategories(page: AppInfoPage): Denormalized {
-  return denormalize(page.document, page.appInfo);
-}
-
-/**
- * The age-rating declaration on that page: the id a write goes to, and the questionnaire as
- * `age-rating` prints it and `set-age-rating` reads it back in.
- *
- * The questions are whatever the declaration's own attributes are — the recorded set is one
- * app's, so reading them back is the only way to know what this app was asked.
- */
-function ageRatingOn(page: AppInfoPage): { id: string; answers: api.AgeRatingAnswers } {
-  const declaration = api.findAgeRatingDeclaration(page.document, page.appInfo);
-  return { id: declaration.id, answers: api.ageRatingAnswersFrom(declaration.attributes ?? {}) };
-}
-
-/** Only the questions whose answers differ, as the confirmation lists them. */
-function describeAgeRatingChange(before: api.AgeRatingAnswers, after: api.AgeRatingAnswers): string[] {
-  const changed = Object.keys(after).filter((question) => before[question] !== after[question]);
-  const width = Math.max(0, ...changed.map((question) => question.length));
-
-  return [
-    ...changed.map((q) => `  ${q.padEnd(width)}  ${JSON.stringify(before[q])} -> ${JSON.stringify(after[q])}`),
-    ...(changed.length ? [] : ['  (no answer differs from what is there now)']),
-    '',
-    `  All ${Object.keys(after).length} answers are resent, as the browser sends them.`,
-  ];
-}
-
-/** The category in a slot, or undefined if the record doesn't carry that relationship. */
-function categoryIn(appInfo: Denormalized, slot: api.AppCategorySlot): string | null | undefined {
-  const value = appInfo[slot];
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  return (value as Denormalized).id;
-}
-
-/** The six slots as `asc categories` prints them, and as the confirmation shows them. */
-function describeCategories(appInfo: Denormalized, update: api.AppCategoryUpdate = {}): string[] {
-  return CATEGORY_FLAGS.map(({ slot, label }) => {
-    const value = slot in update ? update[slot] : categoryIn(appInfo, slot);
-    return `  ${label.padEnd(11)} ${value ?? '—'}`;
-  });
-}
-
 async function main(argv: string[]): Promise<number> {
   const { values: attach, rest: afterAttach } = takeOption(argv, '--attach');
   const { values: threadIds, rest: afterThread } = takeOption(afterAttach, '--thread');
-  const { values: submissionIds, rest: afterSubmission } = takeOption(afterThread, '--submission');
-  const { update: categories, rest: positional } = takeCategoryOptions(afterSubmission);
+  const { values: submissionIds, rest: positional } = takeOption(afterThread, '--submission');
   const raw = positional.includes('--raw');
   const json = positional.includes('--json');
   const reveal = positional.includes('--reveal');
@@ -726,28 +561,6 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
-    case 'set-metadata': {
-      const session = loadSession();
-      const example = 'set-metadata en-GB subtitle "Race weekend times"';
-      const locale = requireArg(rest[0], 'locale', example);
-      const field = requireArg(rest[1], 'field', example);
-      // Descriptions run to paragraphs, same as a reply — "-" keeps their newlines intact.
-      const value = requireText(requireArg(rest[2], 'value', example), `${field} (${locale})`);
-
-      const appId = requireAppId(session, undefined);
-      const versionId = rest[3] ?? (await versionUnderReview(session, appId));
-      const target = await api.findMetadataField(session, { appId, versionId, locale, field });
-
-      await confirm({
-        question: `Replace ${target.field} (${target.locale})? The old text is not recoverable.`,
-        detail: describeMetadataChange(target, value),
-        yes,
-      });
-
-      emit((await api.setMetadataField(session, target, value)) as Document, raw);
-      return 0;
-    }
-
     case 'submit': {
       const session = loadSession();
       const appId = requireAppId(session, undefined);
@@ -824,131 +637,6 @@ async function main(argv: string[]): Promise<number> {
       const path = requireArg(rest[0], 'path', 'patch appStoreVersions/<id> \'{"data":...}\'');
       const body = requireArg(rest[1], 'json', 'patch appStoreVersions/<id> \'{"data":...}\'');
       console.log(JSON.stringify(await api.rawPatch(session, path, JSON.parse(body)), null, 2));
-      return 0;
-    }
-
-    case 'metadata': {
-      const session = loadSession();
-      const appId = requireAppId(session, undefined);
-      const versionId = rest[0] ?? (await versionUnderReview(session, appId));
-      console.log(JSON.stringify(await fetchMetadata(session, appId, versionId), null, 2));
-      return 0;
-    }
-
-    case 'app-info': {
-      const session = loadSession();
-      const appId = requireAppId(session, rest[0]);
-      const document = await api.listAppInfoPage(session, appId);
-      emit(document, raw);
-      return 0;
-    }
-
-    case 'categories': {
-      const session = loadSession();
-      const page = await readAppInfoPage(session, requireAppId(session, rest[0]));
-      console.log(describeCategories(withCategories(page)).join('\n'));
-      return 0;
-    }
-
-    case 'set-categories': {
-      const session = loadSession();
-      const appId = requireAppId(session, rest[0]);
-      if (!Object.keys(categories).length) {
-        throw new Error(
-          'Nothing to change. Name at least one slot: set-categories --primary GAMES --primary-sub-1 GAMES_TRIVIA'
-        );
-      }
-
-      const current = withCategories(await readAppInfoPage(session, appId));
-
-      await confirm({
-        question: "Change this app's App Store categories? They are live as soon as this lands.",
-        detail: [
-          '',
-          `  record:  appInfos/${current.id}`,
-          '  scope:   the app itself — categories are not held back until a version ships',
-          '',
-          '  now:',
-          ...describeCategories(current),
-          '  becomes:',
-          ...describeCategories(current, categories),
-          '',
-        ],
-        yes,
-      });
-
-      await api.setAppCategories(session, current.id, categories);
-      // Read back rather than trust the PATCH's own echo — the browser does the same.
-      emit(await api.getAppInfoCategories(session, current.id), raw);
-      return 0;
-    }
-
-    case 'age-rating': {
-      const session = loadSession();
-      const page = await readAppInfoPage(session, requireAppId(session, rest[0]));
-      console.log(JSON.stringify(ageRatingOn(page).answers, null, 2));
-      return 0;
-    }
-
-    case 'territory-ratings': {
-      const session = loadSession();
-      const page = await readAppInfoPage(session, requireAppId(session, rest[0]));
-      emit(await api.listTerritoryAgeRatings(session, page.appInfo.id), raw);
-      return 0;
-    }
-
-    case 'set-age-rating': {
-      const session = loadSession();
-      const source = requireArg(rest[0], 'file|-', 'set-age-rating answers.json');
-      const appId = requireAppId(session, rest[1]);
-      const text = source === '-' ? readStdin() : readFileSync(source, 'utf8');
-
-      // The current declaration is read first because it defines the questionnaire: which
-      // questions this app was asked is Apple's answer to give, not this client's.
-      const current = ageRatingOn(await readAppInfoPage(session, appId));
-      const answers = api.parseAgeRatingAnswers(JSON.parse(text), current.answers);
-
-      await confirm({
-        question: "Replace this app's age-rating answers?",
-        detail: [
-          '',
-          `  record:  ageRatingDeclarations/${current.id}`,
-          '  scope:   the app itself — Apple recomputes every territory rating from this',
-          '',
-          ...describeAgeRatingChange(current.answers, answers),
-          '',
-        ],
-        yes,
-      });
-
-      emit(await api.setAgeRating(session, current.id, answers), raw);
-      return 0;
-    }
-
-    case 'set-content-rights': {
-      const session = loadSession();
-      const declaration = requireArg(
-        rest[0],
-        'declaration',
-        'set-content-rights DOES_NOT_USE_THIRD_PARTY_CONTENT'
-      );
-      const appId = requireAppId(session, rest[1]);
-      const document = await api.getApp(session, appId);
-      const app = denormalize(document, document.data);
-
-      await confirm({
-        question: "Change this app's third-party content declaration?",
-        detail: [
-          '',
-          `  record:  apps/${appId}`,
-          `  now:     ${String(app['contentRightsDeclaration'] ?? '(unanswered)')}`,
-          `  becomes: ${declaration}`,
-          '',
-        ],
-        yes,
-      });
-
-      emit(await api.setContentRights(session, appId, declaration), raw);
       return 0;
     }
 

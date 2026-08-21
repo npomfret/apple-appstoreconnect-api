@@ -290,7 +290,61 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
       `npm test` is 119 pass, 0 fail before and after. `npm run typecheck` and `npm run build`
       are clean, `rg` finds no screenshot or preview reference left in `src/`, and
       `test/gap-requests.test.ts` and `test/gap-shapes.test.ts` were not edited.
-   4. **Metadata, app information, categories, age ratings, content rights.**
+   4. **Metadata, app information, categories, age ratings, content rights** — *Done,
+      2026-08-21.* `src/api.ts` loses `listAppInfos`, `listAppInfoLocalizations`,
+      `findEditableAppInfo`, `pickEditableAppInfo`, `listAppInfoPage`,
+      `getAppInfoCategories`, `setAppCategories`, `findAgeRatingDeclaration`,
+      `listTerritoryAgeRatings`, `ageRatingAnswersFrom`, `parseAgeRatingAnswers`,
+      `setAgeRating`, `setContentRights`, `listVersionLocalizations`, `metadataResourceFor`,
+      `findMetadataField` and `setMetadataField` with their constants and types (518 lines)
+      and the `territoryAgeRatings`, `appInfoCategories` and `appInfoPage` entries in
+      `INCLUDES` and `FIELDSETS`; `src/report.ts` loses `fetchMetadata` and
+      `LocaleMetadata`; `src/cli.ts` loses nine commands, ten helpers and the six
+      `--primary`/`--secondary` flags that existed for `set-categories` alone.
+
+      The audit was restated first, and this time the specification itself was
+      re-downloaded rather than the published schema pages alone: still **4.4.1**, still
+      966 paths and 1,393 schemas. Every path this slice used is an official operation and
+      every attribute is on an official schema —
+      `AppInfoLocalization.Attributes`, `AppStoreVersionLocalization.Attributes`,
+      `App.Attributes.contentRightsDeclaration`, `TerritoryAgeRating.appStoreAgeRating`,
+      and `AppInfoUpdateRequest` writing to exactly the six category relationships this
+      client wrote to.
+
+      **This is the first slice with a field to narrow to, and it went anyway.** Apple's
+      `AgeRatingDeclaration.Attributes` has 29 properties and the recorded body had 29, and
+      they are not the same 29: Apple has `ageRatingOverride`, the recording had
+      **`gracRatingClassificationNumber`** — Korea's GRAC classification number — which
+      occurs zero times in 4.4.1. By this file's rule that is a keep narrowed to one field.
+      It left with the slice because the only recorded write is the whole questionnaire in
+      one body, so keeping the field means going on sending 28 official ones, and no
+      single-attribute PATCH of a declaration has ever been recorded — inventing one is
+      exactly the guess this repository refuses. Retention is now its own evidence-led
+      decision in `tasks/grac-rating-classification-number-gap.md`, the same handling
+      `post_actions` got in slice 4.1. **This is the owner's call to make, not an agent's.**
+
+      Rescued into `docs/evidence.md` before the recording's record was rewritten: that the
+      *first* `appInfos` record is the live one and a write there is refused with
+      `409 ENTITY_ERROR.ATTRIBUTE.INVALID.INVALID_STATE`; that the questionnaire is one
+      app's rather than the questionnaire, which Apple's set differing by one attribute
+      confirms; that a category is a relationship whose id is the category's name, the same
+      way `AppInfoUpdateRequest` takes it; and that the recording covered request shapes
+      and not the range of answers. The first three are about the records, so they hold for
+      the official API too.
+
+      Four stale comments outside the slice were caught by a post-deletion grep and
+      rewritten rather than left: `requireText` and both `src/confirm.ts` doc comments used
+      `set-metadata` as their worked example of a piped-in value and now use `save-draft`,
+      and `versionUnderReview`'s error pointed at `asc metadata <versionId>`. Worth noting
+      honestly: **no command that asks now reads its input from stdin**, so the `/dev/tty`
+      fallback in `confirm.ts` is currently unexercised. It stays — the branch is one
+      command away from mattering again — and the comment says so instead of implying a
+      caller that no longer exists.
+
+      **No test changed, and again there were none.** `npm test` is 119 pass, 0 fail before
+      and after; `npm run typecheck` and `npm run build` are clean; `rg` finds no `appInfo`,
+      age-rating, category, territory or metadata call left in `src/`; and
+      `test/gap-requests.test.ts` and `test/gap-shapes.test.ts` were not edited.
    5. **Submission management** — unblocked by step 3: `report` no longer reads a
       submission, and `listReviewSubmissions` has no caller left in `src/report.ts`.
    6. **Apps, versions, builds, review details** — last of the resource slices, because

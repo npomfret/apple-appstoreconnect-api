@@ -37,7 +37,7 @@ export interface SubmissionReport {
    * `versions` rather than picking between them.
    */
   version?: string;
-  /** Id of that version — feed it to `fetchMetadata` or `listBuilds`. */
+  /** Id of that version — feed it to `listBuilds` or `history`. */
   versionId?: string;
   /** Every version the report is about. Empty when its source named none. */
   versions: VersionRef[];
@@ -530,65 +530,6 @@ export function formatPrivacy(privacy: PrivacyDeclaration): string {
   }
 
   return lines.join('\n');
-}
-
-export interface LocaleMetadata {
-  locale: string;
-  /** Id of the appStoreVersionLocalization the version half of this locale came from. */
-  localizationId?: string;
-  name?: string;
-  subtitle?: string;
-  description?: string;
-  keywords?: string;
-  promotionalText?: string;
-  whatsNew?: string;
-  marketingUrl?: string;
-  supportUrl?: string;
-}
-
-/**
- * Merges the two halves of App Store metadata into one per-locale view: name and subtitle
- * come from the app info record, everything else from the version.
- */
-export async function fetchMetadata(
-  session: Session,
-  appId: string,
-  versionId: string
-): Promise<LocaleMetadata[]> {
-  const [appInfo, versionLocsDoc] = await Promise.all([
-    api.findEditableAppInfo(session, appId),
-    api.listVersionLocalizations(session, versionId),
-  ]);
-
-  const byLocale = new Map<string, LocaleMetadata>();
-
-  for (const localization of denormalizeAll(versionLocsDoc)) {
-    const locale = asString(localization['locale']);
-    if (!locale) continue;
-    byLocale.set(locale, {
-      locale,
-      localizationId: localization.id,
-      description: asString(localization['description']),
-      keywords: asString(localization['keywords']),
-      promotionalText: asString(localization['promotionalText']),
-      whatsNew: asString(localization['whatsNew']),
-      marketingUrl: asString(localization['marketingUrl']),
-      supportUrl: asString(localization['supportUrl']),
-    });
-  }
-
-  // Names come from the editable app info record, not the live one — see
-  // findEditableAppInfo. A shipped app has both, and they disagree the moment you edit.
-  for (const localization of denormalizeAll(await api.listAppInfoLocalizations(session, appInfo.id))) {
-    const locale = asString(localization['locale']);
-    if (!locale) continue;
-    const existing = byLocale.get(locale) ?? { locale };
-    existing.name = asString(localization['name']);
-    existing.subtitle = asString(localization['subtitle']);
-    byLocale.set(locale, existing);
-  }
-
-  return [...byLocale.values()];
 }
 
 /** Renders the digest for a terminal. */

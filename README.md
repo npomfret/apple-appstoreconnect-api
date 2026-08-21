@@ -6,7 +6,7 @@ and replies, plus unread review-message counts, version state-change history and
 Privacy questionnaire.
 
 The repository currently also contains older private implementations of capabilities that
-Apple **does** officially expose, including review submissions and app metadata.
+Apple **does** officially expose, including review submissions, apps, versions and builds.
 Those are legacy overlap, not the intended product surface, and are
 scheduled for removal in
 [tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md). The boundary
@@ -77,10 +77,13 @@ instead. The removal task has the function-by-function mapping.
 Official replacements:
 
 - [Apps and app metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
+  and [age ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings)
   — apps, versions, localizations, categories, age ratings, screenshots and previews. The
-  `screenshots`, `previews`, `screenshot-set`, `upload-screenshot` and `delete-screenshot`
-  commands have been **removed**; this is where they went, and it serves the same
-  `uploadOperations` the private upload flow ran on.
+  `screenshots`, `previews`, `screenshot-set`, `upload-screenshot`, `delete-screenshot`,
+  `metadata`, `set-metadata`, `app-info`, `categories`, `set-categories`, `age-rating`,
+  `set-age-rating`, `territory-ratings` and `set-content-rights` commands have been
+  **removed**; this is where they went, and it serves the same `uploadOperations` the
+  private upload flow ran on.
 - [Review submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
   — creating, reading, updating and submitting review submissions and their items.
 - [Users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
@@ -102,8 +105,6 @@ Official replacements:
 | `submissions`, `submission`, `items` | **legacy official overlap** — review submissions and their items |
 | `versions`, `version` | **legacy official overlap** — app versions |
 | `history` | private version state-change history, including initiator and time in state |
-| `metadata` | **legacy official overlap** — store listing text |
-| `app-info`, `categories`, `age-rating`, `territory-ratings` | **legacy official overlap** — App Information |
 | `review-details` | **legacy official overlap** — App Review Information |
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
 | `privacy` | App Privacy declarations, and whether they're live |
@@ -119,8 +120,6 @@ gap-only boundary. The other writes duplicate official operations and are pendin
 | `builds`, `set-build` | attach a build to a version — [docs/writing.md](docs/writing.md) |
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
 | `send-reply` | send it — [docs/replying.md](docs/replying.md) |
-| `set-metadata` | one field, one locale: description, keywords, name, subtitle… — [docs/writing.md](docs/writing.md) |
-| `set-categories`, `set-age-rating`, `set-content-rights` | the rest of the App Information page — all app-wide and live at once — [docs/writing.md](docs/writing.md) |
 | `resolve-item` | tell App Review an issue is fixed and put it back in the queue — [docs/writing.md](docs/writing.md) |
 | `submit`, `cancel-submission` | submit a version for review, or withdraw it — [docs/writing.md](docs/writing.md) |
 | `patch` | any PATCH, for anything not mapped |
@@ -128,11 +127,11 @@ gap-only boundary. The other writes duplicate official operations and are pendin
 **`send-reply`, `resolve-item` and `submit` can't be undone**, so they print what they are
 about to do and ask first — `send-reply` shows you the whole draft and reads it again after
 you answer, in case the browser autosaved over it in the meantime, `submit --dry-run`
-prints the steps and sends nothing. `set-metadata`, the three App Information writes,
-`cancel-submission` and the three deletes ask too. `--yes` answers for you, and still prints
-what it answered for; a command whose own input is a pipe is asked on the terminal rather
-than refused, and with no terminal at all they stop rather than assume. Nothing else asks: a
-bad `set-build` is one more `set-build` away from being right.
+prints the steps and sends nothing. `cancel-submission` and the two deletes ask too.
+`--yes` answers for you, and still prints what it answered for; a command whose own input is
+a pipe is asked on the terminal rather than refused, and with no terminal at all they stop
+rather than assume. Nothing else asks: a bad `set-build` is one more `set-build` away from
+being right.
 
 The `submit` flow is the one thing here **not** taken from a capture — see
 [docs/evidence.md](docs/evidence.md) before the first real run.
@@ -217,3 +216,11 @@ threads, messages, guideline rejections, draft replies and their attachments; un
 review-message counts; App Store version state-change *history*; and the App Privacy
 `dataUsages` questionnaire. Checked against 4.4.1 — see
 [docs/evidence.md](docs/evidence.md).
+
+One attribute, rather than a capability, is in the same position: iris carries
+`gracRatingClassificationNumber` on an age-rating declaration — the Korean GRAC
+classification number — and it is in none of 4.4.1's 1,393 schemas, where the other 28
+questions this client sent all are. It left with the age-rating commands on 2026-08-21
+rather than being kept, because writing it back means resending the whole questionnaire and
+no single-attribute PATCH has ever been recorded. See
+[tasks/grac-rating-classification-number-gap.md](tasks/grac-rating-classification-number-gap.md).

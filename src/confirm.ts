@@ -42,11 +42,12 @@ interface Asked {
 /**
  * Where to ask.
  *
- * Normally stdin. But a command whose *input* arrives on stdin has none left to answer on —
- * `cat description.txt | asc set-metadata en-GB description -` is a documented way to run
- * this — and refusing there would mean the guarded writes are exactly the ones you have to
- * add `--yes` to. There is still a terminal in that case, reachable as `/dev/tty`, so the
- * question goes there instead.
+ * Normally stdin. But an argument piped in leaves nothing there to answer on —
+ * `cat reply.txt | asc save-draft <threadId> -` is a documented way to run this — and a
+ * command that both read its input from stdin and asked would be one you always had to add
+ * `--yes` to. None does as things stand; the fallback is what keeps that from being a trap
+ * the first time one does. There is still a terminal in that case, reachable as `/dev/tty`,
+ * so the question goes there instead.
  *
  * Nothing to open means nothing to ask: cron, CI and a container with no tty all fail here,
  * and that is the case the refusal below is for.
@@ -78,8 +79,8 @@ function whereToAsk(): Asked | undefined {
  * it would have done, and says which flag lets it through.
  *
  * What is being done is printed either way, `--yes` included. That flag says the answer is
- * already decided, not that there is nothing worth recording: `set-metadata` prints the text
- * it is about to overwrite, and Apple keeps no other copy of it.
+ * already decided, not that there is nothing worth recording: `send-reply` prints the whole
+ * message it is about to send, and there is no unsend.
  */
 export async function confirm(options: ConfirmOptions): Promise<void> {
   const { question, detail = [], yes = false } = options;

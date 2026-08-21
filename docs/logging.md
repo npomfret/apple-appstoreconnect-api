@@ -51,14 +51,6 @@ looks like when no total is reported. Neither fetches a second page; they exist 
 short list doesn't pass for a complete one, which is the failure that matters when the
 digest picks "Apple's latest message" out of it. Raise that call's `limit` to see past it.
 
-## When the record being written to was picked, not given
-
-The App Information writes go to the app info record that can be edited, and two warnings
-say when working out which one wasn't clear-cut. `appInfo.ambiguous` means more than one
-record was in an editable state and the first was taken. `appInfo.noneEditable` means none
-were: the app is between versions, so the live record is what came back — right for a read,
-and the one Apple refuses a write to with `409 INVALID_STATE`.
-
 ## What never reaches the log
 
 Credentials are scrubbed two ways, because one of them has to catch what the other missed.

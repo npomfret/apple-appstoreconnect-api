@@ -112,32 +112,43 @@ private Resolution Center resources, accepting an explicit app, submission, or t
 where the private API cannot discover one without duplicating an official read. Do not add
 official authentication just to preserve the current report UX.
 
-### Metadata, categories, age ratings and content rights
+### Metadata, categories, age ratings and content rights — *removed 2026-08-21*
 
-Remove:
+`listAppInfos`, `listAppInfoLocalizations`, `findEditableAppInfo`, `pickEditableAppInfo`,
+`listAppInfoPage`, `getAppInfoCategories`, `setAppCategories`, `findAgeRatingDeclaration`,
+`listTerritoryAgeRatings`, `ageRatingAnswersFrom`, `parseAgeRatingAnswers`, `setAgeRating`,
+`setContentRights`, `listVersionLocalizations`, `metadataResourceFor`, `findMetadataField`
+and `setMetadataField` are gone from `src/api.ts` with `LIVE_APP_INFO_STATE`,
+`APP_CATEGORY_SLOTS`, `AppCategorySlot`, `AppCategoryUpdate`, `AGE_RATING_QUESTIONS`,
+`AgeRatingAnswer`, `AgeRatingAnswers`, `METADATA_FIELDS`, `MetadataResource`,
+`MetadataField` and the `territoryAgeRatings`, `appInfoCategories` and `appInfoPage`
+entries in `INCLUDES` and `FIELDSETS`; `fetchMetadata` and `LocaleMetadata` are gone from
+`src/report.ts`; `src/cli.ts` loses the `metadata`, `set-metadata`, `app-info`,
+`categories`, `set-categories`, `age-rating`, `set-age-rating`, `territory-ratings` and
+`set-content-rights` commands with `CATEGORY_FLAGS`, `takeCategoryOptions`, `AppInfoPage`,
+`readAppInfoPage`, `withCategories`, `ageRatingOn`, `describeAgeRatingChange`,
+`categoryIn`, `describeCategories`, `describeMetadataChange` and the six `--primary`/
+`--secondary` flags, which existed for `set-categories` alone.
 
-- `listAppInfos`, `listAppInfoLocalizations`, `findEditableAppInfo`,
-  `pickEditableAppInfo`, `listVersionLocalizations`, `findMetadataField`,
-  `setMetadataField`, and metadata-only helpers.
-- `getAppInfoCategories`, `setAppCategories`, and `listAppInfoPage`.
-- `findAgeRatingDeclaration`, `listTerritoryAgeRatings`, `setAgeRating`, and
-  questionnaire-only parsing/helpers.
-- `setContentRights`.
-
-Official equivalents include `apps_appInfos_getToManyRelated`,
-`appInfos_getInstance`, `appInfos_updateInstance`,
-`appInfos_appInfoLocalizations_getToManyRelated`,
-`appInfoLocalizations_updateInstance`,
+Re-audited 2026-08-21 against specification 4.4.1, re-downloaded that day and unchanged
+(966 paths, 1,393 schemas). Every path and every attribute this slice used is official:
+`apps_appInfos_getToManyRelated`, `appInfos_getInstance`, `appInfos_updateInstance`,
+`appInfos_appInfoLocalizations_getToManyRelated`, `appInfoLocalizations_updateInstance`,
 `appStoreVersions_appStoreVersionLocalizations_getToManyRelated`,
-`appStoreVersionLocalizations_updateInstance`,
-`appInfos_ageRatingDeclaration_getToOneRelated`,
-`ageRatingDeclarations_updateInstance`, and
-`appInfos_territoryAgeRatings_getToManyRelated`. `apps_updateInstance` covers the app
-attributes currently changed by `set-content-rights`.
+`appStoreVersionLocalizations_updateInstance`, `ageRatingDeclarations_updateInstance`,
+`appInfos_territoryAgeRatings_getToManyRelated` and `apps_updateInstance`, with
+`AppInfoUpdateRequest` writing to exactly the six category relationships this client wrote
+to and `App.Attributes` carrying `contentRightsDeclaration`.
 
-Commands affected: `metadata`, `set-metadata`, `app-info`, `categories`,
-`set-categories`, `age-rating`, `set-age-rating`, `territory-ratings`, and
-`set-content-rights`.
+**One attribute is the exception, and it left anyway.**
+`gracRatingClassificationNumber` — carried in the recorded age-rating body — occurs zero
+times in 4.4.1 and is not on Apple's published `AgeRatingDeclaration.Attributes`, which
+instead has `ageRatingOverride` that the recording lacked. Under this file's own rule that
+is a keep narrowed to one field. It went with the slice because the only recorded write is
+the whole questionnaire in one body, so preserving that field means continuing to send 28
+official ones, and no single-attribute PATCH of a declaration has ever been recorded.
+Retention is an open, evidence-led decision:
+[grac-rating-classification-number-gap.md](grac-rating-classification-number-gap.md).
 
 ### Screenshots and previews — *removed 2026-08-21*
 
