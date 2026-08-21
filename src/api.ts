@@ -2,7 +2,7 @@ import { basename } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { Session } from './session';
 import { del, get, patch, post, uploadPart, Query, UploadOperation } from './http';
-import { Document, Resource, ResourceIdentifier } from './jsonapi';
+import { Denormalized, Document, Resource, ResourceIdentifier } from './jsonapi';
 import { audited, log, REVIEW_DETAIL_SECRETS } from './log';
 
 /**
@@ -490,6 +490,34 @@ export async function saveDraftReply(session: Session, reply: DraftReply): Promi
       return saved as Document<Resource>;
     }
   );
+}
+
+/**
+ * The part of a draft a confirmation is about: the text, and which files go with it.
+ *
+ * Both of the writes that destroy a draft's words — `send-reply`, which copies them to
+ * Apple, and `save-draft`, which writes over them — print the box and ask about what is in
+ * it. Between the question and the write is a gap the length of however long the prompt was
+ * on screen, and App Store Connect autosaves that box as you type, so a browser open on the
+ * same thread moves it under you. Fingerprinting what was shown is how the write notices.
+ *
+ * It does not close the gap and nothing here can: iris has no conditional write, so there
+ * is still a round trip between the check and the change. What it catches is an edit made
+ * while somebody was reading, which is the one that actually happens.
+ *
+ * Ordering the attachments makes this about the set rather than the order iris happened to
+ * list them in. The draft's own id is in there because a delete-and-recreate returns the
+ * same id — see [replying](../docs/replying.md) — so it wouldn't catch that on its own, but
+ * a changed one is certainly a different draft.
+ */
+export function draftState(draft: Denormalized): string {
+  const attachments = (draft['resolutionCenterMessageAttachments'] ?? []) as Denormalized[];
+
+  return JSON.stringify({
+    id: draft.id,
+    body: String(draft['messageBody'] ?? ''),
+    attachments: attachments.map((file) => `${file.id}:${String(file['fileName'] ?? '')}`).sort(),
+  });
 }
 
 /**

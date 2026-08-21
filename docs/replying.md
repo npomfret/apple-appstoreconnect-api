@@ -76,8 +76,13 @@ disabled until there's text.
 
 `save-draft` reads the thread first and POSTs or PATCHes accordingly, since the draft is
 created on the first keystroke and updated forever after. The CLI reads it once more before
-that, to have something to show you and ask about — two GETs where the library call on its
-own makes one, and asks nothing. Attachments go up in three steps —
+that, to have something to show you and ask about, and — when there were words in the box —
+once again after the answer, refusing to write if they moved while the question was on
+screen. That is the same guard `send-reply` has and for the same reason: the box autosaves,
+and what you agreed to was writing over the text you were shown. A draft that disappeared
+counts as changed, since the save would create one rather than replace it. So a save over an
+occupied box makes three GETs to the library call's one, and a save into an empty one makes
+two; the library call asks nothing and checks nothing. Attachments go up in three steps —
 reserve, PUT the parts, then `{"uploaded":true}` — which is the same sequence App Store
 Connect uses for any asset, here against `resolutionCenterMessageAttachments`.
 `uploadPart` in `src/http.ts` sends those parts to

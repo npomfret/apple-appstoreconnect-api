@@ -36,6 +36,13 @@ attachment, so there is no file name to put beside it that didn't come off a dra
 already read. `asc draft <threadId>` is where those ids and their names are listed together,
 and is worth a look first.
 
+`send-reply` and `save-draft` both read the draft once more after the answer and refuse if
+it changed, because App Store Connect autosaves that box as you type and a browser open on
+the same thread moves it while the prompt is on screen. That shortens the window rather than
+closing it — iris has no conditional write, so there is still a round trip between the check
+and the change — and what it catches is an edit made while somebody was reading, which is
+the one that happens.
+
 What is about to happen is printed either way, `--yes` included. That flag says the answer
 is already decided, not that there is nothing worth recording — `send-reply` prints the
 whole message it is about to send, and there is no unsend.

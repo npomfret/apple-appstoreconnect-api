@@ -174,24 +174,6 @@ function describeDraft(threadId: string, draft: Denormalized): string[] {
   ];
 }
 
-/**
- * The part of a draft the confirmation was about: the text, and which files go with it.
- *
- * Ordering the attachments makes this about the set rather than the order iris happened to
- * list it in. The draft's own id is in there because a delete-and-recreate returns the same
- * id — see [replying](../docs/replying.md) — so it wouldn't catch that on its own, but a
- * changed one is certainly a different draft.
- */
-function draftState(draft: Denormalized): string {
-  const attachments = (draft['resolutionCenterMessageAttachments'] ?? []) as Denormalized[];
-
-  return JSON.stringify({
-    id: draft.id,
-    body: String(draft['messageBody'] ?? ''),
-    attachments: attachments.map((file) => `${file.id}:${String(file['fileName'] ?? '')}`).sort(),
-  });
-}
-
 function requireArg(value: string | undefined, name: string, example: string): string {
   if (!value) throw new Error(`Missing <${name}>. Example: asc ${example}`);
   return value;
@@ -308,11 +290,27 @@ async function main(argv: string[]): Promise<number> {
       // with no draft is not asked: the write there creates one and destroys nothing.
       const existing = await api.getDraftMessage(session, threadId);
       if (existing.data) {
+        const shown = denormalize(existing, existing.data);
         await confirm({
           question: `Replace the text of this draft on thread ${threadId}? Its attachments stay.`,
-          detail: describeDraft(threadId, denormalize(existing, existing.data)),
+          detail: describeDraft(threadId, shown),
           yes,
         });
+
+        // The same window as send-reply's, for the same reason: the box autosaves as you
+        // type, so a browser open on this thread moves it while the question is on screen,
+        // and what was agreed to was writing over the words printed above. Read it once
+        // more and refuse if they are not the words still there. A draft that vanished
+        // counts as changed — the save would quietly create one instead of replacing, and
+        // somebody else acting on the thread is exactly when to stop.
+        const now = await api.getDraftMessage(session, threadId);
+        if (!now.data || api.draftState(denormalize(now, now.data)) !== api.draftState(shown)) {
+          throw new Error(
+            `The draft on thread ${threadId} changed while the question was on screen, so the ` +
+              'words that would be written over are not the ones you were shown. Nothing was ' +
+              'written. Check it with "asc draft" and save again.'
+          );
+        }
       }
 
       const document = await api.saveDraftReply(session, { threadId, body, attach });
@@ -345,7 +343,7 @@ async function main(argv: string[]): Promise<number> {
       // conditional write — it shortens it from however long the prompt was on screen to
       // the round trip below.
       const now = await api.findSendableDraft(session, threadId);
-      if (draftState(denormalize(now, now.data)) !== draftState(draft)) {
+      if (api.draftState(denormalize(now, now.data)) !== api.draftState(draft)) {
         throw new Error(
           `The draft on thread ${threadId} changed while the question was on screen, so what ` +
             'was agreed to is not what would have been sent. Nothing was sent. Check it with ' +

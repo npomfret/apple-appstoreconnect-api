@@ -63,7 +63,10 @@ delete. `saveDraftReply()` has no read half of its own: `getDraftMessage()` is t
 it, since `{"data": null}` is the answer meaning there is nothing to ask about. That is all
 `send-reply` does — plus one more `findSendableDraft()` after the answer, since the send
 posts a reference to the draft rather than its text, and the box autosaves while your prompt
-is on screen. Worth copying if you build your own.
+is on screen. `draftState()` is the comparison it makes between those two reads: a string
+fingerprint of the body and the attachment set, ordered so that two reads of one untouched
+draft match. `save-draft` uses it the same way over `getDraftMessage()`, since writing over
+words is the same question as sending them. Worth copying if you build your own.
 
 ## Conventions worth knowing before editing
 
