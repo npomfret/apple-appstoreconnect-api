@@ -6,9 +6,9 @@ and replies, plus unread review-message counts, version state-change history and
 Privacy questionnaire.
 
 The repository currently also contains older private implementations of capabilities that
-Apple **does** officially expose, including review submissions, metadata, screenshots,
-users and invitations, and Xcode Cloud. Those are legacy overlap, not the intended product
-surface, and are scheduled for removal in
+Apple **does** officially expose, including review submissions, metadata, screenshots, and
+users and invitations. Those are legacy overlap, not the intended product surface, and are
+scheduled for removal in
 [tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md). The boundary
 was last audited on 2026-08-20 against Apple's OpenAPI specification 4.4.1.
 
@@ -84,7 +84,8 @@ Official replacements:
   [user invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
   — team access, roles, app visibility, invitations and revocation.
 - [Xcode Cloud workflows and builds](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
-  — products, workflows, repositories, builds, actions, issues and test results.
+  — products, workflows, repositories, builds, actions, issues and test results. The `ci-*`
+  commands that used to read these privately have been **removed**; this is where they went.
 
 **Reading** — [docs/reading.md](docs/reading.md)
 
@@ -102,7 +103,6 @@ Official replacements:
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
 | `privacy` | App Privacy declarations, and whether they're live |
 | `invites` | **legacy official overlap** — pending invitations — [docs/people.md](docs/people.md) |
-| `ci-*` | **legacy official overlap** — Xcode Cloud — [docs/xcode-cloud.md](docs/xcode-cloud.md) |
 | `get` | any endpoint at all, mapped or not |
 
 **Writing** — most of these are copied from a capture of the browser doing it:
@@ -147,7 +147,6 @@ chain between commands, which is what makes scripting it possible.
 - [Screenshots](docs/screenshots.md) — the upload flow and the pre-flight checks
 - [Replying to App Review](docs/replying.md) — Resolution Center drafts, attachments, and sending
 - [People](docs/people.md) — inviting someone to the developer account, and what isn't mapped
-- [Xcode Cloud](docs/xcode-cloud.md) — workflows and builds, on a second API with its own rules
 - [Logging and the audit trail](docs/logging.md) — structured logs, and why every write is recorded
 - [As a library](docs/library.md) — importing it instead of shelling out
 - [Evidence and limits](docs/evidence.md) — which calls are confirmed, which are guesses,

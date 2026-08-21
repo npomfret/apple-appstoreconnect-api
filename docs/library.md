@@ -1,7 +1,9 @@
 # As a library
 
 > **Boundary notice:** exports for submissions, versions, builds, metadata, App Information,
-> screenshots, invitations and Xcode Cloud are legacy official overlap and will be removed.
+> screenshots and invitations are legacy official overlap and will be removed. The Xcode
+> Cloud exports have already gone — use Apple's
+> [Xcode Cloud API](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds).
 > New callers should use this library only for the official gaps listed in
 > [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md). For overlapping
 > functionality, use Apple's
@@ -46,9 +48,8 @@ rather than per request. `sessionFromCapture(text)` does the same parse on a str
 already have, if the capture reaches you some other way.
 
 `src/index.ts` re-exports everything, so any function in `src/api.ts` is importable from
-the package root. `src/ci.ts` is there too — the Xcode Cloud reads. Nothing it returns is
-a JSON:API document, so `denormalize` has no business with it; see
-[xcode cloud](xcode-cloud.md).
+the package root. Everything it returns is a JSON:API document, which is what `denormalize`
+and `denormalizeAll` are for.
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()`,
 `sendDraftReply()`, `resolveSubmissionItem()`, `submitReviewSubmission()` and `inviteUser()`

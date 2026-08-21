@@ -9,9 +9,11 @@
 > for official capabilities. Use Apple's official
 > [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
 > [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
-> [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
-> and [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
-> APIs for the overlapping reads.
+> and [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
+> APIs for the overlapping reads. The Xcode Cloud reads that used to be on this page have
+> already been removed; Apple's
+> [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
+> API is where they went.
 
 ```sh
 node dist/cli.js report                 # the useful one — digest of every review conversation
@@ -87,20 +89,12 @@ document):
 | `rejections <threadId>` | `reviewRejections?filter[resolutionCenterMessage.resolutionCenterThread]={id}` |
 | `invites` | `userInvitations?sort=lastName&include=visibleApps&fields[apps]=` — the account, not an app ([people](people.md)) |
 
-Xcode Cloud is a **different API** — `/ci/api`, plain JSON, no JSON:API envelope — so its
-reads have their own page and their own `ci-` prefix: [xcode cloud](xcode-cloud.md).
-
-| Command | Endpoint |
-| --- | --- |
-| `ci-product [appId]` | `teams/{team}/asc-products/{appId}` |
-| `ci-workflows [appId]` | `teams/{team}/products/{product}/workflows-v15` |
-| `ci-workflow <id> [appId]` | `teams/{team}/products/{product}/workflows-v15/{id}` |
-| `ci-builds [appId]` | `build-groups-v4`, then `build-summaries-v2` for those groups |
-| `ci-repos [appId]` | `teams/{team}/products/{product}/repos-v3` |
-| `ci-capabilities` | `teams/{team}/user-capabilities` |
-| `ci-build [buildId] [appId]` | one build and its stages from `details-v3` |
-| `ci-tests [buildId] [appId]` | build details, then every test stage's `test-results-v4` |
-| `ci-run [buildId] [appId]` | build details + current workflow + test results and issues |
+Every endpoint above is `iris/v1`. The nine `ci-*` commands that read Xcode Cloud over a
+second private API — `/ci/api`, plain JSON, no JSON:API envelope — are **gone**, along with
+`asc ci-run`'s build digest. Apple exposes products, workflows, repositories, build runs,
+actions, issues and test results
+[officially](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
+which needs an API key rather than this client's cookie.
 
 `appId` defaults to the one scraped from the captured request's `Referer`; `versionId`
 defaults to the version attached to the first open submission — one extra request, the

@@ -3,8 +3,9 @@
 ## Status
 
 Proposed. This task defines the product boundary; it does not authorize live App Store
-Connect writes. It supersedes [xcode-cloud-evidence.md](xcode-cloud-evidence.md): Xcode
-Cloud has an official API and therefore does not belong in this project.
+Connect writes. It superseded `xcode-cloud-evidence.md`, which has since been deleted along
+with the rest of the Xcode Cloud slice: Xcode Cloud has an official API and therefore does
+not belong in this project.
 
 The order this should be carried out in, and two corrections to the inventory below, are in
 [gap-boundary-next-steps.md](gap-boundary-next-steps.md).
@@ -162,19 +163,20 @@ Official operations include `userInvitations_getCollection`,
 `userInvitations_deleteInstance`; the official API also supports users, role changes,
 visible-app relationships, and revocation, so the private implementation is less complete.
 
-### Xcode Cloud
+### Xcode Cloud — *removed 2026-08-21*
 
-Remove `src/ci.ts`, its `src/index.ts` export, its transport base and handling in
-`src/http.ts`, every `ci-*` command, Xcode Cloud report types/formatters in `src/report.ts`,
-and `test/ci.test.ts`. This includes the currently uncommitted `ci-build`, `ci-tests`, and
-`ci-run` work; do not finish or land it as a private API feature first.
+`src/ci.ts`, its `src/index.ts` export, the `ci` transport base and its handling in
+`src/http.ts`, all nine `ci-*` commands, the Xcode Cloud report types and formatters in
+`src/report.ts`, `test/ci.test.ts`, `test/run.test.ts`, `docs/xcode-cloud.md` and the
+superseded `tasks/xcode-cloud-evidence.md` are all gone. See step 4.1 of
+[gap-boundary-next-steps.md](gap-boundary-next-steps.md) for what the slice actually took
+and the one question it left open.
 
 The official API exposes CI products, workflows, repositories, build runs, actions, issues,
 test results, artifacts, macOS versions, and Xcode versions through `ciProducts_*`,
 `ciWorkflows_*`, `scmRepositories_*`, `ciBuildRuns_*`, `ciBuildActions_*`, `ciIssues_*`,
 `ciTestResults_*`, and related operations. It can also create/update workflows and start
-builds. Remove `docs/xcode-cloud.md` and the superseded
-`tasks/xcode-cloud-evidence.md` when implementation removal lands.
+builds.
 
 ### Generic escape hatches
 

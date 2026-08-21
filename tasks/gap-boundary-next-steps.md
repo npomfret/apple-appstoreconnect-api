@@ -171,9 +171,35 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
 4. **Delete in vertical slices**, each one command + export + implementation + tests + docs
    together, in ascending order of entanglement:
 
-   1. **Xcode Cloud** — newest, zero dependents, nothing else imports `src/ci.ts`. Reverting
-      commits `d500e8f` and `f93cd68` is most of it; `src/report.ts` also loses its run
-      digest, and `src/http.ts` loses the `ci` base and the `partial` option.
+   1. **Xcode Cloud** — *Done, 2026-08-21.* `src/ci.ts` (443 lines), `test/ci.test.ts`,
+      `test/run.test.ts`, `docs/xcode-cloud.md` and the superseded
+      `tasks/xcode-cloud-evidence.md` are deleted; `src/index.ts` loses the export,
+      `src/report.ts` loses its 313-line run digest and the `ci` import, and `src/cli.ts`
+      loses all nine `ci-*` commands with `requireProductId`, `latestBuildId`, `testStages`
+      and `emitPlain`. `src/http.ts` loses the `ci` base, `getCi`, the `api === 'ci'` header
+      branch, the `partial` option and the `items` page shape — all four existed only for
+      that API. `API_BASES`, `Api` and `apiUrl` survive as a one-member closed set: the
+      refusal to send the cookie anywhere but the one host is the point of them, and
+      whether the indirection itself is still worth having is step 5's call, not this
+      slice's.
+
+      Verified by deletion rather than by test: `rg` finds no `ci-*` command, no `getCi`,
+      no `Ci*` type and no `/ci/api` request anywhere in `src/` or `test/`. `npm run
+      typecheck`, `npm test` (126 pass, 0 fail — 24 tests left with the slice) and
+      `npm run build` are clean, and **`test/gap-requests.test.ts` and
+      `test/gap-shapes.test.ts` were not edited**, which is what says the slice took only
+      its own.
+
+      **Left open, deliberately:** `tasks/ci-transport-403-and-post-actions-gap.md` (added
+      2026-08-21) records that `CiWorkflow.post_actions` — whether a build is handed to
+      TestFlight testers automatically — has no field in Apple's official
+      `CiWorkflow.Attributes`, which by this file's own rule makes it a *keep* narrowed to
+      that field rather than a removal. The owner's call was to take the slice out whole
+      now and treat retention as its own evidence-led decision later: nothing working was
+      lost, because that file also shows every `ci-*` command was already answering 403 (the
+      `api === 'ci'` branch left `content-type: application/vnd.api+json` on a service that
+      does not speak JSON:API), and the code is recoverable from `d500e8f` and `f93cd68`.
+      That task file is untouched and still open.
    2. **Invitations** — also standalone.
    3. **Screenshots and previews** — self-contained module, but it owns the asset-upload
       orchestration and `uploadPart`, so check what else reserves assets first: draft

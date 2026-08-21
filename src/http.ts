@@ -8,16 +8,13 @@ const HOST = 'https://appstoreconnect.apple.com';
 /**
  * The App Store Connect APIs this client speaks, as base paths on that host.
  *
- * Two, because the web UI is two. The review centre is JSON:API under `iris/v1`. The Xcode
- * Cloud tab is plain JSON under `ci/api` — no envelope, no `include`, no `meta.paging`,
- * pages that come back as `items` — and shares nothing with iris but the cookie.
- *
- * A closed set rather than a base a caller hands in: everything built here goes out with
- * the session cookie attached, so which prefixes exist is a decision this file makes.
+ * One, since the Xcode Cloud surface left: the review centre, JSON:API under `iris/v1`.
+ * Still a closed set rather than a base a caller hands in, because everything built here
+ * goes out with the session cookie attached, so which prefixes exist is a decision this
+ * file makes rather than a caller's.
  */
 export const API_BASES = {
   iris: `${HOST}/iris/v1`,
-  ci: `${HOST}/ci/api`,
 } as const;
 
 export type Api = keyof typeof API_BASES;
@@ -79,16 +76,6 @@ export interface RequestOptions {
   query?: Query;
   body?: unknown;
   /**
-   * Says this request deliberately asks for less than everything, so the "this page may be
-   * clipped" warnings are not about it.
-   *
-   * Only for a caller that wants the top of a list and knows there is more — "the newest
-   * build". Not a way to quieten a read that really might be missing rows: those warnings
-   * are the only thing standing between a truncated list and a wrong answer, and one that
-   * cries wolf on every run teaches people to ignore the ones that matter.
-   */
-  partial?: boolean;
-  /**
    * Overrides the Content-Type a write would otherwise send. Not every write agrees:
    * the version PATCH uses application/json, the asset endpoints application/vnd.api+json.
    */
@@ -121,10 +108,10 @@ function methodOf(given: string | undefined): Method {
 }
 
 /**
- * The URL a resource path names, under one of the two bases above.
+ * The URL a resource path names, under the base above.
  *
- * Paths here are relative — `appStoreVersions/{id}`, `teams/{id}/products-v3/{id}` — and an
- * absolute URL is refused rather than sent. Everything this function returns is fetched
+ * Paths here are relative — `appStoreVersions/{id}`, `apps/{id}/resolutionCenterThreads` —
+ * and an absolute URL is refused rather than sent. Everything this function returns is fetched
  * with the session cookie and the CSRF header attached, so a URL naming another host is
  * that cookie handed to that host, and `asc get`/`asc patch` take their path straight off
  * the command line. Nothing in this client ever asked for an absolute one: the single
@@ -132,7 +119,7 @@ function methodOf(given: string | undefined): Method {
  * — see `uploadPart`, which sends the presigned URL and no cookie.
  *
  * Which base is in play is chosen from the `Api` union, never from the path, so a caller
- * cannot walk out of one API and into the other by writing `../`-anything.
+ * cannot leave it by writing `../`-anything.
  */
 function apiUrl(api: Api, path: string): string {
   const base = API_BASES[api];
@@ -151,32 +138,13 @@ function apiUrl(api: Api, path: string): string {
  * X-Connect-Team-* pair only when mutating, and switches Content-Type to plain
  * application/json. Mirror that rather than sending one header set for everything.
  */
-function headersFor(
-  session: Session,
-  api: Api,
-  mutating: boolean,
-  contentType?: string
-): Record<string, string> {
+function headersFor(session: Session, mutating: boolean, contentType?: string): Record<string, string> {
   const headers: Record<string, string> = {
     accept: 'application/vnd.api+json, application/json, text/csv',
     'content-type': 'application/vnd.api+json',
     ...session.headers,
     cookie: session.cookie,
   };
-
-  if (api === 'ci') {
-    // The Xcode Cloud tab negotiates nothing and carries no CSRF header. The session's own
-    // Accept was captured from an iris request, so it is overwritten rather than passed on.
-    //
-    // What the browser sends there and this cannot: `x-apple-signature`, 64 signed bytes,
-    // with an `x-apple-signed-at` timestamp beside it — recomputed for every single
-    // request by the page's own JavaScript. Recorded from the browser, one call went out
-    // without the pair and came back with a routed 404 rather than a refusal, so the cookie
-    // looks like what authenticates; that is an observation, not a guarantee. If Apple ever
-    // enforces the signature these calls stop working and there is no fix from here.
-    headers['accept'] = '*/*';
-    delete headers['x-csrf-itc'];
-  }
 
   if (mutating) {
     headers['content-type'] = contentType ?? 'application/json';
@@ -218,7 +186,7 @@ export async function request<T = unknown>(
   try {
     response = await fetch(target, {
       method,
-      headers: headersFor(session, api, mutating, options.contentType),
+      headers: headersFor(session, mutating, options.contentType),
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
     text = await response.text();
@@ -251,7 +219,7 @@ export async function request<T = unknown>(
     throw new ApiError(response.status, target, `Expected JSON, got:\n${text.slice(0, 500)}`);
   }
 
-  if (!mutating && !options.partial) reportShortPage(target, options.query, parsed);
+  if (!mutating) reportShortPage(target, options.query, parsed);
   return parsed;
 }
 
@@ -270,11 +238,9 @@ export async function request<T = unknown>(
  */
 function reportShortPage(url: string, query: Query | undefined, document: unknown): void {
   if (typeof document !== 'object' || document === null) return;
-  const { data, items, meta } = document as { data?: unknown; items?: unknown; meta?: unknown };
-  // iris hands a page back as `data`, the Xcode Cloud API as `items`. Both take a `limit`,
-  // and both clip in silence, so both get the same check.
-  const page = Array.isArray(data) ? data : Array.isArray(items) ? items : undefined;
-  if (!page) return;
+  const { data, meta } = document as { data?: unknown; meta?: unknown };
+  if (!Array.isArray(data)) return;
+  const page: unknown[] = data;
 
   const total = pagingTotal(meta);
   if (total !== undefined && total > page.length) {
@@ -299,20 +265,6 @@ function pagingTotal(meta: unknown): number | undefined {
 
 export function get<T extends Document>(session: Session, path: string, query?: Query): Promise<T> {
   return request<T>(session, path, { query });
-}
-
-/**
- * A read against the Xcode Cloud API, which answers with plain JSON rather than a JSON:API
- * document — hence its own helper instead of a flag on `get`, whose return type promises
- * an envelope this one never has.
- */
-export function getCi<T>(
-  session: Session,
-  path: string,
-  query?: Query,
-  options: { partial?: boolean } = {}
-): Promise<T> {
-  return request<T>(session, path, { api: 'ci', query, partial: options.partial });
 }
 
 export function patch<T = unknown>(

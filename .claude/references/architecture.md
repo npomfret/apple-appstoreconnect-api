@@ -13,10 +13,9 @@ operation; `docs/evidence.md` is the source of truth.
 | Area | Canonical location | Invariant |
 | --- | --- | --- |
 | Session capture and expiry | `curl.ts`, `session.ts` | Capture content is a credential and is never persisted, logged, or exposed. |
-| Authenticated requests and uploads | `http.ts` | All ordinary writes are audited; paths are relative to one of a closed set of two bases on the one host — Iris and Xcode Cloud — and an absolute URL is refused, so session headers reach no other host; upload URLs never receive session headers. |
+| Authenticated requests and uploads | `http.ts` | All ordinary writes are audited; paths are relative to a closed set of bases on the one host — Iris only, since the Xcode Cloud slice was removed — and an absolute URL is refused, so session headers reach no other host; upload URLs never receive session headers. |
 | JSON:API expansion | `jsonapi.ts` | Relationship joining happens here, not ad hoc in command code. |
 | Apple resources and mutations | `api.ts` | Include/query shapes follow browser evidence and resource functions remain transport-focused. |
-| Xcode Cloud reads | `ci.ts` | A second API (`/ci/api`), not JSON:API: plain objects, snake_case fields, `items` pages. Kept out of `api.ts` entirely; read-only for now. |
 | CLI and confirmations | `cli.ts`, `confirm.ts` | stdout is data; destructive/irreversible actions preview and refuse without TTY or `--yes`. |
 | Structured redacted logging | `log.ts` | Audit records cannot be disabled; sensitive values are scrubbed. |
 | Digests and rendering | `report.ts` | Convert denormalized resources into stable useful summaries. |

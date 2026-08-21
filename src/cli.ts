@@ -6,8 +6,6 @@ import { Query } from './http';
 import {
   buildReport,
   fetchBuilds,
-  fetchRun,
-  formatRun,
   fetchHistory,
   fetchMetadata,
   fetchPrivacy,
@@ -19,7 +17,6 @@ import {
 } from './report';
 import { log } from './log';
 import * as api from './api';
-import * as ci from './ci';
 
 const USAGE = `App Store Connect review-centre client (unofficial, session-scraped).
 
@@ -66,26 +63,6 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc draft <threadId>        Show the thread's unsent draft reply, with its attachments
   asc rejections <threadId>   List guideline rejections for a thread
   asc invites                 Pending invitations to the developer account, by surname
-
-Xcode Cloud (a separate API — plain JSON under /ci/api, not the review centre's JSON:API):
-  asc ci-product [appId]      The Xcode Cloud product for an app: its UUID, which every
-                              other ci- command needs, plus bundle id and creation date
-  asc ci-workflows [appId]    Every workflow on the product, with its full definition
-  asc ci-workflow <id> [appId]
-                              One workflow, and who last changed it when
-  asc ci-builds [appId]       The ten most recent build groups with their builds: number,
-                              state, progress, warning and test-failure counts, and the
-                              commit each one came from
-  asc ci-repos [appId]        The git repositories Xcode Cloud can reach for this product
-  asc ci-capabilities         What this account is allowed to change in Xcode Cloud
-  asc ci-run [buildId]        Digest of one build (the newest by default): stages, the
-                              destinations it really executed on, per-destination pass and
-                              fail counts, and every failing test with its message. Says
-                              plainly when the workflow has been edited since, so a stale
-                              run can't be mistaken for proof. --json for the data
-  asc ci-build [buildId]      One build and its stages, where stage ids come from
-  asc ci-tests [buildId]      Every test case of every test stage, with a run per
-                              destination — the raw form behind ci-run
 
   asc get <path> [k=v ...]    Raw GET against /iris/v1 for probing unmapped endpoints
 
@@ -153,8 +130,8 @@ These reach Apple and cannot be undone. Each shows what it is about to do and as
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
-  --json                      For "report", "builds", "history", "privacy" and "ci-run":
-                              emit JSON instead of the digest
+  --json                      For "report", "builds", "history" and "privacy": emit JSON
+                              instead of the digest
   --yes                       Skip the confirmation prompt on the commands that ask
   --dry-run                   For "submit": work out and print the steps, send nothing
   --force                     For "upload-screenshot": upload despite failed checks
@@ -215,48 +192,6 @@ function requireText(given: string, what: string): string {
 
 function emit(document: Document, raw: boolean): void {
   console.log(JSON.stringify(raw ? document : denormalizeAll(document), null, 2));
-}
-
-/**
- * Prints a plain-JSON response. The Xcode Cloud API has no `included` array and no
- * relationships, so there is nothing to denormalize and `--raw` says nothing about it.
- */
-function emitPlain(value: unknown): void {
-  console.log(JSON.stringify(value, null, 2));
-}
-
-/**
- * The Xcode Cloud product id for an app.
- *
- * Every product-scoped call is keyed by a UUID that nothing in the review centre knows, so
- * these commands take the App Store id you already have and spend one request turning it
- * into one. `asc ci-product` is that request on its own, if you want to hold on to the id.
- */
-async function requireProductId(session: Session, given: string | undefined): Promise<string> {
-  const product = await ci.getProductForApp(session, requireAppId(session, given));
-  return product.id;
-}
-
-/**
- * The build to report on when none is named: the newest one. A product that has never built
- * is an error rather than an empty report — there is no run to say anything about.
- */
-async function latestBuildId(session: Session, productId: string): Promise<string> {
-  const build = await ci.getLatestBuild(session, productId);
-
-  if (!build) {
-    throw new Error('This product has no builds yet — nothing to report on. Try: asc ci-workflows');
-  }
-
-  log.debug('no build named, using the newest', { buildId: build.id, number: build.number });
-  return build.id;
-}
-
-/** The stages of a build that ran tests, and so have results to read. */
-function testStages(detail: ci.CiBuildDetail): ci.CiBuildStage[] {
-  return detail.build_stages.filter(
-    (stage) => stage.stage_type === 'test' || (stage.stage_sections?.sections ?? []).includes('tests')
-  );
 }
 
 /**
@@ -1195,93 +1130,6 @@ async function main(argv: string[]): Promise<number> {
     case 'invites': {
       const session = loadSession();
       emit(await api.listUserInvitations(session), raw);
-      return 0;
-    }
-
-    case 'ci-product': {
-      const session = loadSession();
-      emitPlain(await ci.getProductForApp(session, requireAppId(session, rest[0])));
-      return 0;
-    }
-
-    case 'ci-workflows': {
-      const session = loadSession();
-      emitPlain(await ci.listWorkflows(session, await requireProductId(session, rest[0])));
-      return 0;
-    }
-
-    case 'ci-workflow': {
-      const session = loadSession();
-      const workflowId = requireArg(rest[0], 'workflowId', 'ci-workflow <workflowId> [appId]');
-      const productId = await requireProductId(session, rest[1]);
-      emitPlain(await ci.getWorkflow(session, productId, workflowId));
-      return 0;
-    }
-
-    case 'ci-builds': {
-      const session = loadSession();
-      const productId = await requireProductId(session, rest[0]);
-      const groups = await ci.listBuildGroups(session, productId);
-      // The builds hang off the groups, and asking for the builds of no groups is an error
-      // rather than an empty answer — so a product that has never run stops here.
-      if (!groups.items.length) {
-        emitPlain({ items: [] });
-        return 0;
-      }
-      emitPlain(await ci.listBuildSummaries(session, productId, groups.items.map((group) => group.id)));
-      return 0;
-    }
-
-    case 'ci-repos': {
-      const session = loadSession();
-      emitPlain(await ci.listRepos(session, await requireProductId(session, rest[0])));
-      return 0;
-    }
-
-    case 'ci-capabilities': {
-      const session = loadSession();
-      emitPlain(await ci.getUserCapabilities(session));
-      return 0;
-    }
-
-    case 'ci-build': {
-      const session = loadSession();
-      const productId = await requireProductId(session, rest[1]);
-      const buildId = rest[0] ?? (await latestBuildId(session, productId));
-      emitPlain(await ci.getBuild(session, productId, buildId));
-      return 0;
-    }
-
-    case 'ci-tests': {
-      const session = loadSession();
-      const productId = await requireProductId(session, rest[1]);
-      const buildId = rest[0] ?? (await latestBuildId(session, productId));
-      const detail = await ci.getBuild(session, productId, buildId);
-      const stages = testStages(detail);
-
-      if (!stages.length) {
-        throw new Error(`Build ${buildId} ran no test stage — its actions were: ` +
-          `${detail.build_stages.map((stage) => stage.stage_type).join(', ') || 'none'}`);
-      }
-
-      emitPlain(
-        await Promise.all(
-          stages.map(async (stage) => ({
-            stage: stage.name,
-            stageId: stage.id,
-            ...(await ci.listTestResults(session, productId, buildId, stage.id)),
-          }))
-        )
-      );
-      return 0;
-    }
-
-    case 'ci-run': {
-      const session = loadSession();
-      const productId = await requireProductId(session, rest[1]);
-      const buildId = rest[0] ?? (await latestBuildId(session, productId));
-      const run = await fetchRun(session, productId, buildId);
-      console.log(json ? JSON.stringify(run, null, 2) : formatRun(run));
       return 0;
     }
 
