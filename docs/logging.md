@@ -38,6 +38,14 @@ add the intent. What counts as a mutation is worked out once there, from the met
 case normalised, and the same answer decides both the headers and the record: a `patch` that
 arrived in lower case is a write, not a read that quietly slipped past the trail.
 
+**A field cannot rewrite what the record says it is.** `ts`, `level`, `event`, `audit` and
+`phase` are the client's own statement about what it did, and a field passed by a caller
+that happens to share one of those names is written beside them, not over them — it was
+written over them until 2026-08-21. That matters most for `audit`: the sieve above selects
+on it, so a payload carrying `{"audit": false}` took a write out of the trail while the
+write still went ahead. `Fields` is exported, so what reaches a record is not only what
+this repo logs.
+
 `start` is written *before* the request leaves, on purpose: if a run dies mid-write, or the
 connection fails so you can't tell whether the change landed, the ambiguity is the thing
 you most want a log of.

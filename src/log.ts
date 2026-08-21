@@ -142,9 +142,29 @@ function line(record: Fields): string {
   }
 }
 
+/**
+ * The record's own frame wins over the fields, wherever the two name the same thing.
+ *
+ * `write` spread the fields *last* until 2026-08-21, so a caller field called `ts`, `level`
+ * or `event` quietly replaced the record's own, and one called `audit` or `phase` did the
+ * same to what marks an audit record as one — which is what `select(.audit)` in
+ * [logging](../docs/logging.md) sieves on, so `{ audit: false }` in a payload took a write
+ * out of the trail while the write still happened. The frame is this process's statement
+ * about what it did; the fields are what it was told. `Fields` is a library export, so the
+ * callers are not only this repo's, and `audited` below already had it this way round —
+ * its `ms` and `error` are written after the fields, not before.
+ *
+ * Spreading the frame twice is what keeps both: a key holds the position it was first
+ * given and the value it was last given, so the frame stays at the front of the line and
+ * still wins.
+ */
+function framed(frame: Fields, fields: Fields): Fields {
+  return { ...frame, ...fields, ...frame };
+}
+
 function write(severity: Level, event: string, fields: Fields, always = false): void {
   if (!always && ORDER[severity] < level()) return;
-  console.error(line({ ts: new Date().toISOString(), level: severity, event, ...fields }));
+  console.error(line(framed({ ts: new Date().toISOString(), level: severity, event }, fields)));
 }
 
 export const log = {
@@ -164,7 +184,7 @@ export type Phase = 'start' | 'ok' | 'error';
  *     asc send-reply ... 2>&1 >/dev/null | jq -c 'select(.audit)'
  */
 export function audit(action: string, phase: Phase, fields: Fields = {}): void {
-  write(phase === 'error' ? 'error' : 'info', action, { audit: true, phase, ...fields }, true);
+  write(phase === 'error' ? 'error' : 'info', action, framed({ audit: true, phase }, fields), true);
 }
 
 /**

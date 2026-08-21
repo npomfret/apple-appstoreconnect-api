@@ -176,6 +176,32 @@ describe('the log as a whole', () => {
     assert.ok(String(record.error).length < 3000);
   });
 
+  // The frame is what the record says it is; the fields are what a caller passed. A caller
+  // that names one of them does not get to rewrite it — `Fields` is exported, so the
+  // callers are not only this repo's.
+  test('a field cannot rewrite what the record says it is', async () => {
+    const [record] = await logged(() =>
+      log.warn('probe', { event: 'something.else', level: 'debug', ts: 'not-a-time', kept: 1 })
+    );
+
+    assert.equal(record.event, 'probe');
+    assert.equal(record.level, 'warn');
+    assert.notEqual(record.ts, 'not-a-time');
+    assert.equal(record.kept, 1);
+  });
+
+  // `select(.audit)` is how docs/logging.md says to sieve the trail out, so a field that
+  // could turn that flag off would take a write out of the trail while it still happened.
+  test('a field cannot take an audit record out of the trail', async () => {
+    const [record] = await logged(() =>
+      audit('draft.attach', 'start', { audit: false, phase: 'ok', draftId: 'd1' })
+    );
+
+    assert.equal(record.audit, true);
+    assert.equal(record.phase, 'start');
+    assert.equal(record.draftId, 'd1');
+  });
+
   test('an event below the level is not written', async () => {
     const records = await atLevel('warn', () => log.info('quiet'));
     assert.deepEqual(records, []);
