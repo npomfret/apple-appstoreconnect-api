@@ -99,14 +99,31 @@ function attachment(id: string, fileName: string, fileSize: number): Resource {
   };
 }
 
-function rejection(id: string, reasons: Array<Record<string, string>>): Resource {
-  return { type: 'reviewRejections', id, attributes: { reasons } };
+/**
+ * One rejection, with any files hung off it.
+ *
+ * The relationship is always there, empty or not, because the rejections query always asks
+ * for it — in the recordings it is absent from the resource only when it was not included.
+ */
+function rejection(id: string, reasons: Array<Record<string, string>>, attachments: string[] = []): Resource {
+  return {
+    type: 'reviewRejections',
+    id,
+    attributes: { reasons },
+    relationships: {
+      rejectionAttachments: {
+        data: attachments.map((attachmentId) => ({ type: 'resolutionCenterMessageAttachments', id: attachmentId })),
+      },
+    },
+  };
 }
 
 interface Thread {
   messages?: Resource[];
   attachments?: Resource[];
   rejections?: Resource[];
+  /** Sideloaded on the rejections response, which is the only place they arrive. */
+  rejectionAttachments?: Resource[];
   draft?: Resource | null;
   /** The sideloaded actors, which the recorded response always carries. */
   actors?: Resource[];
@@ -120,7 +137,9 @@ async function report(thread: Thread): Promise<SubmissionReport> {
       return { body: { data: thread.messages ?? [], included } };
     }
     if (call.url.includes('/resolutionCenterDraftMessage')) return { body: { data: thread.draft ?? null } };
-    if (call.url.includes('/reviewRejections')) return { body: { data: thread.rejections ?? [] } };
+    if (call.url.includes('/reviewRejections')) {
+      return { body: { data: thread.rejections ?? [], included: thread.rejectionAttachments ?? [] } };
+    }
     if (call.url.includes('/resolutionCenterThreads')) return { body: THREADS };
     throw new Error(`the digest asked for something outside the Resolution Center: ${call.url}`);
   });
@@ -266,6 +285,35 @@ describe('what Apple attached', () => {
       digest.attachments.map((file) => file.downloadUrl),
       ['https://example.invalid/a-2', 'https://example.invalid/a-1']
     );
+  });
+
+  // The rejections query has asked for `rejectionAttachments` since it was copied from the
+  // browser, and the recorded thread hangs two files off a rejection that hang off no
+  // message: the screenshots the rejection is arguing with. The digest read none of them.
+  test('a file on the rejection is listed too, not only the ones on messages', async () => {
+    const digest = await report({
+      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, ['a-1'])],
+      attachments: [attachment('a-1', 'crash.mp4', 2178995)],
+      rejections: [
+        rejection('r-1', [{ reasonCode: '4.1', reasonSection: 'Design', reasonDescription: 'Copycats' }], ['a-2', 'a-3']),
+      ],
+      rejectionAttachments: [attachment('a-2', 'screenshot-1.png', 60283), attachment('a-3', 'screenshot-2.png', 55679)],
+    });
+
+    assert.deepEqual(
+      digest.attachments.map((file) => file.fileName),
+      ['crash.mp4', 'screenshot-1.png', 'screenshot-2.png']
+    );
+  });
+
+  test('a rejection with no files of its own adds none', async () => {
+    const digest = await report({
+      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, ['a-1'])],
+      attachments: [attachment('a-1', 'crash.mp4', 2048)],
+      rejections: [rejection('r-1', [{ reasonCode: '4.1', reasonSection: 'Design', reasonDescription: 'Copycats' }])],
+    });
+
+    assert.deepEqual(digest.attachments.map((file) => file.id), ['a-1']);
   });
 
   test('one file sideloaded onto two messages is still one file', async () => {

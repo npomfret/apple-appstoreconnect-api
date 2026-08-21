@@ -50,10 +50,16 @@ third kind probably exists and has not been seen — and being wrong here would 
 digest telling you the thread is waiting on Apple when it is waiting on you.
 
 `attachments` lists what Apple attached, one entry per file, identified by iris's own id and
-carrying a download URL. Two entries can share a file name and that is not a repeat: every
-recorded thread has a message with two attachments of the same name, and a reviewer attaching
-`IMG_4821.png` in one round and a different `IMG_4821.png` in the next would look the same.
-The id is what tells them apart, and `--json` carries it.
+carrying a download URL. It covers both places Apple attaches things — the messages, and the
+rejection itself, which is where the marked-up screenshots hang. In the recorded thread those
+are two separate files from the three on the messages, and they are the ones the guideline
+citation is about, so a list of only the message's is a list without the evidence in it.
+Messages come first, newest first, then the rejections.
+
+Two entries can share a file name and that is not a repeat: every recorded thread has a
+message with two attachments of the same name, and a reviewer attaching `IMG_4821.png` in one
+round and a different `IMG_4821.png` in the next would look the same. The id is what tells
+them apart, and `--json` carries it.
 
 The version each conversation is about comes off the thread's own `appStoreVersions`, which
 is a to-many relationship: a thread about two versions names both rather than having one

@@ -60,8 +60,8 @@ That is right about workflows in general and **wrong about the field that matter
 check that settles it is against the 4.4.1 document itself, under "What the recording
 settled" below.
 
-The private document does carry it. Read live today from
-`GET ci/api/teams/{team}/products/{product}/workflows-v15`:
+The private document does carry it. Read live on 2026-08-21, while the slice was still
+there, from `GET ci/api/teams/{team}/products/{product}/workflows-v15`:
 
 ```
 FunMaxMusic iOS   disabled: false   clean: true
@@ -73,8 +73,8 @@ So the private API answers a question the official one cannot: **is a build bein
 to testers automatically, or is it not.** In `super-funmax-music` that is not academic —
 `apple/docs/builds-and-delivery.md` records a TestFlight post-action being configured once
 and never observably firing, and the reason it could not be diagnosed is precisely that
-`ciWorkflows` has no field to read back. `post_actions: []` above is the first direct
-evidence either way.
+`ciWorkflows` has no field to read back. A populated one, and both directions of the write
+that populates it, are under "What the recording settled" below.
 
 Whether that is worth a private call is a decision for whoever owns the boundary, not
 something this file settles. Three scopes wait on nothing but that decision: correcting the
@@ -133,8 +133,9 @@ had the post-action; the browser took it off and put it back 23 seconds later:
 | GET | — | populated |
 
 Both `PUT`s answered **200** and the workflow was left as it was found. So removal and
-addition each have a request body and a read-back behind them, which is what the scripted
-add-or-remove scope above was waiting for.
+addition each have a recorded request body and a recorded read-back, which is more than a
+write here usually starts with — and still not a design, for the reasons under "What is
+still unknown".
 
 **The `PUT` is a full-document replace, confirmed rather than assumed.** Its body carries
 fourteen top-level keys — `actions`, `clean`, `container_file_path`, `description`,

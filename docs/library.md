@@ -39,9 +39,12 @@ lists every version its thread names in `versions: VersionRef[]`, and fills the 
 `version`/`versionId` only when there is exactly one — a thread about two versions is not
 reduced to one of them.
 
-`attachments: Attachment[]` is keyed by iris's `id`, not by file name, and carries that id.
-A thread's messages can hold two attachments under one name — every recording here has such a
-message — so deduplicating a report's attachments by name loses one of them.
+`attachments: Attachment[]` is every file on the thread, from the messages *and* from the
+rejections — Apple hangs them off both, on `resolutionCenterMessageAttachments` and
+`rejectionAttachments`, and they are the same resource type either way. It is keyed by iris's
+`id`, not by file name, and carries that id: a thread's messages can hold two attachments
+under one name — every recording here has such a message — so deduplicating by name loses one
+of them.
 
 `denormalize` splices JSON:API `included` resources into their relationships, so you can
 read `thread.app.name` instead of hand-joining sideloads.

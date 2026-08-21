@@ -180,36 +180,58 @@ function collectGuidelines(rejections: Denormalized[]): Guideline[] {
 }
 
 /**
- * Everything Apple attached to the conversation, keyed by the id iris gave it.
+ * The two relationships a file arrives on, which is two because Apple hangs files off two
+ * different records.
  *
- * The id is the identity, and a file name is not. Every messages response recorded from the
- * browser carries three attachments under two names: two of them sit on the same message
- * with the same name and the same byte count, and have different ids and different download
- * URLs. Keying this by name collapsed those two into one, so the digest said "attachments
- * (2)" where iris had said three and dropped one of the two download URLs — and a reviewer
- * attaching `IMG_4821.png` in one round and a different `IMG_4821.png` in the next is the
- * same collapse over files that are not alike at all.
- *
- * Nothing is lost by the change: an attachment belongs to one message, and no id occurs
- * twice in any recording. The map is what stops a document that sideloaded one twice from
- * listing it twice, which is the only duplicate there is evidence for.
+ * A message carries what the reviewer sent with it. A rejection carries what the rejection
+ * itself is showing you — and both sideload the same resource type, with the same
+ * attributes, so one reader does both. The names differ because the relationships do:
+ * `include=rejectionAttachments` is on the rejections query and nothing else.
  */
-function collectAttachments(messages: Denormalized[]): Attachment[] {
+const ATTACHMENT_RELATIONSHIPS = ['resolutionCenterMessageAttachments', 'rejectionAttachments'] as const;
+
+/**
+ * Everything Apple attached to the conversation, from both places it attaches things,
+ * keyed by the id iris gave it.
+ *
+ * **Both places.** The rejections query has asked for `rejectionAttachments` since it was
+ * copied from the browser, with a page size of 1000 — and the digest read none of them. In
+ * the recorded thread that is two files fetched and dropped, and they are the ones a
+ * rejection is answered with: 60 KB and 56 KB beside the messages' 2 MB videos, which is
+ * what a screenshot of the offending screen weighs. A digest of a review conversation that
+ * silently omits the screenshots Apple marked up is missing the part you act on.
+ *
+ * **Keyed by id.** The id is the identity, and a file name is not. Every messages response
+ * recorded from the browser carries three attachments under two names: two of them sit on
+ * the same message with the same name and the same byte count, and have different ids and
+ * different download URLs. Keying this by name collapsed those two into one, so the digest
+ * said "attachments (2)" where iris had said three and dropped one of the two download URLs
+ * — and a reviewer attaching `IMG_4821.png` in one round and a different `IMG_4821.png` in
+ * the next is the same collapse over files that are not alike at all.
+ *
+ * Nothing is lost by keying on the id: no id occurs twice in any recording, and the message
+ * files and the rejection files are disjoint in the two recordings that carry both. The map
+ * is what stops a record sideloaded twice from being listed twice, which is the only
+ * duplicate there is evidence for.
+ */
+function collectAttachments(sources: Denormalized[]): Attachment[] {
   const byId = new Map<string, Attachment>();
 
-  for (const message of messages) {
-    const attachments = message['resolutionCenterMessageAttachments'];
-    if (!Array.isArray(attachments)) continue;
-    for (const attachment of attachments as Array<Record<string, unknown>>) {
-      const id = asString(attachment['id']);
-      const fileName = asString(attachment['fileName']);
-      if (!id || !fileName || byId.has(id)) continue;
-      byId.set(id, {
-        id,
-        fileName,
-        fileSize: typeof attachment['fileSize'] === 'number' ? attachment['fileSize'] : undefined,
-        downloadUrl: asString(attachment['downloadUrl']),
-      });
+  for (const source of sources) {
+    for (const relationship of ATTACHMENT_RELATIONSHIPS) {
+      const attachments = source[relationship];
+      if (!Array.isArray(attachments)) continue;
+      for (const attachment of attachments as Array<Record<string, unknown>>) {
+        const id = asString(attachment['id']);
+        const fileName = asString(attachment['fileName']);
+        if (!id || !fileName || byId.has(id)) continue;
+        byId.set(id, {
+          id,
+          fileName,
+          fileSize: typeof attachment['fileSize'] === 'number' ? attachment['fileSize'] : undefined,
+          downloadUrl: asString(attachment['downloadUrl']),
+        });
+      }
     }
   }
 
@@ -308,8 +330,11 @@ async function addThread(
   ]);
 
   const messages = sortByDateDesc(denormalizeAll(messagesDoc), 'createdDate');
-  report.attachments = collectAttachments(messages);
-  report.guidelines = collectGuidelines(denormalizeAll(rejectionsDoc));
+  const rejections = denormalizeAll(rejectionsDoc);
+  // Newest message first, then the rejections, so the most recent thing Apple sent heads
+  // the list and the files a rejection is arguing with stay together at the end of it.
+  report.attachments = collectAttachments([...messages, ...rejections]);
+  report.guidelines = collectGuidelines(rejections);
   report.hasDraftReply = draftDoc.data !== null && draftDoc.data !== undefined;
 
   const latest = messages[0];

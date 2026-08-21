@@ -75,6 +75,15 @@ list is the tested one and an override is not.
   by name reported two files where iris had listed three, and dropped one of the two download
   URLs. Whether those two are the same bytes twice or two files that happen to match is not
   something a recording can settle, and the digest does not have to guess to list them.
+
+  Apple hangs files off two records, not one. `listRejections` sends
+  `include=rejectionAttachments` with `limit[rejectionAttachments]=1000`, both the browser's
+  own, and in the two recordings that send it a rejection comes back carrying **two files
+  that hang off no message at all** — same resource type as a message's, 60 KB and 56 KB
+  against the messages' 2 MB, which is a screenshot beside a screen recording. The digest
+  fetched them and read none of them until 2026-08-21. The two sets are disjoint in both
+  recordings; whether they can overlap is not settled, and the list is keyed by id either
+  way.
 - `listThreads` — the app's Resolution Center thread list, and since the thread-first
   rebuild the starting point of `report`. The include list, the seven `filter[threadType]`
   values and `limit[appStoreVersions]=2000` are the browser's own. Two things that query
