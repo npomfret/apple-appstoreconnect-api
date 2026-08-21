@@ -200,7 +200,40 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
       `api === 'ci'` branch left `content-type: application/vnd.api+json` on a service that
       does not speak JSON:API), and the code is recoverable from `d500e8f` and `f93cd68`.
       That task file is untouched and still open.
-   2. **Invitations** — also standalone.
+   2. **Invitations** — *Done, 2026-08-21.* `listUserInvitations`, `inviteUser`, `UserInvite`
+      and the People-page banner comment are gone from `src/api.ts`, with the
+      `userInvitations` entries in `INCLUDES`, `SIDELOADS` and `FIELDSETS`; `src/cli.ts`
+      loses the `invites` and `invite` cases, their usage text and the `--role`,
+      `--all-apps` and `--provisioning` flags, which existed for `invite` alone;
+      `test/invite.test.ts` and `docs/people.md` are deleted. Standalone as predicted:
+      nothing else imported either function and no default-id discovery ran through them.
+
+      The audit was restated before the deletion, as this file asks. Checked 2026-08-21
+      against Apple's published schemas, `UserInvitation.Attributes` carries `email`,
+      `firstName`, `lastName`, `roles`, `provisioningAllowed`, `allAppsVisible` and
+      `expirationDate` — every attribute the POST sent plus the one the CLI read back —
+      `UserInvitation.Relationships` carries `visibleApps`, and `GET`, `POST` and
+      `DELETE /v1/userInvitations` are all official. **There was no field to narrow to**,
+      which is what makes this a whole removal under this file's own rule rather than the
+      `post_actions` case slice 4.1 left open.
+
+      Being the best-evidenced write in the repository was not a reason to keep it. What
+      that evidence established about *Apple* was kept instead: `docs/evidence.md` now
+      records the `409 ENTITY_ERROR.ATTRIBUTE.INVALID` refusal of a plus-tagged address,
+      and the observation that an invitation sent with `allAppsVisible: true` reads back as
+      `allAppsVisible: null` with `visibleApps` naming every app. Both are about the
+      resource, so they hold for the official API too.
+
+      `asc` loses its one account-wide command, and the docs that were built around that
+      distinction were rewritten rather than patched: `README.md`, `docs/reading.md`,
+      `docs/writing.md`, `docs/library.md` and `.claude/references/architecture.md` all
+      described `invite` as the write that is not about an app and cannot be reversed. The
+      irreversible-write set is now three — `send-reply`, `resolve-item`, `submit`.
+
+      `npm run typecheck`, `npm test` (119 pass, 0 fail — 7 tests left with the slice) and
+      `npm run build` are clean; `rg` finds no `invit`, `--role`, `allApps` or
+      `provisioning` in `src/`; `test/gap-requests.test.ts` and `test/gap-shapes.test.ts`
+      were not edited.
    3. **Screenshots and previews** — self-contained module, but it owns the asset-upload
       orchestration and `uploadPart`, so check what else reserves assets first: draft
       attachments do, and they are a keep.

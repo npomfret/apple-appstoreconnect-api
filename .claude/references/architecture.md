@@ -3,8 +3,9 @@
 ## Product boundary
 
 The project is an unofficial TypeScript client for App Store Connect's private Iris review
-API, plus the one account-wide corner of it that is mapped: the People page's invitations.
-It reuses a short-lived browser session captured locally. It is both a CLI (`asc`) and
+API. Everything mapped is about an app: the People page's invitations were the one
+account-wide corner, and they were removed with slice 4.2. It reuses a short-lived browser
+session captured locally. It is both a CLI (`asc`) and
 a library. The private service may change without notice, and write evidence varies by
 operation; `docs/evidence.md` is the source of truth.
 

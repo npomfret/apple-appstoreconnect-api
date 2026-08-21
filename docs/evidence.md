@@ -6,8 +6,8 @@ evidenced. This page says which is which.
 It is not all unique functionality. An audit on 2026-08-20 against Apple's official
 OpenAPI specification 4.4.1 found that submissions, versions/builds, metadata and App
 Information, screenshots/previews, users/invitations, and all Xcode Cloud code duplicate
-official operations. Xcode Cloud has since been removed; the rest are pending removal, and
-the exact inventory and official operation mapping is in
+official operations. Xcode Cloud and the invitations have since been removed; the rest are
+pending removal, and the exact inventory and official operation mapping is in
 [the removal task](../tasks/remove-official-api-overlap.md). Evidence that a
 private call works is not a reason to retain it when Apple supports the capability. The
 official replacements are Apple's
@@ -22,8 +22,7 @@ API collections.
 The captured writes are the version PATCH behind `set-build`, all four App Information page
 PATCHes — `set-metadata`, `set-categories`, `set-age-rating`, `set-content-rights` — the
 screenshot flow, the Resolution Center draft behind `save-draft` and `delete-draft`,
-sending it (`send-reply`), resolving a submission item (`resolve-item`), and the People
-page's invitation POST behind `invite`.
+sending it (`send-reply`) and resolving a submission item (`resolve-item`).
 
 What's left uncaptured, and so the part to read about before use: the **version half of
 `set-metadata`** — a description, keywords, promo text or what's new — **creating a
@@ -58,26 +57,27 @@ iris did the thing. It says the request works, not that it is the one the browse
   in turn because the item was no longer `REJECTED`. Two commands pointing at each other,
   and the only way out was `asc patch` by hand. Fixed, and pinned by `test/submission.test.ts`.
 
-- `listUserInvitations` and `inviteUser` — run 2026-08-19 from this client. The read
-  returned `200` and an empty collection, which is the whole of it: the account had no
-  invitation pending.
+- `listUserInvitations` and `inviteUser` — run 2026-08-19 from this client, and **that code
+  has since been removed**: `userInvitations` is the same JSON:API type Apple serves
+  officially, with the same six attributes, so it was never a gap. Two observations from
+  that run outlive it, and both are about Apple rather than about this client, so they hold
+  for the official API too.
 
-  The write did **not** succeed, and what it establishes is worth being precise about.
-  `POST userInvitations` with a plus-tagged address came back `409
-  ENTITY_ERROR.ATTRIBUTE.INVALID`, "Email format not valid.", pointing at
-  `/data/attributes/email`. **Apple refuses plus-addressing** on an invitation; case is not
-  the issue. Reaching per-attribute validation means iris accepted the envelope, the
-  `userInvitations` type, the `application/vnd.api+json` content type, the session and the
-  team headers, and then objected to one value — so the request *shape* is confirmed live
-  on top of being captured. Still unproven: no invitation has been created by this client,
-  and the `DEVELOPER` role was never assessed, because the request died before anything
-  looked at it.
+  **Apple refuses plus-addressing on an invitation.** `POST userInvitations` with a
+  plus-tagged address came back `409 ENTITY_ERROR.ATTRIBUTE.INVALID`, "Email format not
+  valid.", pointing at `/data/attributes/email`; case was not the issue. The invitee's
+  address becomes an Apple ID, and Apple is stricter about those than a mail server is —
+  Gmail would have delivered the tag to the base inbox. Reaching per-attribute validation
+  also meant iris had accepted the envelope, the type, the `application/vnd.api+json`
+  content type, the session and the team headers before objecting to the one value.
 
-  The client sends the address as given rather than stripping the tag, and does not refuse a
-  `+` locally. Normalising an email on the way to an account invitation would silently
-  invite a different address; refusing one would be this client second-guessing a private
-  API on the strength of a single 409. The same trade as role names and content-rights
-  values: let iris answer.
+  **"All apps" is stored as the list, not as the flag.** An invitation sent from the People
+  page with `allAppsVisible: true` and no `visibleApps` relationship read back a moment
+  later as `allAppsVisible: null` with `visibleApps` naming every app on the account. One
+  observation, not a rule, and worth knowing before reading that field as a boolean.
+
+  The read itself established nothing beyond `200` and an empty collection, and no
+  invitation was ever created by this client.
 
 ## Capturing a new endpoint
 
@@ -172,19 +172,17 @@ list is the tested one and an override is not.
   refusing a legitimate answer it has never seen. `set-age-rating` insists on a complete
   questionnaire for the same reason in reverse — no partial body was ever recorded, so
   whether an omitted answer is left alone or cleared is simply unknown.
-- From one invitation sent on the People page: `listUserInvitations` — the whole query
-  including `sort=lastName` and the `fields[apps]=` that names the visible apps by id — and
-  the `inviteUser` POST, whose body is replayed against the recording by
-  `test/invite.test.ts` and matches it byte for byte, attribute order included, on
-  `application/vnd.api+json` rather than the `application/json` the App Information writes
-  use. What that recording does *not* cover
-  is the rest of the page: **no revoke call, no user list, and no app-restricted
-  invitation** — the browser sent `allAppsVisible: true` and no `visibleApps` relationship,
-  so `invite` requires `--all-apps` rather than inventing the other shape. It also only
-  witnesses one role (`CUSTOMER_SUPPORT`) and `provisioningAllowed: false`; the other role
-  names and `true` come from Apple's public API docs and are passed through unchecked, the
-  same trade as `set-content-rights`. Note the invitation is the one write here that this
-  client cannot reverse *and* that reaches a third party: Apple emails the person.
+- One invitation sent on the People page was recorded and mapped, and **that code has been
+  removed** — `listUserInvitations`, `inviteUser`, `UserInvite`, the `invites` and `invite`
+  commands, `test/invite.test.ts` and `docs/people.md` all went with it. It was well
+  evidenced and that was never a reason to keep it: re-checked on 2026-08-21, Apple's
+  `UserInvitation.Attributes` carries `email`, `firstName`, `lastName`, `roles`,
+  `provisioningAllowed`, `allAppsVisible` and `expirationDate` — every attribute this client
+  sent, plus the one it read back — `UserInvitation.Relationships` carries `visibleApps`, and
+  `GET`, `POST` and `DELETE /v1/userInvitations` are all official. There was no field to
+  narrow to. Apple's [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
+  API also covers what the recording never did: revoking an invitation, listing the people
+  already on the account, and restricting an invitation to named apps.
 - Two Xcode Cloud sessions were recorded and mapped, and **that code has been removed** —
   `src/ci.ts`, the nine `ci-*` commands, the `ci-run` build digest, `test/ci.test.ts` and
   `test/run.test.ts` all went with it, along with the transport's second base. Apple's

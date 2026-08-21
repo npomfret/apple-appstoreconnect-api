@@ -6,8 +6,8 @@ and replies, plus unread review-message counts, version state-change history and
 Privacy questionnaire.
 
 The repository currently also contains older private implementations of capabilities that
-Apple **does** officially expose, including review submissions, metadata, screenshots, and
-users and invitations. Those are legacy overlap, not the intended product surface, and are
+Apple **does** officially expose, including review submissions, metadata and screenshots.
+Those are legacy overlap, not the intended product surface, and are
 scheduled for removal in
 [tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md). The boundary
 was last audited on 2026-08-20 against Apple's OpenAPI specification 4.4.1.
@@ -82,7 +82,9 @@ Official replacements:
   — creating, reading, updating and submitting review submissions and their items.
 - [Users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
   [user invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
-  — team access, roles, app visibility, invitations and revocation.
+  — team access, roles, app visibility, invitations and revocation. The `invites` and
+  `invite` commands that used to do this privately have been **removed**; this is where they
+  went, and it can also revoke.
 - [Xcode Cloud workflows and builds](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
   — products, workflows, repositories, builds, actions, issues and test results. The `ci-*`
   commands that used to read these privately have been **removed**; this is where they went.
@@ -102,7 +104,6 @@ Official replacements:
 | `review-details` | **legacy official overlap** — App Review Information |
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
 | `privacy` | App Privacy declarations, and whether they're live |
-| `invites` | **legacy official overlap** — pending invitations — [docs/people.md](docs/people.md) |
 | `get` | any endpoint at all, mapped or not |
 
 **Writing** — most of these are copied from a capture of the browser doing it:
@@ -120,15 +121,13 @@ gap-only boundary. The other writes duplicate official operations and are pendin
 | `set-categories`, `set-age-rating`, `set-content-rights` | the rest of the App Information page — all app-wide and live at once — [docs/writing.md](docs/writing.md) |
 | `resolve-item` | tell App Review an issue is fixed and put it back in the queue — [docs/writing.md](docs/writing.md) |
 | `submit`, `cancel-submission` | submit a version for review, or withdraw it — [docs/writing.md](docs/writing.md) |
-| `invite` | invite someone to the developer account — [docs/people.md](docs/people.md) |
 | `patch` | any PATCH, for anything not mapped |
 
-**`send-reply`, `resolve-item`, `submit` and `invite` can't be undone**, so they print what they are
+**`send-reply`, `resolve-item` and `submit` can't be undone**, so they print what they are
 about to do and ask first — `send-reply` shows you the whole draft and reads it again after
 you answer, in case the browser autosaved over it in the meantime, `submit --dry-run`
 prints the steps and sends nothing. `set-metadata`, the three App Information writes,
-`cancel-submission` and the three deletes ask too. (`invite` can be undone in the browser,
-from the People page — just not from here, since no revoke call has been recorded.) `--yes` answers for you, and still prints
+`cancel-submission` and the three deletes ask too. `--yes` answers for you, and still prints
 what it answered for; a command whose own input is a pipe is asked on the terminal rather
 than refused, and with no terminal at all they stop rather than assume. Nothing else asks: a
 bad `set-build` is one more `set-build` away from being right.
@@ -146,7 +145,6 @@ chain between commands, which is what makes scripting it possible.
 - [Writing](docs/writing.md) — builds, versions, resolving an item, and what asks before it acts
 - [Screenshots](docs/screenshots.md) — the upload flow and the pre-flight checks
 - [Replying to App Review](docs/replying.md) — Resolution Center drafts, attachments, and sending
-- [People](docs/people.md) — inviting someone to the developer account, and what isn't mapped
 - [Logging and the audit trail](docs/logging.md) — structured logs, and why every write is recorded
 - [As a library](docs/library.md) — importing it instead of shelling out
 - [Evidence and limits](docs/evidence.md) — which calls are confirmed, which are guesses,

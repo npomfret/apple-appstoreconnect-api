@@ -8,12 +8,12 @@
 > command table documents current behavior; it is not a recommendation to use private APIs
 > for official capabilities. Use Apple's official
 > [App Metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
-> [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
-> and [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
-> APIs for the overlapping reads. The Xcode Cloud reads that used to be on this page have
-> already been removed; Apple's
+> and [Review Submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
+> APIs for the overlapping reads. The Xcode Cloud and invitation reads that used to be on
+> this page have already been removed; Apple's
 > [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
-> API is where they went.
+> and [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
+> APIs are where they went.
 
 ```sh
 node dist/cli.js report                 # the useful one — digest of every review conversation
@@ -87,14 +87,16 @@ document):
 | `messages <threadId>` | `resolutionCenterThreads/{id}/resolutionCenterMessages` |
 | `draft <threadId>` | `resolutionCenterThreads/{id}/resolutionCenterDraftMessage` |
 | `rejections <threadId>` | `reviewRejections?filter[resolutionCenterMessage.resolutionCenterThread]={id}` |
-| `invites` | `userInvitations?sort=lastName&include=visibleApps&fields[apps]=` — the account, not an app ([people](people.md)) |
 
-Every endpoint above is `iris/v1`. The nine `ci-*` commands that read Xcode Cloud over a
-second private API — `/ci/api`, plain JSON, no JSON:API envelope — are **gone**, along with
-`asc ci-run`'s build digest. Apple exposes products, workflows, repositories, build runs,
-actions, issues and test results
+Every endpoint above is `iris/v1`, and every one of them is about an app. The nine `ci-*`
+commands that read Xcode Cloud over a second private API — `/ci/api`, plain JSON, no JSON:API
+envelope — are **gone**, along with `asc ci-run`'s build digest, and so is `invites`, the one
+read here that was account-wide rather than per-app. Apple exposes Xcode Cloud products,
+workflows, repositories, build runs, actions, issues and test results
 [officially](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
-which needs an API key rather than this client's cookie.
+and pending invitations at
+[`GET /v1/userInvitations`](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations).
+Both need an API key rather than this client's cookie.
 
 `appId` defaults to the one scraped from the captured request's `Referer`; `versionId`
 defaults to the version attached to the first open submission — one extra request, the

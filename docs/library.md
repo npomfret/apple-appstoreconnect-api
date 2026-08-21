@@ -1,9 +1,11 @@
 # As a library
 
-> **Boundary notice:** exports for submissions, versions, builds, metadata, App Information,
-> screenshots and invitations are legacy official overlap and will be removed. The Xcode
-> Cloud exports have already gone — use Apple's
-> [Xcode Cloud API](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds).
+> **Boundary notice:** exports for submissions, versions, builds, metadata, App Information
+> and screenshots are legacy official overlap and will be removed. The Xcode Cloud and
+> invitation exports have already gone — use Apple's
+> [Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
+> and [User Invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
+> APIs.
 > New callers should use this library only for the official gaps listed in
 > [remove-official-api-overlap.md](../tasks/remove-official-api-overlap.md). For overlapping
 > functionality, use Apple's
@@ -52,7 +54,7 @@ the package root. Everything it returns is a JSON:API document, which is what `d
 and `denormalizeAll` are for.
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()`,
-`sendDraftReply()`, `resolveSubmissionItem()`, `submitReviewSubmission()` and `inviteUser()`
+`sendDraftReply()`, `resolveSubmissionItem()` and `submitReviewSubmission()`
 called from code go straight to Apple, and none of them can be undone. `confirm()` from
 `src/confirm.ts` is there if you want the same guard — it asks on the terminal even when
 stdin is carrying something else, and refuses when there is no terminal to ask on.

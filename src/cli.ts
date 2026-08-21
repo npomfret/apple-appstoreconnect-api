@@ -62,7 +62,6 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc messages <threadId>     List Resolution Center messages in a thread
   asc draft <threadId>        Show the thread's unsent draft reply, with its attachments
   asc rejections <threadId>   List guideline rejections for a thread
-  asc invites                 Pending invitations to the developer account, by surname
 
   asc get <path> [k=v ...]    Raw GET against /iris/v1 for probing unmapped endpoints
 
@@ -119,14 +118,6 @@ These reach Apple and cannot be undone. Each shows what it is about to do and as
                               docs/evidence.md before the first real run
   asc cancel-submission <id>  Withdraw a submission from the queue. Refused once review has
                               started. Also not captured
-  asc invite <email> <firstName> <lastName> --role ROLE [--role ...] --all-apps
-                              Invite someone to the developer account. Apple emails them,
-                              and this client cannot cancel it — only the People page can.
-                              --all-apps is required: it says the invitee sees every app,
-                              which is the only shape recorded from the browser.
-                              --provisioning also gives them certificates and profiles.
-                              CUSTOMER_SUPPORT is the recorded role; the other names come
-                              from Apple's public API docs and are unproven here
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
@@ -137,10 +128,6 @@ Options:
   --force                     For "upload-screenshot": upload despite failed checks
   --reveal                    For "review-details": print the demo account password
   --attach <file>             For "save-draft": a file to attach. Repeat for several
-  --role <role>               For "invite": a role to grant. Repeat for several
-  --all-apps                  For "invite": the invitee may see every app on the account
-  --provisioning              For "invite": the invitee may manage certificates and
-                              provisioning profiles
   --primary <category>        For "set-categories", with --primary-sub-1, --primary-sub-2,
                               --secondary, --secondary-sub-1 and --secondary-sub-2: the
                               category name Apple uses as the id, e.g. GAMES, GAMES_TRIVIA,
@@ -580,8 +567,7 @@ function describeCategories(appInfo: Denormalized, update: api.AppCategoryUpdate
 
 async function main(argv: string[]): Promise<number> {
   const { values: attach, rest: afterAttach } = takeOption(argv, '--attach');
-  const { values: roles, rest: afterRoles } = takeOption(afterAttach, '--role');
-  const { values: threadIds, rest: afterThread } = takeOption(afterRoles, '--thread');
+  const { values: threadIds, rest: afterThread } = takeOption(afterAttach, '--thread');
   const { values: submissionIds, rest: afterSubmission } = takeOption(afterThread, '--submission');
   const { update: categories, rest: positional } = takeCategoryOptions(afterSubmission);
   const raw = positional.includes('--raw');
@@ -590,8 +576,6 @@ async function main(argv: string[]): Promise<number> {
   const reveal = positional.includes('--reveal');
   const yes = positional.includes('--yes');
   const dryRun = positional.includes('--dry-run');
-  const allApps = positional.includes('--all-apps');
-  const provisioning = positional.includes('--provisioning');
   const flags = new Set([
     '--raw',
     '--json',
@@ -599,8 +583,6 @@ async function main(argv: string[]): Promise<number> {
     '--reveal',
     '--yes',
     '--dry-run',
-    '--all-apps',
-    '--provisioning',
   ]);
   const args = positional.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
@@ -860,51 +842,6 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
-    case 'invite': {
-      const session = loadSession();
-      const usage = 'invite <email> <firstName> <lastName> --role ROLE --all-apps';
-      const email = requireArg(rest[0], 'email', usage);
-      const firstName = requireArg(rest[1], 'firstName', usage);
-      const lastName = requireArg(rest[2], 'lastName', usage);
-      if (!roles.length) throw new Error(`An invitation needs at least one --role. Example: asc ${usage}`);
-      if (!allApps) {
-        throw new Error(
-          'Pass --all-apps to say the invitee may see every app on the account. Restricting an ' +
-            'invitation to named apps is not supported: the browser was never recorded sending ' +
-            'that shape, so there is no body to copy.'
-        );
-      }
-
-      await confirm({
-        question: `Invite ${email} to the developer account?`,
-        detail: [
-          '',
-          `  person:       ${firstName} ${lastName} <${email}>`,
-          `  roles:        ${roles.join(', ')}`,
-          '  apps:         every app on the account',
-          `  provisioning: ${provisioning ? 'yes — certificates and profiles' : 'no'}`,
-          '',
-          '  Apple emails them. This client has no way to cancel an invitation; the People',
-          '  page in the browser does.',
-          '',
-        ],
-        yes,
-      });
-
-      const invited = await api.inviteUser(session, {
-        email,
-        firstName,
-        lastName,
-        roles,
-        provisioningAllowed: provisioning,
-        allAppsVisible: true,
-      });
-      emit(invited as Document, raw);
-      const expires = invited.data.attributes?.['expirationDate'];
-      console.error(`Invited ${email}${expires ? `. The invitation expires ${String(expires)}` : ''}.`);
-      return 0;
-    }
-
     case 'delete-draft': {
       const session = loadSession();
       const threadId = requireArg(rest[0], 'threadId', 'delete-draft <threadId>');
@@ -1124,12 +1061,6 @@ async function main(argv: string[]): Promise<number> {
     case 'rejections': {
       const session = loadSession();
       emit(await api.listRejections(session, requireArg(rest[0], 'threadId', 'rejections <threadId>')), raw);
-      return 0;
-    }
-
-    case 'invites': {
-      const session = loadSession();
-      emit(await api.listUserInvitations(session), raw);
       return 0;
     }
 

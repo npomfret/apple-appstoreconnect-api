@@ -153,15 +153,21 @@ Commands affected: `screenshots`, `previews`, `screenshot-set`, `upload-screensh
 `delete-screenshot`. Remove `docs/screenshots.md` after the commands are removed and link
 users to Apple's app-metadata API documentation.
 
-### Users and invitations
+### Users and invitations — *removed 2026-08-21*
 
-Remove `listUserInvitations`, `inviteUser`, `UserInvite`, the `invites` and `invite`
-commands, `test/invite.test.ts`, and `docs/people.md`.
+`listUserInvitations`, `inviteUser`, `UserInvite`, the `invites` and `invite` commands, the
+`--role`, `--all-apps` and `--provisioning` flags, `test/invite.test.ts` and
+`docs/people.md` are gone, along with the `userInvitations` entries in `INCLUDES`,
+`SIDELOADS` and `FIELDSETS`.
 
 Official operations include `userInvitations_getCollection`,
 `userInvitations_createInstance`, `userInvitations_getInstance`, and
 `userInvitations_deleteInstance`; the official API also supports users, role changes,
-visible-app relationships, and revocation, so the private implementation is less complete.
+visible-app relationships, and revocation, so the private implementation was less complete.
+Re-checked on 2026-08-21 against Apple's published schemas: `UserInvitation.Attributes`
+carries every one of the six attributes `inviteUser` sent plus the `expirationDate` the CLI
+printed back, and `UserInvitation.Relationships` carries `visibleApps`. No field was left to
+narrow to.
 
 ### Xcode Cloud — *removed 2026-08-21*
 
