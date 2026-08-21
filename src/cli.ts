@@ -24,8 +24,9 @@ import * as ci from './ci';
 const USAGE = `App Store Connect review-centre client (unofficial, session-scraped).
 
   asc status [file]           Show the captured session and how long it has left
-  asc report [appId]          Digest of every open submission: state, guidelines, Apple's latest message
-  asc report --thread <id>    The same digest for one thread, with no submission lookup at all
+  asc report [appId]          Digest of every Resolution Center thread: version, guidelines,
+                              Apple's latest message
+  asc report --thread <id>    The same digest for one thread
   asc report --submission <id>
                               The same, starting from a submission id you already have
   asc apps                    List every app on the account
@@ -261,11 +262,9 @@ function testStages(detail: ci.CiBuildDetail): ci.CiBuildStage[] {
 /**
  * Which end of the review conversation `report` starts from.
  *
- * A thread id or a submission id skips discovery entirely, and every call the report then
- * makes is one Apple's official API has no equivalent for. An app id — the default, and
- * what the session's captured `Referer` supplies — costs one reads of the app's review
- * submissions, which Apple does serve officially; the report says so on stderr rather than
- * making a duplicate read quietly.
+ * All three are private routes: an app id lists the app's Resolution Center threads, and a
+ * thread or submission id skips even that. None of them reads a resource Apple's official
+ * API serves, which is why the app id can stay the default.
  *
  * Naming more than one is refused rather than ranked: they are three different questions,
  * and picking one for you would report on something other than what was asked about.
@@ -291,12 +290,7 @@ function reportTarget(
   }
   if (named.length) return named[0]!.target;
 
-  const appId = requireAppId(session, appIdArg);
-  log.debug('report.viaSubmissions', {
-    appId,
-    note: 'apps/{id}/reviewSubmissions is officially available; --thread or --submission avoids it',
-  });
-  return { appId };
+  return { appId: requireAppId(session, appIdArg) };
 }
 
 function requireAppId(session: Session, given: string | undefined): string {
@@ -311,10 +305,10 @@ function requireAppId(session: Session, given: string | undefined): string {
  * The version attached to an open review submission, read off the submission's own
  * relationship.
  *
- * Not through `buildReport`: the digest walks the whole Resolution Center — a thread
- * lookup plus messages, rejections and the draft for every open submission — and all that
- * is wanted here is one id, which the submissions call already carries. It also stops a
- * thread that won't read from failing a command that has nothing to do with threads.
+ * Not through `buildReport`: the digest walks the whole Resolution Center — messages,
+ * rejections and the draft for every thread on the app — and all that is wanted here is one
+ * id, which the submissions call already carries. It also stops a thread that won't read
+ * from failing a command that has nothing to do with threads.
  *
  * The linkage is used rather than a sideloaded record, so this doesn't depend on the
  * version being included in the response.

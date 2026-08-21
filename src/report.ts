@@ -15,25 +15,33 @@ export interface Attachment {
   downloadUrl?: string;
 }
 
+/** A version a report is about: the id always, the number when the response carried one. */
+export interface VersionRef {
+  versionId: string;
+  version?: string;
+}
+
 export interface SubmissionReport {
   /**
-   * The submission the thread hangs off, where the report started from one. A report built
-   * straight from a thread id has no submission and leaves this out — reading a submission
-   * to fill it in would be a call to `apps/{id}/reviewSubmissions`, which Apple serves
-   * officially.
+   * The submission the report was asked about, echoed back — only `buildReport`'s
+   * `{ submissionId }` route has one.
+   *
+   * Nothing here reads a submission. Its `state`, `platform` and dates live on
+   * `reviewSubmissions`, which Apple serves officially at
+   * `GET /v1/apps/{id}/reviewSubmissions`; read them there rather than expecting them on a
+   * report.
    */
   submissionId?: string;
   /**
-   * The submission's own state. Absent for the same reason as `submissionId`: reading it
-   * would mean an official call.
+   * The version under review, when the report is about exactly one. A thread relates to
+   * versions to-many, so one naming several leaves this unsaid and lists them all in
+   * `versions` rather than picking between them.
    */
-  state?: string;
-  platform?: string;
   version?: string;
-  /** Id of the version under review — feed it to `fetchMetadata` or `listBuilds`. */
+  /** Id of that version — feed it to `fetchMetadata` or `listBuilds`. */
   versionId?: string;
-  submittedDate?: string;
-  lastUpdatedDate?: string;
+  /** Every version the report is about. Empty when its source named none. */
+  versions: VersionRef[];
   threadId?: string;
   lastMessageDate?: string;
   lastMessageFromApple?: boolean;
@@ -142,17 +150,18 @@ function collectAttachments(messages: Denormalized[]): Attachment[] {
 }
 
 /**
- * Where a report starts, and how much of an official read it costs to get there.
+ * Where a report starts. All three routes are private ones: Apple's official API has no
+ * Resolution Center, so no starting point here duplicates a call it serves.
  *
- * - `threadId` — nothing is discovered. Every call the report then makes is one Apple has
- *   no official equivalent for.
+ * - `threadId` — nothing is discovered; the report is the thread.
  * - `submissionId` — the thread is found by `resolutionCenterThreads?filter[reviewSubmission]`,
- *   a private filter, so this route reads no official resource either. The submission's own
- *   state and version are not fetched; the id you passed is reported back as given.
- * - `appId` — every open submission on the app, which means `apps/{id}/reviewSubmissions`.
- *   **That read is officially available** and is the one thing here that duplicates Apple's
- *   API. It buys the state, platform, version and dates that the other two routes have no
- *   source for.
+ *   a private filter. The submission's own state and dates are not fetched; the id you
+ *   passed is reported back as given.
+ * - `appId` — every Resolution Center thread on the app, from
+ *   `apps/{id}/resolutionCenterThreads`. The version each thread is about comes off the
+ *   thread's own `appStoreVersions`, so this route reads no submission either. What it
+ *   cannot supply is the submission id, state and dates: those live on `reviewSubmissions`,
+ *   which Apple serves officially, and are left unsaid rather than read from here.
  */
 export type ReportTarget =
   | { readonly appId: string }
@@ -160,8 +169,8 @@ export type ReportTarget =
   | { readonly threadId: string };
 
 /**
- * Digests a review conversation: one report per open submission when given an app, or the
- * single one behind a submission or thread id.
+ * Digests a review conversation: one report per Resolution Center thread when given an app,
+ * or the single one behind a submission or thread id.
  */
 export async function buildReport(session: Session, target: ReportTarget): Promise<SubmissionReport[]> {
   if ('threadId' in target) {
@@ -174,34 +183,43 @@ export async function buildReport(session: Session, target: ReportTarget): Promi
     return [thread ? await addThread(session, report, thread.id) : report];
   }
 
-  const submissions = denormalizeAll(await api.listReviewSubmissions(session, target.appId));
-  return Promise.all(submissions.map((submission) => reportForSubmission(session, submission)));
+  const threads = denormalizeAll(await api.listThreads(session, target.appId));
+  return Promise.all(threads.map((thread) => reportForThread(session, thread)));
 }
 
 /** A report with nothing in it yet — everything a thread cannot tell you is left unsaid. */
 function blankReport(): SubmissionReport {
-  return { guidelines: [], attachments: [], hasDraftReply: false };
+  return { guidelines: [], attachments: [], hasDraftReply: false, versions: [] };
 }
 
-async function reportForSubmission(session: Session, submission: Denormalized): Promise<SubmissionReport> {
-  const version = submission['appStoreVersionForReview'];
-  const report: SubmissionReport = {
-    ...blankReport(),
-    submissionId: submission.id,
-    state: asString(submission['state']) ?? 'UNKNOWN',
-    platform: asString(submission['platform']),
-    version:
-      version && typeof version === 'object'
-        ? asString((version as Record<string, unknown>)['versionString'])
-        : undefined,
-    versionId:
-      version && typeof version === 'object' ? asString((version as Record<string, unknown>)['id']) : undefined,
-    submittedDate: asString(submission['submittedDate']),
-    lastUpdatedDate: asString(submission['lastUpdatedDate']),
-  };
+/**
+ * The versions a thread is about, off its own `appStoreVersions` relationship.
+ *
+ * That relationship is to-many — the recorded threads query asks for up to 2000 of them —
+ * so this is a list, and a thread naming more than one is reported as naming more than one
+ * rather than reduced to whichever came back first. A reference the response did not expand
+ * arrives as a bare `{type, id}` and contributes an id with no version number.
+ */
+function versionsOf(thread: Denormalized): VersionRef[] {
+  const related = thread['appStoreVersions'];
+  if (!Array.isArray(related)) return [];
 
-  const thread = await api.findThreadForSubmission(session, submission.id);
-  return thread ? addThread(session, report, thread.id) : report;
+  return related.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const record = entry as Record<string, unknown>;
+    const versionId = asString(record['id']);
+    return versionId ? [{ versionId, version: asString(record['versionString']) }] : [];
+  });
+}
+
+async function reportForThread(session: Session, thread: Denormalized): Promise<SubmissionReport> {
+  const versions = versionsOf(thread);
+  // One version is the ordinary case and the one the digest can name; several is reported
+  // as several. No submission is read, so there is no state or submitted date to carry.
+  const only = versions.length === 1 ? versions[0] : undefined;
+
+  const report = { ...blankReport(), version: only?.version, versionId: only?.versionId, versions };
+  return addThread(session, report, thread.id);
 }
 
 /**
@@ -576,23 +594,21 @@ export async function fetchMetadata(
 
 /** Renders the digest for a terminal. */
 export function formatReport(reports: SubmissionReport[]): string {
-  if (reports.length === 0) return 'No open review submissions.';
+  if (reports.length === 0) return 'No Resolution Center conversations.';
 
   return reports
     .map((report) => {
-      // A report built from a thread id has no submission to head the block with, and no
-      // state or submitted date either — those come off the submission, and reading one
-      // would mean an official call. Print what is known rather than a row of "unknown".
+      // The thread heads the block, since that is what the digest is of. Only the
+      // submission route has a submission id, and it heads the block instead — you asked
+      // about that submission, so that is what the answer is labelled with.
       const lines = report.submissionId
         ? [`submission ${report.submissionId}`]
         : [`thread     ${report.threadId ?? 'none'}`];
 
-      // The state and the submitted date come off the submission together, so they print
-      // together: "submitted unknown" next to a state means the submission has no date,
-      // where printing it with no state at all would read as if one had been looked for.
-      if (report.state) {
-        lines.push(`  state      ${report.state}${report.version ? `  (version ${report.version})` : ''}`);
-        lines.push(`  submitted  ${report.submittedDate ?? 'unknown'}`);
+      // A thread naming several versions lists them all: choosing between them would
+      // report on a version that was not asked about.
+      if (report.versions.length) {
+        lines.push(`  version    ${report.versions.map((one) => one.version ?? one.versionId).join(', ')}`);
       }
       if (report.submissionId) lines.push(`  thread     ${report.threadId ?? 'none'}`);
 

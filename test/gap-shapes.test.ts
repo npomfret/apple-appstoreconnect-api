@@ -8,11 +8,11 @@
  * recorded receiving, and the assertions are about what the digest says, not about how it
  * got there.
  *
- * That last part matters for the planned work. `report` still discovers a thread through
- * an official-overlap submissions read and is due to be rebuilt thread-first; these tests
- * assert on the Resolution Center half of what comes out, so the refactor changes the
- * setup below and none of the expectations. **A removal slice that makes one of these fail
- * has taken something it should not have.**
+ * That last part is what let `report` be rebuilt thread-first without changing its answer:
+ * these tests assert on the Resolution Center half of what comes out, so the refactor
+ * changed the setup below and one expectation — the app-id route, which used to be the one
+ * that cost an official read and now costs none. **A removal slice that makes one of these
+ * fail has taken something it should not have.**
  */
 
 import { strict as assert } from 'node:assert';
@@ -25,27 +25,31 @@ import { SESSION, stubFetch, withStderr } from './helpers';
 const APP = '123';
 const THREAD = 'thread-0000';
 
-/** The submission the thread hangs off. Its own fields are not what this file is about. */
-const SUBMISSIONS: Document<Resource[]> = {
-  data: [
-    {
-      type: 'reviewSubmissions',
-      id: 'submission-0000',
-      attributes: {
-        state: 'UNRESOLVED_ISSUES',
-        platform: 'IOS',
-        submittedDate: '2026-04-25T05:46:00-07:00',
-        lastUpdatedDate: '2026-04-27T15:51:00-07:00',
+/**
+ * A thread as the app's thread list returns it. `appStoreVersions` is to-many — the
+ * recorded query asks for up to 2000 of them — so the fixture builds it from a list even
+ * where there is one, which is how the digest learns the version without a submission read.
+ */
+function threads(...versionIds: string[]): Document<Resource[]> {
+  return {
+    data: [
+      {
+        type: 'resolutionCenterThreads',
+        id: THREAD,
+        relationships: {
+          appStoreVersions: { data: versionIds.map((id) => ({ type: 'appStoreVersions', id })) },
+        },
       },
-      relationships: { appStoreVersionForReview: { data: { type: 'appStoreVersions', id: 'v-0000' } } },
-    },
-  ],
-  included: [{ type: 'appStoreVersions', id: 'v-0000', attributes: { versionString: '1.4.0' } }],
-};
+    ],
+    included: versionIds.map((id) => ({
+      type: 'appStoreVersions',
+      id,
+      attributes: { versionString: id.replace('v-', '') },
+    })),
+  };
+}
 
-const THREADS: Document<Resource[]> = {
-  data: [{ type: 'resolutionCenterThreads', id: THREAD, attributes: { state: 'OPEN' } }],
-};
+const THREADS = threads('v-1.4.0');
 
 /** One message, with an actor and any attachments hung off it. */
 function message(
@@ -96,7 +100,7 @@ async function report(thread: Thread): Promise<SubmissionReport> {
     if (call.url.includes('/resolutionCenterDraftMessage')) return { body: { data: thread.draft ?? null } };
     if (call.url.includes('/reviewRejections')) return { body: { data: thread.rejections ?? [] } };
     if (call.url.includes('/resolutionCenterThreads')) return { body: THREADS };
-    return { body: SUBMISSIONS };
+    throw new Error(`the digest asked for something outside the Resolution Center: ${call.url}`);
   });
 
   try {
@@ -244,10 +248,10 @@ describe('the guidelines behind a rejection', () => {
 
 describe('starting without an official read', () => {
   /**
-   * The app-id route finds submissions through `apps/{id}/reviewSubmissions`, which Apple
-   * serves officially. A thread id or a submission id skips it, and what comes back is the
-   * same Resolution Center digest — which is what makes the planned thread-first rebuild a
-   * change of entry point rather than a change of answer.
+   * No route into the digest reads a resource Apple serves officially. An app id lists the
+   * app's threads, a submission id filters them, a thread id skips discovery — and all
+   * three come back with the same Resolution Center digest, which is what made the
+   * thread-first rebuild a change of entry point rather than a change of answer.
    */
   const messages = [
     message('m-1', '2026-04-27T15:51:00-07:00', '<p>We are still seeing the crash.</p>', 'APPLE_REVIEW'),
@@ -259,7 +263,7 @@ describe('starting without an official read', () => {
       if (call.url.includes('/resolutionCenterDraftMessage')) return { body: { data: null } };
       if (call.url.includes('/reviewRejections')) return { body: { data: [] } };
       if (call.url.includes('/resolutionCenterThreads')) return { body: THREADS };
-      return { body: SUBMISSIONS };
+      throw new Error(`the digest asked for something outside the Resolution Center: ${call.url}`);
     });
     try {
       const reports = await withStderr(() => buildReport(SESSION, target));
@@ -278,12 +282,12 @@ describe('starting without an official read', () => {
     assert.doesNotMatch(urls.join(' '), /reviewSubmissions/);
   });
 
-  test('a thread id leaves the submission fields unsaid rather than guessing them', async () => {
+  test('a thread id leaves the version and submission unsaid rather than guessing them', async () => {
     const [digest] = (await from({ threadId: THREAD })).reports;
 
     assert.equal(digest!.submissionId, undefined);
-    assert.equal(digest!.state, undefined);
     assert.equal(digest!.versionId, undefined);
+    assert.deepEqual(digest!.versions, []);
   });
 
   test('a submission id finds its thread by the private filter, not by listing submissions', async () => {
@@ -299,9 +303,10 @@ describe('starting without an official read', () => {
   });
 
   test('a submission whose thread does not exist still reports the submission', async () => {
-    const stub = stubFetch((call) =>
-      call.url.includes('resolutionCenterThreads') ? { body: { data: [] } } : { body: SUBMISSIONS }
-    );
+    const stub = stubFetch((call) => {
+      if (call.url.includes('resolutionCenterThreads')) return { body: { data: [] } };
+      throw new Error(`nothing else should have been read: ${call.url}`);
+    });
     try {
       const reports = await withStderr(() => buildReport(SESSION, { submissionId: 'submission-0000' }));
 
@@ -313,10 +318,46 @@ describe('starting without an official read', () => {
     }
   });
 
-  test('an app id is the one route that costs an official read', async () => {
-    const { urls } = await from({ appId: APP });
+  test('an app id starts from the thread list, not from a submissions read', async () => {
+    const { reports, urls } = await from({ appId: APP });
 
-    assert.ok(urls.some((url) => url.includes(`/apps/${APP}/reviewSubmissions`)));
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0]!.threadId, THREAD);
+    assert.ok(urls.some((url) => url.includes(`/apps/${APP}/resolutionCenterThreads`)));
+    assert.doesNotMatch(urls.join(' '), /reviewSubmissions/);
+  });
+
+  test('the version comes off the thread, and the submission fields stay unsaid', async () => {
+    const [digest] = (await from({ appId: APP })).reports;
+
+    assert.deepEqual(digest!.versions, [{ versionId: 'v-1.4.0', version: '1.4.0' }]);
+    assert.equal(digest!.version, '1.4.0');
+    assert.equal(digest!.versionId, 'v-1.4.0');
+    assert.equal(digest!.submissionId, undefined);
+  });
+
+  test('a thread about several versions names them all rather than picking one', async () => {
+    const stub = stubFetch((call) => {
+      if (call.url.includes('/resolutionCenterMessages')) return { body: { data: messages } };
+      if (call.url.includes('/resolutionCenterDraftMessage')) return { body: { data: null } };
+      if (call.url.includes('/reviewRejections')) return { body: { data: [] } };
+      if (call.url.includes('/resolutionCenterThreads')) return { body: threads('v-1.4.0', 'v-1.4.1') };
+      throw new Error(`nothing else should have been read: ${call.url}`);
+    });
+    try {
+      const [digest] = await withStderr(() => buildReport(SESSION, { appId: APP }));
+
+      assert.deepEqual(
+        digest!.versions.map((one) => one.version),
+        ['1.4.0', '1.4.1']
+      );
+      // Two versions is two answers to "which version is this about", so neither is
+      // promoted to the singular field.
+      assert.equal(digest!.version, undefined);
+      assert.equal(digest!.versionId, undefined);
+    } finally {
+      stub.restore();
+    }
   });
 });
 

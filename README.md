@@ -35,7 +35,7 @@ Sessions last a few hours. When one lapses you do this again.
    ```sh
    npm install && npm run build
    node dist/cli.js status                  # confirms it, and how long it has left
-   node dist/cli.js report                  # the useful one — every open submission, digested
+   node dist/cli.js report                  # the useful one — every review conversation, digested
    ```
 
 There is no login step and nothing derived on disk. Every command re-reads `tmp/curl.txt`
@@ -90,7 +90,7 @@ Official replacements:
 
 | | |
 | --- | --- |
-| `report` | private thread/messages/rejections/draft. `--thread` or `--submission` reads nothing official; a bare app id still lists submissions first, which Apple serves officially |
+| `report` | private threads/messages/rejections/draft throughout. All three starting points — an app id, `--thread`, `--submission` — read only the Resolution Center; the submission's own state and dates are Apple's to serve and are left out |
 | `apps`, `app` | **legacy official overlap** — app records |
 | `inbox` | private unread App Review/Resolution Center message counts — an `apps` request narrowed to the two `messageCount` fieldsets and nothing else |
 | `submissions`, `submission`, `items` | **legacy official overlap** — review submissions and their items |

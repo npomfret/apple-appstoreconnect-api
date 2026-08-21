@@ -16,19 +16,26 @@ const reports = await buildReport(session, { appId: '1234567890' });
 const messages = denormalizeAll(await listMessages(session, reports[0].threadId!));
 ```
 
-`buildReport` takes one of three starting points, and which you pass decides whether it
-touches an officially-available resource at all:
+`buildReport` takes one of three starting points. All three are private routes — Apple's
+official API has no Resolution Center — so none of them duplicates a call it serves:
 
 ```ts
-await buildReport(session, { threadId });       // no discovery — every call is a gap call
+await buildReport(session, { threadId });       // no discovery at all
 await buildReport(session, { submissionId });   // thread found by a private filter
-await buildReport(session, { appId });          // reads apps/{id}/reviewSubmissions — official
+await buildReport(session, { appId });          // apps/{id}/resolutionCenterThreads
 ```
 
-`{ appId }` is the only one that duplicates Apple's API, and it is what buys `state`,
-`platform`, `version` and the dates. The other two leave those fields undefined rather than
-reading a submission to fill them in, so treat `submissionId` and `state` on a
-`SubmissionReport` as optional — a report built from a thread has neither.
+A `SubmissionReport` no longer carries the submission's own `state`, `platform`,
+`submittedDate` or `lastUpdatedDate`. Those fields are gone from the type rather than left
+permanently undefined: they come off `reviewSubmissions`, which Apple serves officially at
+[`GET /v1/apps/{id}/reviewSubmissions`](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
+and that is where to read them. `submissionId` stays optional and is an echo — only the
+`{ submissionId }` route has one, and it is the id you passed in.
+
+The version comes off the thread instead, through its to-many `appStoreVersions`. A report
+lists every version its thread names in `versions: VersionRef[]`, and fills the singular
+`version`/`versionId` only when there is exactly one — a thread about two versions is not
+reduced to one of them.
 
 `denormalize` splices JSON:API `included` resources into their relationships, so you can
 read `submission.appStoreVersionForReview.versionString` instead of hand-joining sideloads.

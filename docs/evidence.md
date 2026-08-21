@@ -103,6 +103,15 @@ list is the tested one and an override is not.
   option is how to look further. Whether iris reports a total to check against is per
   endpoint, and not something any recording here settles — the warning uses one when it is
   offered and falls back to "the page is exactly as long as we asked for" when it isn't.
+- `listThreads` — the app's Resolution Center thread list, and since the thread-first
+  rebuild the starting point of `report`. The include list, the seven `filter[threadType]`
+  values and `limit[appStoreVersions]=2000` are the browser's own. Two things that query
+  settles and this client relies on: a thread carries its `appStoreVersions` directly, so
+  the version a conversation is about needs no submission read; and that relationship is
+  **to-many**, which is why `report` lists every version a thread names instead of
+  promoting one. What no recording here settles is a thread's own *attributes* — nothing in
+  this client reads one, and `threadType` appears only as a filter value, so treat any
+  attribute on a thread resource as unmapped.
 - `listAppInfos`, `getReviewDetails`, and the localizations-with-assets call behind
   `screenshots`.
 - From one attach-a-build-and-save: `listBuilds`, `listBuildCandidates`, `listPreviewSets`
@@ -275,10 +284,13 @@ if the counts ever stop arriving this is the first thing to put back.
 read: the apps come back as bare ids, with none of the attributes Apple's own `App`
 resource already carries. Widening it turns the call back into a duplicate app listing.
 
-The same reasoning governs `report`'s starting point. `--thread` and `--submission` reach
-the Resolution Center through private routes only; an app id lists the app's review
-submissions first, which is an official read, and that route is what the sequencing task
-replaces. Nothing about the requests themselves changed.
+`report`'s starting point used to be the other case here, and no longer is. All three of
+its routes are private: an app id lists the app's Resolution Center threads, `--submission`
+filters that list, `--thread` skips discovery altogether. The version a report names comes
+off the thread rather than off `appStoreVersionForReview`, so no route reads
+`apps/{id}/reviewSubmissions`. What went with the official read is the submission's state,
+platform and dates: they are Apple's to serve, so they were dropped from the digest rather
+than left as fields nothing fills in.
 
 ## Seen but deliberately not mapped
 

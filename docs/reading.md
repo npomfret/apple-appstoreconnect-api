@@ -14,19 +14,17 @@
 > APIs for the overlapping reads.
 
 ```sh
-node dist/cli.js report                 # the useful one — digest of every open submission
+node dist/cli.js report                 # the useful one — digest of every review conversation
 node dist/cli.js report --json
-node dist/cli.js report --thread <id>       # one thread, no submission lookup at all
-node dist/cli.js report --submission <id>   # one submission you already have the id of
+node dist/cli.js report --thread <id>       # one thread you already have the id of
+node dist/cli.js report --submission <id>   # the thread behind a submission id
 ```
 
-`report` stitches submissions → thread → messages + rejections + draft into one summary:
+`report` stitches threads → messages + rejections + draft into one summary:
 
 ```
-submission 7ecf0154-9ddc-40f5-9b7c-15d67fb3a88d
-  state      UNRESOLVED_ISSUES  (version 1.0.21)
-  submitted  2026-05-15T17:16:17.429Z
-  thread     74533c00-b29e-3041-826a-1a221f522ecc
+thread     74533c00-b29e-3041-826a-1a221f522ecc
+  version    1.0.21
   last msg   2026-05-17T12:25:06.31Z (from Apple)
   guidelines
     4.1.0   Design: Copycats
@@ -37,14 +35,22 @@ submission 7ecf0154-9ddc-40f5-9b7c-15d67fb3a88d
     ...
 ```
 
-Which id you start from decides how much of the digest is real work and how much is
-duplication. `--thread` reads nothing but the thread, and every request it then makes is one
-Apple has no official equivalent for. `--submission` finds the thread through
-`resolutionCenterThreads?filter[reviewSubmission]`, also private. An app id — the default,
-taken from the captured request — lists the app's review submissions first, and **that read
-is officially available**; it is what supplies the state, platform, version and dates, which
-the other two routes leave out rather than invent. See
-[the sequencing task](../tasks/gap-boundary-next-steps.md).
+Every route in is a private one. An app id — the default, taken from the captured request —
+lists the app's Resolution Center threads; `--submission` filters that same list by
+`filter[reviewSubmission]`; `--thread` skips discovery entirely. None of them reads a
+resource Apple's official API serves.
+
+The version each conversation is about comes off the thread's own `appStoreVersions`, which
+is a to-many relationship: a thread about two versions names both rather than having one
+picked for it, and `--json` carries the full list as `versions` alongside the singular
+`version`/`versionId`, which are filled only when there is exactly one.
+
+What no route supplies is the submission's `state`, `platform` and dates — the digest used
+to print them and no longer does. They live on `reviewSubmissions`, which Apple serves
+officially at
+[`GET /v1/apps/{id}/reviewSubmissions`](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions);
+read them there. `--submission` echoes back the id you gave it and nothing else about the
+submission. See [the sequencing task](../tasks/gap-boundary-next-steps.md).
 
 `inbox` is a request to `apps`, which Apple also serves officially. It is kept for the two
 counts hanging off it: `appStoreVersionMetrics.messageCount` and
@@ -116,7 +122,7 @@ a write aimed there is the one Apple refuses with a `409`.
 The ids chain together, which is what makes scripting possible:
 
 ```sh
-node dist/cli.js report --json          # -> submissionId, threadId, versionId
+node dist/cli.js report --json          # -> threadId, versionId
 node dist/cli.js metadata               # -> localizationId per locale
 node dist/cli.js screenshots            # -> every locale with its sets, in one request
 ```

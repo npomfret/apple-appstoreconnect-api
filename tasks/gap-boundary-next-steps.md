@@ -127,19 +127,46 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
    saying so. `SubmissionReport.submissionId` and `.state` became optional, because a
    report built from a thread has neither and inventing them would mean an official read.
 
-3. **Refactor `report` to be thread-first.** Step 2 gave it the explicit ids; what is left
-   is the `{ appId }` route, which still stitches submissions → thread → messages +
-   rejections + draft with a duplicate at the head of the chain. Rebuild that route on
-   `apps/{appId}/resolutionCenterThreads`.
+3. **Refactor `report` to be thread-first.** *Done.* The `{ appId }` route now starts at
+   `apps/{appId}/resolutionCenterThreads` and reads no official resource. `report` stands on
+   gaps alone on all three of its starting points, which was the finding this step existed
+   to establish, and slice 4.5 is unblocked.
 
-   **Open question, and the thing to settle first:** whether a thread from that list can be
-   tied back to its submission and version without an official read. `filter[reviewSubmission]`
-   proves the relationship exists on the resource; whether `include=reviewSubmission` is
-   accepted on the threads list is *not* recorded, and an include name iris does not
-   recognise 400s the whole request. That needs a browser capture or an approved probe
-   before the rebuild, not a guess. `report` is the single most
-   valuable thing here and the most entangled; if it cannot be made to stand on gaps alone,
-   that finding changes the whole plan and is worth knowing before anything is deleted.
+   The blocker recorded here was **sidestepped rather than resolved**, and the distinction
+   matters if this is ever revisited. Whether `include=reviewSubmission` is accepted on the
+   threads list is *still* not recorded, and this client still does not send it. It turned
+   out not to be needed: the thread→**version** link needs no new evidence, because
+   `include=appStoreVersions` is in the recorded threads query and `filter[appStoreVersion]`
+   was already a `listThreads` option, and the thread→**submission** link is not needed at
+   all — step 2 had already made `submissionId` and `state` optional, so the rebuilt route
+   simply leaves them unsaid. Nothing was probed and no new request shape was invented.
+
+   What replaced it was a design question, not an evidence one. A thread's
+   `appStoreVersions` is **to-many** (`limit[appStoreVersions]=2000`), where the deleted
+   `reportForSubmission` read the submission's to-one `appStoreVersionForReview`. Rather
+   than rank them, `SubmissionReport` gained `versions: VersionRef[]` listing every version
+   a thread names, and keeps the singular `version`/`versionId` for the ordinary case of
+   exactly one — the same refusal-to-guess the CLI already applies to two starting points
+   and `versionUnderReview` applies to two drafts.
+
+   One gap-test expectation changed, and only one: "an app id is the one route that costs an
+   official read" was the assertion that this step exists to falsify. Every digest
+   expectation in `gap-shapes.test.ts` stayed green untouched, which is what says the entry
+   point moved and the answer did not. The fixtures that fed the old route are gone, and the
+   stubs now throw on any request outside the Resolution Center instead of quietly answering
+   with submissions.
+
+   `SubmissionReport` lost `state`, `platform`, `submittedDate` and `lastUpdatedDate`
+   outright rather than keeping them as fields nothing fills in, and `formatReport` lost the
+   two lines that printed them. `submissionId` survives as an echo of what the caller
+   passed. That is a user-visible narrowing of `asc report`, and `README.md`,
+   `docs/reading.md`, `docs/library.md` and `docs/evidence.md` all point at
+   `GET /v1/apps/{id}/reviewSubmissions` for the fields that left.
+
+   Also unrecorded, and worth not forgetting: **a thread's own attributes are unmapped.**
+   Nothing in this client reads one — `threadType` appears only as a filter value — so the
+   digest reads only the thread's id and its `appStoreVersions`, and `docs/evidence.md` now
+   says so.
 
 4. **Delete in vertical slices**, each one command + export + implementation + tests + docs
    together, in ascending order of entanglement:
@@ -152,7 +179,8 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
       orchestration and `uploadPart`, so check what else reserves assets first: draft
       attachments do, and they are a keep.
    4. **Metadata, app information, categories, age ratings, content rights.**
-   5. **Submission management** — only after step 3, since `report` is what depends on it.
+   5. **Submission management** — unblocked by step 3: `report` no longer reads a
+      submission, and `listReviewSubmissions` has no caller left in `src/report.ts`.
    6. **Apps, versions, builds, review details** — last of the resource slices, because
       default-id discovery across 26 call sites in `src/cli.ts` runs through them.
    7. **`patch`, and `get` narrowed to an allowlist of retained private families.**
