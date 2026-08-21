@@ -85,6 +85,33 @@ describe('a copied curl command', () => {
     );
   });
 
+  // The parser stopped looking for the URL on 2026-08-21: it never used it, and finding it
+  // meant knowing every flag that takes a value, so an unknown one had its value read as
+  // the URL. Bare tokens are ignored now, whichever of them was the address.
+  test('a flag the parser has never heard of does not derail it', () => {
+    const session = sessionFromCurl(
+      `curl --max-time 30 -o out.json 'https://appstoreconnect.apple.com/iris/v1/apps/123' ` +
+        `-H 'Referer: https://appstoreconnect.apple.com/apps/123/distribution' -H 'Cookie: ${COOKIE}'`
+    );
+
+    assert.equal(session.appId, '123');
+    assert.equal(session.dsId, '1234');
+  });
+
+  // The one exception to ignoring bare tokens: a body is stepped over rather than read,
+  // because it is the only token that can hold anything at all.
+  test('a body is not read as if it were part of the command', () => {
+    const session = sessionFromCurl(
+      `curl 'https://appstoreconnect.apple.com/iris/v1/apps/123' --data-raw '-H' -H 'Cookie: ${COOKIE}'`
+    );
+
+    assert.equal(session.dsId, '1234');
+  });
+
+  test('a command trimmed down to its cookie is still a session', () => {
+    assert.equal(sessionFromCurl(`curl -H 'Cookie: ${COOKIE}'`).dsId, '1234');
+  });
+
   test('the command is found among surrounding notes', () => {
     const pasted = ['# pasted 2026-08-15', '', CURL, '', 'some trailing note'].join('\n');
     assert.ok(extractCurlCommand(pasted).startsWith('curl '));

@@ -46,7 +46,9 @@ and parses it on the spot, so pasting a fresh curl over that file *is* logging i
 Any request will do, `GET` or otherwise — the team id that writes need is decoded from the
 cookie rather than read off the headers, so a session captured from a plain read can still
 write. The file can hold several curls with notes around them; the first is used, and only
-the cookie plus a handful of headers are kept.
+the cookie plus a handful of headers are kept — the URL it was copied from and the method
+it used are not read at all, so a command you have trimmed or added flags to is still a
+session.
 
 Treat that file as a live credential: anyone holding the cookie is you, on your developer
 account, until it expires.

@@ -29,12 +29,41 @@ const KEEP_HEADERS = new Set([
   'x-connect-team-type',
 ]);
 
+/**
+ * What a session takes from a capture: the cookie jar, and the headers worth keeping.
+ *
+ * **Not the URL, and not the method.** Both were parsed and returned until 2026-08-21, and
+ * both were read by nobody: the method a capture happened to be copied from says nothing
+ * about the requests this client goes on to make, and the URL is the API endpoint rather
+ * than the page the browser was on, so it is no use as a Referer either — `sessionFromCurl`
+ * said exactly that in a comment and threw it away.
+ *
+ * Parsing them was not free. The URL was taken to be the first token not starting with `-`,
+ * which is only right if every value-taking flag is on a list to be stepped over, and curl
+ * has far more of those than the six that were on it: `curl --max-time 30 https://…` read
+ * `30` as the URL. `-X` earned its branch by keeping `POST` out of that position rather than
+ * by anyone reading the method. Nothing here guesses now, and a capture is judged on the
+ * cookie it carries, which is the thing a session actually needs.
+ */
 interface ParsedCurl {
-  url: string;
-  method: string;
   headers: Record<string, string>;
   cookie: string;
 }
+
+/**
+ * The flags whose value is a request body — the one token that can hold anything, `-H`
+ * included, so it is stepped over rather than looked at. Every other flag's value is now
+ * just a bare token, and bare tokens are ignored.
+ *
+ * `-A` and `-e` were on this list too, under a comment calling them values "we don't care
+ * about", which was the wrong reason to give: they are curl's shorthands for User-Agent and
+ * Referer, both of which `KEEP_HEADERS` keeps, and the Referer is where the app id comes
+ * from. Whether to read them is a question for a capture that uses them — every recording
+ * here uses `-H` and `-X` and nothing else — and their values are dropped either way, so the
+ * list has stopped claiming to have settled it. `--compressed-header` was on it as well, and
+ * is not a curl flag.
+ */
+const BODY_FLAGS = new Set(['-d', '--data', '--data-raw', '--data-binary']);
 
 /** Splits a shell-ish string into tokens, honouring quotes, backslash escapes and line continuations. */
 function tokenize(input: string): string[] {
@@ -118,17 +147,13 @@ function parseCurl(text: string): ParsedCurl {
     throw new Error(`Expected the command to start with "curl", got "${tokens[0] ?? '<empty>'}"`);
   }
 
-  let url: string | undefined;
-  let method: string | undefined;
   let cookie = '';
   const headers: Record<string, string> = {};
 
   for (let i = 1; i < tokens.length; i++) {
     const token = tokens[i];
 
-    if (token === '-X' || token === '--request') {
-      method = tokens[++i];
-    } else if (token === '-H' || token === '--header') {
+    if (token === '-H' || token === '--header') {
       const raw = tokens[++i] ?? '';
       const sep = raw.indexOf(':');
       if (sep === -1) continue;
@@ -138,16 +163,12 @@ function parseCurl(text: string): ParsedCurl {
       else headers[name.toLowerCase()] = value;
     } else if (token === '-b' || token === '--cookie') {
       cookie = tokens[++i] ?? '';
-    } else if (token.startsWith('-')) {
-      // Flags that take a value we don't care about; skip the value too.
-      if (['-d', '--data', '--data-raw', '--data-binary', '-A', '-e', '--compressed-header'].includes(token)) i++;
-    } else if (!url) {
-      url = token;
+    } else if (BODY_FLAGS.has(token)) {
+      i++;
     }
   }
 
-  if (!url) throw new Error('No URL found in the curl command');
-  return { url, method: method ?? 'GET', headers, cookie };
+  return { headers, cookie };
 }
 
 /** The itctx cookie carries the account id, the team id and a session expiry. */
@@ -232,7 +253,6 @@ export function sessionFromCurl(command: string): Session {
     throw new Error('The curl command has no Cookie header — copy it as "Copy as cURL" while logged in');
   }
 
-  // parsed.url is the API endpoint, not the page — no use as a Referer.
   return buildSession(parsed.cookie, parsed.headers);
 }
 
