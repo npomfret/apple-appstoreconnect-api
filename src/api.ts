@@ -291,16 +291,6 @@ export function getDataUsagePublishState(session: Session, appId: string): Promi
 }
 
 /**
- * Every write left in this client sends this, and each one names it explicitly. The odd
- * one out was the version PATCH behind `updateVersion`, which sent plain application/json;
- * that left with the version slice, and `rawPatch` — the only other way to reach the
- * default — has gone with the write-side escape hatch. So the `application/json` fallback
- * in `headersFor` is now unreachable from here: dead rather than merely narrow, and for
- * the transport step to remove rather than for this file to assume.
- */
-const VND_API_CONTENT_TYPE = 'application/vnd.api+json';
-
-/**
  * Resolution Center replies live as a *draft* until you send them: Apple keeps one unsent
  * message per thread and autosaves it as you type, which is what the calls below do.
  *
@@ -337,8 +327,7 @@ export function createDraftMessage(
           resolutionCenterThread: { data: { type: 'resolutionCenterThreads', id: threadId } },
         },
       },
-    },
-    VND_API_CONTENT_TYPE
+    }
   );
 }
 
@@ -351,8 +340,7 @@ export function updateDraftMessage(
   return patch(
     session,
     `resolutionCenterDraftMessages/${draftId}`,
-    { data: { type: 'resolutionCenterDraftMessages', id: draftId, attributes: { messageBody } } },
-    VND_API_CONTENT_TYPE
+    { data: { type: 'resolutionCenterDraftMessages', id: draftId, attributes: { messageBody } } }
   );
 }
 
@@ -393,8 +381,7 @@ export function reserveMessageAttachment(
           },
         },
       },
-    },
-    VND_API_CONTENT_TYPE
+    }
   );
 }
 
@@ -412,8 +399,7 @@ export function completeMessageAttachment(
         id: attachmentId,
         attributes: { uploaded: true },
       },
-    },
-    VND_API_CONTENT_TYPE
+    }
   );
 }
 
@@ -535,8 +521,7 @@ export function sendDraftMessage(session: Session, draftId: string): Promise<Doc
             createFromDraftMessage: { data: { type: 'resolutionCenterDraftMessages', id: draftId } },
           },
         },
-      },
-      VND_API_CONTENT_TYPE
+      }
     )
   );
 }

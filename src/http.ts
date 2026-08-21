@@ -6,21 +6,15 @@ import { audit, log, redactSignedUrls } from './log';
 const HOST = 'https://appstoreconnect.apple.com';
 
 /**
- * The App Store Connect APIs this client speaks, as base paths on that host.
+ * The one API this client speaks: the review centre, JSON:API under `iris/v1`.
  *
- * One, since the Xcode Cloud surface left: the review centre, JSON:API under `iris/v1`.
- * Still a closed set rather than a base a caller hands in, because everything built here
- * goes out with the session cookie attached, so which prefixes exist is a decision this
- * file makes rather than a caller's.
+ * A constant rather than a set a caller picks from. It was a set while the Xcode Cloud
+ * surface was here, and a set with one member after that left — a decision shaped like a
+ * choice that isn't one. Everything built on this base goes out with the session cookie
+ * attached, so the base is this file's to decide; a second one would arrive with its own
+ * capture and its own reason to exist.
  */
-export const API_BASES = {
-  iris: `${HOST}/iris/v1`,
-} as const;
-
-export type Api = keyof typeof API_BASES;
-
-/** The review-centre base, under the name it has always had. Part of the library contract. */
-export const BASE_URL = API_BASES.iris;
+export const BASE_URL = `${HOST}/iris/v1`;
 
 export class SessionExpiredError extends Error {
   constructor(status: number) {
@@ -64,28 +58,37 @@ export function buildQuery(query: Query): string {
  * A union rather than a bare string because one thing is read off a method — whether the
  * request changes anything — and a value that classifies wrong is a mutation that goes out
  * without an audit record.
+ *
+ * PUT is not among them. The only PUT this client sends is an upload part, and that one
+ * deliberately doesn't come through here at all — different host, presigned URL, no cookie,
+ * see `uploadPart`. Nothing addressed to iris uses it, so it is refused rather than left
+ * standing on the strength of being a familiar verb.
  */
-const METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] as const;
+const METHODS = ['GET', 'POST', 'PATCH', 'DELETE'] as const;
 
 export type Method = (typeof METHODS)[number];
 
 export interface RequestOptions {
-  /** Which API the path is relative to. Defaults to the review centre. */
-  api?: Api;
   method?: Method;
   query?: Query;
   body?: unknown;
-  /**
-   * Overrides the Content-Type a write would otherwise send. The captures disagreed about
-   * it — the version PATCH sent application/json, the Resolution Center endpoints
-   * application/vnd.api+json — and only the second kind is left, every one of them naming
-   * the header explicitly. Which means the default below now has no caller.
-   */
-  contentType?: string;
 }
 
 /** Default team type for a normal App Store developer team, as the web UI sends it. */
-export const TEAM_TYPE = 'PURPLESOFTWARE';
+const TEAM_TYPE = 'PURPLESOFTWARE';
+
+/**
+ * The Content-Type every request here sends.
+ *
+ * iris is JSON:API, and the captures send this on reads and writes alike. It used to be
+ * overridable per call because the captures disagreed: the version PATCH sent plain
+ * `application/json` where the Resolution Center endpoints send this. That PATCH left with
+ * the version slice and the hand-written one left with `asc patch`, so the other value has
+ * had neither a caller nor a live capture behind it since. One constant, named here rather
+ * than repeated at every write; a gap that turns out to need something else brings a
+ * capture showing it.
+ */
+const CONTENT_TYPE = 'application/vnd.api+json';
 
 /**
  * The method to send, in the case the rest of this file expects.
@@ -96,7 +99,7 @@ export const TEAM_TYPE = 'PURPLESOFTWARE';
  * matters — left no `http.write` record, in a client whose audit trail is complete only
  * because every mutation passes through here. The union above stops a TypeScript caller
  * doing that; this is a security boundary, so it is also checked at runtime, where a
- * consumer in plain JavaScript lives. A method that isn't one of the five is refused
+ * consumer in plain JavaScript lives. A method that isn't one of the four is refused
  * rather than guessed at.
  */
 function methodOf(given: string | undefined): Method {
@@ -120,42 +123,40 @@ function methodOf(given: string | undefined): Method {
  * cross-origin request, an upload part, deliberately doesn't come through `request` at all
  * — see `uploadPart`, which sends the presigned URL and no cookie.
  *
- * Which base is in play is chosen from the `Api` union, never from the path, so a caller
- * cannot leave it by writing `../`-anything.
+ * The base is the module constant above and nothing is ever read off the path to choose it,
+ * so a caller cannot leave it by writing `../`-anything.
  */
-function apiUrl(api: Api, path: string): string {
-  const base = API_BASES[api];
+function apiUrl(path: string): string {
   if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('//')) {
     throw new Error(
-      `"${path}" is a URL, and this takes a path relative to ${base}. Sending it would ` +
+      `"${path}" is a URL, and this takes a path relative to ${BASE_URL}. Sending it would ` +
         'carry the App Store Connect session cookie to whatever host it names.'
     );
   }
 
-  return `${base}/${path.replace(/^\//, '')}`;
+  return `${BASE_URL}/${path.replace(/^\//, '')}`;
 }
 
 /**
- * Reads and writes don't send the same headers. The browser adds an Origin and the
- * X-Connect-Team-* pair only when mutating, and switches Content-Type to plain
- * application/json. Mirror that rather than sending one header set for everything.
+ * Reads and writes don't send the same headers: the browser adds an Origin and the
+ * X-Connect-Team-* pair only when mutating. Mirror that rather than sending one header set
+ * for everything.
  *
- * That default is now unreached: every write left in this client passes `contentType`
- * itself. It is left standing for the transport step to settle along with the rest of the
- * question — the `Api` union with one member, the methods no retained call uses — rather
- * than half-answered here.
+ * Content-Type is no longer part of the difference. It was, while a write could ask for
+ * `application/json` — but every write left here sends what the reads send, so it goes on
+ * once, above, and the mutating branch is the three headers that genuinely only appear on
+ * a write.
  */
-function headersFor(session: Session, mutating: boolean, contentType?: string): Record<string, string> {
+function headersFor(session: Session, mutating: boolean): Record<string, string> {
   const headers: Record<string, string> = {
     accept: 'application/vnd.api+json, application/json, text/csv',
-    'content-type': 'application/vnd.api+json',
+    'content-type': CONTENT_TYPE,
     ...session.headers,
     cookie: session.cookie,
   };
 
   if (mutating) {
-    headers['content-type'] = contentType ?? 'application/json';
-    headers['origin'] = 'https://appstoreconnect.apple.com';
+    headers['origin'] = HOST;
     const teamId = session.headers['x-connect-team-id'] ?? session.teamId;
     if (teamId) headers['x-connect-team-id'] = teamId;
     headers['x-connect-team-type'] = session.headers['x-connect-team-type'] ?? TEAM_TYPE;
@@ -176,8 +177,7 @@ export async function request<T = unknown>(
   }
 
   const method = methodOf(options.method);
-  const api = options.api ?? 'iris';
-  const target = `${apiUrl(api, path)}${buildQuery(options.query ?? {})}`;
+  const target = `${apiUrl(path)}${buildQuery(options.query ?? {})}`;
 
   // Every mutation in this client funnels through here, so auditing at this one point is
   // what makes the trail complete — the higher-level calls add meaning, not coverage.
@@ -193,7 +193,7 @@ export async function request<T = unknown>(
   try {
     response = await fetch(target, {
       method,
-      headers: headersFor(session, mutating, options.contentType),
+      headers: headersFor(session, mutating),
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
     text = await response.text();
@@ -274,22 +274,12 @@ export function get<T extends Document>(session: Session, path: string, query?: 
   return request<T>(session, path, { query });
 }
 
-export function patch<T = unknown>(
-  session: Session,
-  path: string,
-  body: unknown,
-  contentType?: string
-): Promise<T> {
-  return request<T>(session, path, { method: 'PATCH', body, contentType });
+export function patch<T = unknown>(session: Session, path: string, body: unknown): Promise<T> {
+  return request<T>(session, path, { method: 'PATCH', body });
 }
 
-export function post<T = unknown>(
-  session: Session,
-  path: string,
-  body: unknown,
-  contentType?: string
-): Promise<T> {
-  return request<T>(session, path, { method: 'POST', body, contentType });
+export function post<T = unknown>(session: Session, path: string, body: unknown): Promise<T> {
+  return request<T>(session, path, { method: 'POST', body });
 }
 
 export function del<T = unknown>(session: Session, path: string): Promise<T> {

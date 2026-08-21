@@ -52,14 +52,16 @@ both routes go through.
 
 ## Headers on a write
 
-Writes send a different header set to reads — `Origin` and the `X-Connect-Team-*` pair,
-plus a `Content-Type`. Every write left here sends `application/vnd.api+json`, named
-explicitly at each call. The odd one out was the version PATCH, which sent plain
-`application/json`; that left with `set-build`, and `asc patch` — the only other way to
-reach the default — has gone too. So the `application/json` fallback in `headersFor` is
-now unreachable: dead rather than merely narrow. Both values were copied from the browser
-rather than reasoned about, and removing the dead one belongs to the transport
-simplification step, with the rest of that question, rather than here.
+Writes send a different header set to reads: `Origin` and the `X-Connect-Team-*` pair.
+That is now the whole of the difference.
+
+`Content-Type` used to be part of it. The captures disagreed about the value — the version
+PATCH sent plain `application/json` where the Resolution Center endpoints send
+`application/vnd.api+json` — so a write could name its own, and one that didn't got the
+first. That PATCH left with `set-build`, and `asc patch`, the only other way to reach the
+default, left with the escape hatches; the transport step then removed the value itself.
+Every request this client sends, read or write, now carries `application/vnd.api+json`,
+set in one place. A gap that turns out to need something else brings a capture showing it.
 
 The team id is only present on captured write requests, so it's also decoded from the
 `itctx` cookie's `cp` field; that means a session captured from any ordinary `GET` can

@@ -152,6 +152,21 @@ Steps 0–3 remove nothing. Nothing in step 4 starts until step 3 is green.
    retained gaps need. Credential isolation, redaction, confirmations and audit records for
    retained writes are not in scope for simplification and must survive unchanged.
 
+   *Done, 2026-08-21.* Four narrowings, each removing an option rather than changing a
+   value: `API_BASES`/`Api` and `RequestOptions.api` collapse to the `BASE_URL` constant;
+   `contentType` leaves `RequestOptions`, `patch()` and `post()` along with the unreachable
+   `application/json` fallback, so one content type is set in one place for reads and writes
+   alike; `PUT` leaves `METHODS`, since the only PUT here is an upload part that bypasses
+   `request()` by design; and `TEAM_TYPE` stops being exported. `VND_API_CONTENT_TYPE` and
+   its six call sites go with it — the fact now lives in the transport rather than being
+   restated at every write.
+
+   **Nothing moved on the wire**, and the proof is that `test/gap-requests.test.ts` pins
+   the method, body and content type of every retained call and passed unedited. The one
+   test that had to change was the transport's own assertion of the default it no longer
+   has. The audit records, the redaction, the absolute-URL refusal and the confirmations
+   were not touched.
+
 6. **Rewrite the docs** as a gap-only client. No compatibility aliases, no deprecated
    wrappers, no stale claims outside this task's history.
 

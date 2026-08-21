@@ -8,8 +8,9 @@ Privacy questionnaire.
 The private implementations of capabilities Apple **does** officially expose have all been
 removed, and as of 2026-08-21 the escape hatches can no longer reach them either: `asc
 patch` is gone and `asc get` is confined to the private families this client is for. The
-boundary was last audited on 2026-08-21 against Apple's OpenAPI specification 4.4.1. What
-remains of that work — simplifying the transport, and a docs pass — is in
+boundary was last audited on 2026-08-21 against Apple's OpenAPI specification 4.4.1. The
+transport has since been narrowed to match — one host, one base, one content type, and the
+four methods the remaining calls use. What remains of that work is a docs pass, in
 [tasks/remove-official-api-overlap.md](tasks/remove-official-api-overlap.md).
 
 It talks to the same private `https://appstoreconnect.apple.com/iris/v1` service the web UI

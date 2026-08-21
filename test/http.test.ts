@@ -90,7 +90,9 @@ describe('what counts as a write', () => {
     assert.equal(stub.calls[0].method, 'PATCH');
     assert.equal(stub.calls[0].headers['origin'], 'https://appstoreconnect.apple.com');
     assert.equal(stub.calls[0].headers['x-connect-team-id'], 'team-0000');
-    assert.equal(stub.calls[0].headers['content-type'], 'application/json');
+    // One content type now, on reads and writes alike — a write no longer names its own,
+    // and there is no second value to reach by leaving it out.
+    assert.equal(stub.calls[0].headers['content-type'], 'application/vnd.api+json');
   });
 
   test('a lowercase method still leaves an audit record', async () => {
@@ -127,17 +129,22 @@ describe('what counts as a write', () => {
     assert.deepEqual(records.filter((record) => record.event === 'http.write'), []);
   });
 
-  test('a method that is not one of the five is refused', async () => {
-    const stub = stubFetch();
-    const options: RequestOptions = JSON.parse('{"method":"TRACE"}');
-    try {
-      await assert.rejects(() => request(SESSION, 'apps', options), /Unsupported HTTP method/);
-    } finally {
-      stub.restore();
-    }
+  // PUT is in the list on purpose. The one PUT this client sends is an upload part, which
+  // goes to Apple's storage without the cookie and never through `request`, so a PUT
+  // arriving here is a caller who has the wrong function rather than a supported verb.
+  for (const method of ['TRACE', 'PUT']) {
+    test(`${method} is not one of the four methods, and is refused`, async () => {
+      const stub = stubFetch();
+      const options: RequestOptions = JSON.parse(`{"method":"${method}"}`);
+      try {
+        await assert.rejects(() => request(SESSION, 'apps', options), /Unsupported HTTP method/);
+      } finally {
+        stub.restore();
+      }
 
-    assert.deepEqual(stub.calls, []);
-  });
+      assert.deepEqual(stub.calls, []);
+    });
+  }
 });
 
 describe('query strings', () => {

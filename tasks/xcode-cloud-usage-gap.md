@@ -133,9 +133,10 @@ This is the part to weigh before agreeing to any of it.
 
 1. **The `/ci/api` transport base was deliberately removed.** Slice 4.1 deleted
    `API_BASES.ci`, `getCi`, the `api === 'ci'` header branch and the non-JSON:API `items`
-   page shape, leaving `API_BASES` a one-member set whose continued existence is step 5's
-   open question. Every call above needs all of that back. It is a real reversal of a
-   decision already taken, not an addition beside it.
+   page shape, leaving a one-member set; step 5 then removed the set itself, on 2026-08-21,
+   so the transport now has a single `BASE_URL` constant and no notion of a second API at
+   all. Every call above needs the whole mechanism reintroduced, not just an entry added
+   to it. It is a real reversal of a decision already taken, not an addition beside it.
 2. **`/ci/api` is not JSON:API.** Sending `content-type: application/vnd.api+json` to it is
    answered **403** — that is the defect recorded in
    [ci-transport-403-and-post-actions-gap.md](ci-transport-403-and-post-actions-gap.md),
@@ -158,10 +159,11 @@ This is the part to weigh before agreeing to any of it.
 
 If the answer is "the minutes, and nothing else", the honest slice is one read-only
 command — `asc usage` — over `usage/summary` and optionally `usage/days`, with the team id
-taken from a flag rather than discovered, so no second base is needed and no personal data
-is fetched. That is roughly: one entry in `API_BASES`, one content-type rule, one plain-JSON
-page shape, one command, and the note in `docs/evidence.md` that it was recorded from the
-browser on 2026-08-21 and never written to.
+taken from a flag rather than discovered, so no *third* base is needed and no personal data
+is fetched. That is roughly: bringing back a base map and a per-base content-type rule —
+both of which step 5 collapsed to constants — plus one plain-JSON page shape, one command,
+and the note in `docs/evidence.md` that it was recorded from the browser on 2026-08-21 and
+never written to.
 
 `user-capabilities` is the natural second, being a single flat GET with no pagination.
 Infrastructure validation is the natural last, because it is three nested reads whose only

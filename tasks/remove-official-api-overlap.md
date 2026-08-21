@@ -4,10 +4,11 @@
 
 This task defines the product boundary; it does not authorize live App Store Connect writes.
 
-**Step 4 is done.** Every resource slice below has been removed, and as of 2026-08-21 so
-have the escape hatches that could still reach them: `patch` is gone and `get` is confined
-to the private families. What remains is step 5 (simplify the transport) and step 6 (the
-docs pass), sequenced in [gap-boundary-next-steps.md](gap-boundary-next-steps.md).
+**Steps 4 and 5 are done.** Every resource slice below has been removed; as of 2026-08-21
+so have the escape hatches that could still reach them — `patch` is gone and `get` is
+confined to the private families — and the transport has been narrowed to the one base, the
+one content type and the four methods the retained gaps use. What remains is step 6, the
+docs pass, sequenced in [gap-boundary-next-steps.md](gap-boundary-next-steps.md).
 
 ## Decision
 
@@ -173,16 +174,17 @@ gap for one query only, the unread counts, and that is `inbox`.
 Consequences recorded rather than acted on: `REVIEW_DETAIL_SECRETS` in `src/log.ts` now has
 no route by which `demoAccountPassword` could arrive and **stays anyway** — a redaction
 keyed on a field name is a standing rule, not a reaction to a caller. And the
-`application/json` fallback in `headersFor` is now unreachable rather than merely narrow;
-it is step 5's to remove.
+`application/json` fallback in `headersFor` was left unreachable rather than merely narrow,
+for step 5, which has since removed it.
 
 ## Refactor order
 
 Steps 1–4 are done. What remains:
 
-- Simplify the transport back to the private `iris/v1` host and only the methods/content
-  types required by retained gaps. Preserve credential isolation, redaction, confirmations,
-  and audit logs for retained private writes.
+- ~~Simplify the transport back to the private `iris/v1` host and only the methods/content
+  types required by retained gaps.~~ *Done, 2026-08-21.* Credential isolation, redaction,
+  confirmations and the `http.write` audit records were preserved unchanged, and the gap
+  request tests passed unedited, which is what shows nothing moved on the wire.
 - Rewrite the README and topic docs as a gap-only client. Do not leave compatibility
   aliases or deprecated wrappers for removed official duplicates.
 

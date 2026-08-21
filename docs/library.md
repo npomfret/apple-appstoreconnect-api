@@ -105,10 +105,18 @@ copying if you build your own.
   request is built. There is no `rawPatch()` any more: an unrestricted private PATCH is how
   the official writes this project removed would come back, and a hand-written body belongs
   at Apple's official API.
-- The method is one of `GET`, `POST`, `PATCH`, `PUT` and `DELETE`, in whatever case you send
-  it. Whether a request mutates decides its headers and whether it lands in the audit trail,
-  so it's settled once from the normalised name; anything that isn't one of the five is
-  refused rather than guessed at.
+- The method is one of `GET`, `POST`, `PATCH` and `DELETE`, in whatever case you send it.
+  Whether a request mutates decides its headers and whether it lands in the audit trail, so
+  it's settled once from the normalised name; anything that isn't one of the four is refused
+  rather than guessed at. `PUT` is not one of them — the only PUT here is an upload part,
+  which goes to Apple's storage through `uploadPart()` and never through `request()`.
+- **One base and one content type**, both module constants rather than options. `BASE_URL`
+  is `https://appstoreconnect.apple.com/iris/v1` and every request sends
+  `application/vnd.api+json`. The `API_BASES` map and its `Api` type are gone — they held
+  the Xcode Cloud base until that surface left, and a set of one is a choice that isn't one
+  — as are the `api` and `contentType` fields on `RequestOptions` and the `contentType`
+  argument to `patch()` and `post()`. So is the `TEAM_TYPE` export, which nothing outside
+  the transport read.
 - **Nothing from the account the captures came from is baked in.** Every id, locale,
   platform and territory reaches a request from an argument or from the session, and the
   values in the recordings work as examples in help text and nowhere else. The constants

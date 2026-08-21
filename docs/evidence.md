@@ -410,6 +410,23 @@ route: what it returns is undocumented, and the evidence for a call is a recordi
 browser making it. Traversal (`..`) is refused, because a path that climbs out of the
 family it names is not the family it names.
 
+## What the transport can still express
+
+Narrowed on 2026-08-21, after the boundary closed, to what the recordings actually show:
+one host, one base (`iris/v1`), one content type, four methods.
+
+| Was | Is | On what evidence |
+| --- | --- | --- |
+| an `API_BASES` map and an `Api` option | the `BASE_URL` constant | the second base was `/ci/api`, and that surface is out of scope |
+| `application/json` on a write unless the caller said otherwise | `application/vnd.api+json` on every request | every recorded Resolution Center call sends it, on reads and writes alike; the one capture sending `application/json` was the version PATCH, which is `PATCH /v1/appStoreVersions/{id}` officially and left with that slice |
+| `GET`, `POST`, `PATCH`, `PUT`, `DELETE` | `GET`, `POST`, `PATCH`, `DELETE` | no call addressed to iris uses PUT; the upload part that does goes to `object-storage.apple.com` through `uploadPart`, without the cookie and without `request` |
+
+None of this changes a byte on the wire: `test/gap-requests.test.ts` pins the method, body
+and content type of every retained call, and it passed unedited across the change. What it
+changes is what a *future* call can express without coming back here for a reason. The
+`http.write` audit records, the redaction, the host check and the confirmations are
+untouched.
+
 ## Seen but deliberately not mapped
 
 From the Xcode Cloud tab: the pickers behind the workflow editor —
