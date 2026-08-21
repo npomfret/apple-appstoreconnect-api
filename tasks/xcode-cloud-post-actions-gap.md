@@ -13,12 +13,9 @@ the work is to restore the smallest read-only slice that exposes that one field,
 restoring the official-API duplicates that were deliberately removed.
 
 A browser recording of the post-actions screen was made after this task was written and is
-held privately outside the repository. Its contents have **not** been read, so this task
-still makes no claim from it. That is a matter of nobody having done the work rather than of
-permission: the operating contract was narrowed on 2026-08-21 and a recording may be read as
-evidence, provided it is read through an extractor that emits methods, paths, query keys,
-statuses and response key structure and lets no credential or personal detail out. See
-"Capture handoff" below.
+held privately outside the repository. Its contents have **not** been read, so nothing here
+is claimed from it — that is nobody having done the work, not a rule against it. See
+"Reading the capture" below.
 
 ## What a restored transport must not repeat
 
@@ -107,14 +104,14 @@ IDs versus private discovery — needs owner approval before implementation.
 
 - **The shape of a populated `post_actions` entry.** Every capture available here has the
   array empty — including the recorded `PUT`, whose body carries `post_actions: []` both
-  before and after. The new HAR may settle this, but it has not been safely reviewed yet.
+  before and after. The recording made since may settle it; nobody has read it yet.
   Nothing should be typed, interpreted or written into that array on a guess.
 - **Whether the write is safe to map.** `docs/xcode-cloud.md` already argues this well: the
   `PUT workflows-v15/{id}` is a full-document replace and anything omitted is destroyed, on
   the workflow that builds every push. That document was removed with the old feature, but
   the risk remains. Capturing the browser making the change establishes shape; it does not
   by itself authorise or make a scripted full-document replace safe.
-- **What the new HAR contains.** A useful read capture has a successful
+- **What the recording contains.** A useful read capture has a successful
   `GET .../workflows-v15/{workflowId}` whose response contains a populated
   `content.post_actions`. A useful write capture additionally has the initial GET, the
   browser's `PUT .../workflows-v15/{workflowId}` with populated `post_actions`, a successful
@@ -125,39 +122,40 @@ Read-back alone — after somebody sets the option in the web UI — is enough f
 verification use case and requires no write from this client. Mapping a write is a separate,
 higher-risk project.
 
-## Capture handoff
+## Reading the capture
 
-The raw HAR is credential material, not a repository fixture. Safari may include the full
+The recording is credential material, not a repository fixture. Safari may include the full
 session cookie, per-request Apple signatures, repository URLs, account identities and the
-workflow's environment variables. It stays under `tmp/`, is never committed, and is not
-opened by an agent. A browser's "sanitised" export still deserves the same treatment because
-sanitising authentication headers does not necessarily remove workflow content.
+workflow's environment variables. It stays under `tmp/` and is never committed, and a
+"sanitised" export deserves the same treatment, since sanitising authentication headers does
+not necessarily remove workflow content.
 
-A human should inspect the capture locally and provide a minimal redacted extract containing
-only:
+It may be read here, through an extractor that emits methods, paths, query keys, statuses and
+response key structure and lets no credential or personal detail out — the way the Usage page
+recording was read for [xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md). What to take out
+of it:
 
 1. The method and `/ci/api/.../workflows-v15/{workflowId}` path, with team, product and
    workflow IDs replaced by `{TEAM}`, `{PRODUCT}` and `{WORKFLOW}`.
-2. The request `content-type`; omit every authentication, cookie, signature, CSRF and team
-   header value.
-3. The populated `post_actions` JSON from the GET response and, if present, from the PUT
-   request. Preserve field names and enum-like values, but replace real beta-group IDs,
-   names and other account-specific identifiers with descriptive placeholders.
+2. The request `content-type`; no authentication, cookie, signature, CSRF or team header
+   value.
+3. The populated `post_actions` structure from the GET response and, if present, from the PUT
+   request. Field names and enum-like values are the point; real beta-group IDs, names and
+   other account-specific identifiers become descriptive placeholders.
 4. The response status and the populated `post_actions` value from the read-back GET.
-5. A short statement of the browser action that caused it: for example, adding TestFlight
-   Internal Testing, which group was selected in generic terms, and whether the workflow was
-   restored afterwards.
+5. What the browser was doing: for example, adding TestFlight Internal Testing, which group
+   was selected in generic terms, and whether the workflow was restored afterwards.
 
-Do not copy the whole workflow body into the repository: the PUT is a full document and may
-carry unrelated environment or repository configuration. Once the redacted extract exists,
-invent a small test fixture from that shape; never use the HAR itself in tests.
+Not the whole workflow body: the PUT is a full document and may carry unrelated environment
+or repository configuration. Invent a small test fixture from the shape; never use the
+recording itself in a test.
 
-For a future Safari capture, open Web Inspector before the action, select Network's **Live
-Activity**, clear it, disable caches, and reload the page. Safari keeps HAR Export disabled
-until it has captured a completed main-page request. Then make the single intended UI change,
-wait for all requests to finish, reload once for read-back, and export the Network log into
-`tmp/`. If the setting is already populated, the reload/read-only capture is safer and is
-enough for the retained read.
+The write is still unrecorded, so a second capture is still wanted. Open Web Inspector before
+the action, select Network's **Live Activity**, clear it, disable caches, and reload the page;
+Safari keeps its export disabled until it has captured a completed main-page request. Then
+make the single intended UI change, wait for all requests to finish, reload once for
+read-back, and export the Network log into `tmp/`. If the setting is already populated, the
+reload-only capture is safer and is enough for the retained read.
 
 ## Implementation gate and verification
 
