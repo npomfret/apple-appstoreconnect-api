@@ -72,6 +72,82 @@ describe('where a request goes', () => {
   });
 });
 
+/**
+ * Which headers a request carries, and who decides. The transport owns the media types and
+ * the session owns the account's — the two used to be the other way round, silently.
+ */
+describe('the headers a request goes out with', () => {
+  // 214 of the 214 reads recorded from the browser send both, as do all 10 writes. They
+  // were sent only when mutating, which went unnoticed because a capture taken from a
+  // browser GET carries them itself — but a capture that is only a cookie jar, which the
+  // CLI's help offers as enough, does not, and its reads went out without either.
+  test('a read carries the team pair, which the browser sends on every request', async () => {
+    const stub = stubFetch();
+    try {
+      await get(SESSION, 'apps');
+    } finally {
+      stub.restore();
+    }
+
+    assert.equal(stub.calls[0].headers['x-connect-team-id'], 'team-0000');
+    assert.equal(stub.calls[0].headers['x-connect-team-type'], 'PURPLESOFTWARE');
+  });
+
+  // Origin is the header that really is write-only: absent from all 214 recorded reads,
+  // present on all 10 recorded writes.
+  test('a read carries no Origin', async () => {
+    const stub = stubFetch();
+    try {
+      await get(SESSION, 'apps');
+    } finally {
+      stub.restore();
+    }
+
+    assert.equal(stub.calls[0].headers['origin'], undefined);
+  });
+
+  // The capture used to be spread over the media types rather than under them, so the iris
+  // request the user happened to right-click decided what every later one sent. iris is
+  // served from two front-end bundles that disagree — 133 recorded reads send
+  // `application/vnd.api+json` as both, 78 send `application/json` with the wider Accept —
+  // so a capture from the second kind put `content-type: application/json` on the POST that
+  // sends a reply to App Review, where every recorded POST sends the JSON:API type.
+  test('a capture naming its own media types does not decide the transport\'s', async () => {
+    const captured = {
+      ...SESSION,
+      headers: { ...SESSION.headers, accept: '*/*', 'content-type': 'application/json' },
+    };
+
+    const stub = stubFetch();
+    try {
+      await withStderr(() => request(captured, 'resolutionCenterMessages', { method: 'POST', body: { data: {} } }));
+    } finally {
+      stub.restore();
+    }
+
+    assert.equal(stub.calls[0].headers['content-type'], 'application/vnd.api+json');
+    assert.equal(stub.calls[0].headers['accept'], 'application/vnd.api+json, application/json, text/csv');
+  });
+
+  // The account's own headers still win where the capture has them: that team id is the one
+  // the browser was using, and `session.teamId` is only the cookie-decoded fallback.
+  test('a captured team id still wins over the one decoded from the cookie', async () => {
+    const captured = {
+      ...SESSION,
+      headers: { ...SESSION.headers, 'x-connect-team-id': 'team-from-header' },
+    };
+
+    const stub = stubFetch();
+    try {
+      await get(captured, 'apps');
+    } finally {
+      stub.restore();
+    }
+
+    assert.equal(stub.calls[0].headers['x-connect-team-id'], 'team-from-header');
+  });
+});
+
 describe('what counts as a write', () => {
   // What a consumer in plain JavaScript can pass. TypeScript callers are stopped by the
   // union on RequestOptions; nothing stops this one, and classifying it as a read would

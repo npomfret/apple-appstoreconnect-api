@@ -64,16 +64,30 @@ both routes go through.
 
 ## Headers on a write
 
-Writes send a different header set to reads: `Origin` and the `X-Connect-Team-*` pair. That
-is the whole of the difference.
+`Origin` is the whole of the difference. A write sends it and a read does not, which is what
+the browser does: it is on all 10 writes recorded from the browser and on none of the 214
+reads.
 
-`Content-Type` is not part of it. Every request this client sends, read or write, carries
-`application/vnd.api+json`, set in one place — which is what the recordings of the
-Resolution Center endpoints show them all sending. A gap that turns out to need something
-else brings a recording showing it.
+The `X-Connect-Team-*` pair is **not** a write header, though this client treated it as one
+until 2026-08-21. The browser sends `X-Connect-Team-ID` and `X-Connect-Team-Type` on every
+iris request it makes, reads included — 224 of 224 — so this sends them on both now. The old
+behaviour was hidden by the capture: a session copied from a browser `GET` carries the pair
+itself and it went out anyway, so only a capture pasted as a bare cookie jar showed the
+difference, and its reads went without them.
 
-The team id is only present on captured write requests, so it's also decoded from the
-`itctx` cookie's `cp` field; that means a session captured from any ordinary `GET` can
-still write.
+The team id is missing from a capture only in that last case, so it is also decoded from the
+`itctx` cookie's `cp` field. Either way a session captured from any ordinary `GET` can still
+write.
+
+`Content-Type` is not part of the difference either. Every request this client sends, read or
+write, carries `application/vnd.api+json`, and `Accept` is likewise one value set in one
+place. Neither is taken from the capture any more, and that is a fix rather than a tidy-up:
+iris is served from two front-end bundles that spell both differently — 133 of the recorded
+reads send `application/vnd.api+json` as each, 78 send `application/json` with a three-value
+`Accept`, on the same routes — and the capture was being spread *over* the client's own
+values. So whichever request you happened to right-click decided the media types on
+everything afterwards, including the `POST` that sends a reply to App Review, where every
+recorded `POST` sends `application/vnd.api+json`. A gap that turns out to need something else
+brings a recording showing it.
 
 Every write is recorded — see [logging and the audit trail](logging.md).

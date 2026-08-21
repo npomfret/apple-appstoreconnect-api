@@ -1,20 +1,30 @@
 import { Session } from './session';
 
 /**
- * Headers worth carrying over from the browser. Everything else (Accept-Encoding,
- * Sec-Fetch-*, Priority) is either set by fetch itself or ignored by the server.
- * Accept-Encoding in particular must NOT be forwarded: the browser advertises zstd
- * and undici would then fail to decompress the response.
+ * Headers worth carrying over from the browser: what says which account, which team and
+ * which page the request came from. Everything else (Accept-Encoding, Sec-Fetch-*,
+ * Priority) is either set by fetch itself or ignored by the server. Accept-Encoding in
+ * particular must NOT be forwarded: the browser advertises zstd and undici would then fail
+ * to decompress the response.
+ *
+ * **Accept and Content-Type are not on this list**, and were until 2026-08-21. They are the
+ * transport's, not the session's: iris is served from two front-end bundles that spell both
+ * differently, so carrying them meant the request the user happened to right-click decided
+ * the media types on every request afterwards. `headersFor` in `src/http.ts` owns them.
+ *
+ * **Neither is X-Apple-App-Id**, which was on this list and carried nothing: it appears on
+ * none of the 413 requests in the recordings, on any host. It was also the one header here
+ * scoped to a single app rather than to the account, so a session captured from one app's
+ * page would have labelled requests about another app with it — a question that needed a
+ * capture to answer, and the answer is that the browser never sends it.
  */
 const KEEP_HEADERS = new Set([
-  'accept',
-  'content-type',
   'user-agent',
   'referer',
   'x-csrf-itc',
-  'x-apple-app-id',
-  // Only writes carry these. A session captured from a GET won't have them, so the
-  // team id is also recovered from the itctx cookie — see readItctx.
+  // On every iris request the browser makes, reads included — 224 of 224 — which is why
+  // `headersFor` sends them on both. A session captured as a bare cookie jar has neither,
+  // so the team id is also recovered from the itctx cookie; see readItctx.
   'x-connect-team-id',
   'x-connect-team-type',
 ]);

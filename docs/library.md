@@ -134,9 +134,16 @@ words is the same question as sending them. Worth copying if you build your own.
 - **One base and one content type**, both module constants rather than options. `BASE_URL`
   is `https://appstoreconnect.apple.com/iris/v1`, every request sends
   `application/vnd.api+json`, and neither is something a caller passes: `RequestOptions` is
-  `method`, `query` and `body`, and `patch()`/`post()` take a path and a body. A gap that
-  needs something else brings a recording showing it, which is a conversation rather than an
-  argument.
+  `method`, `query` and `body`, and `patch()`/`post()` take a path and a body. Nor is the
+  capture a caller — it was until 2026-08-21, since its headers were spread over the
+  transport's own, which let whichever iris request was right-clicked pick the `Content-Type`
+  and `Accept` for every later one. A gap that needs something else brings a recording
+  showing it, which is a conversation rather than an argument.
+- **The session supplies who you are, not how to talk.** A `Session`'s `headers` carry the
+  account's — the CSRF value, the referer, the team pair, the user agent — and `request()`
+  writes its own media types and cookie over them. The team pair goes on reads as well as
+  writes, because the browser sends it on every iris request; `Origin` is the one header
+  that really is write-only.
 - **Nothing from the account the captures came from is baked in.** Every id, locale,
   platform and territory reaches a request from an argument or from the session, and the
   values in the recordings work as examples in help text and nowhere else. The constants

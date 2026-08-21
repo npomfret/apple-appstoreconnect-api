@@ -52,7 +52,17 @@ describe('a copied curl command', () => {
   // decompress — the response arrives as bytes nobody can read.
   test('Accept-Encoding is not carried over', () => {
     assert.equal(session.headers['accept-encoding'], undefined);
-    assert.equal(session.headers['x-apple-app-id'], '123');
+  });
+
+  // The media types are the transport's, not the capture's: iris is served from two
+  // front-end bundles that spell them differently, so carrying them let whichever request
+  // was right-clicked decide what every later one sent — including the POST to App Review.
+  // X-Apple-App-Id was carried and appears on none of the recorded requests at all; it was
+  // also the only header here naming one app rather than the account.
+  test('the media types and the app id header are not carried over', () => {
+    assert.equal(session.headers['accept'], undefined);
+    assert.equal(session.headers['content-type'], undefined);
+    assert.equal(session.headers['x-apple-app-id'], undefined);
   });
 
   test('a capture with no CSRF header still gets one', () => {

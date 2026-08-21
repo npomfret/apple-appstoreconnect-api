@@ -226,13 +226,56 @@ on 2026-08-21, once the boundary was closed.
 | What it sends | On what evidence |
 | --- | --- |
 | `https://appstoreconnect.apple.com/iris/v1`, and no other base | the only other one this client ever had was `/ci/api`, for Xcode Cloud, which Apple serves officially |
-| `application/vnd.api+json` on every request, read or write | every recorded Resolution Center call sends it, on reads and writes alike. The one capture that sent plain `application/json` was the version PATCH, which is `PATCH /v1/appStoreVersions/{id}` officially |
+| `application/vnd.api+json` on every request, read or write | every recorded Resolution Center call sends it, on reads and writes alike. The one capture that sent plain `application/json` was the version PATCH, which is `PATCH /v1/appStoreVersions/{id}` officially. **The capture could override this until 2026-08-21** — see the header audit below |
 | `GET`, `POST`, `PATCH`, `DELETE`, and refuses anything else | no call addressed to iris uses `PUT`. The upload part that does goes to `object-storage.apple.com` through `uploadPart`, without the cookie and without `request` |
 
 A gap that turns out to need something else brings a recording showing it. That narrowing
 changed no byte on the wire: `test/gap-requests.test.ts` pins the method, body and content
 type of every retained call, and passed unedited across it. The `http.write` audit records,
 the redaction, the host check and the confirmations were not touched.
+
+### Which headers the browser sends, and on what
+
+Read across every recording on **2026-08-21**: 413 requests in all, 224 of them to
+`iris/v1` — 214 `GET`, 6 `PATCH`, 4 `POST`. Presence was counted per method; only the
+values of the four structural headers were read.
+
+| Header | Reads | Writes | What this client does |
+| --- | --- | --- | --- |
+| `Origin` | 0/214 | 10/10 | sent on writes only. The one header that really is write-only |
+| `X-Connect-Team-ID` | 214/214 | 10/10 | sent on both, since **2026-08-21**. It was a write header here until then |
+| `X-Connect-Team-Type` | 214/214, all `PURPLESOFTWARE` | 10/10, all `PURPLESOFTWARE` | the same, with `PURPLESOFTWARE` as the fallback when the capture has none |
+| `X-CSRF-ITC` | 211/214 | 8/10 | always sent, from the capture or as `[asc-ui]` |
+| `Referer` | 214/214 | 10/10 | carried from the capture; also where the default app id is scraped from |
+| `Content-Type` | 133 `application/vnd.api+json`, 78 `application/json`, 3 absent | 9 `application/vnd.api+json`, 1 `application/json` | one constant, `application/vnd.api+json`, written **over** the capture's since 2026-08-21 |
+| `Accept` | 133 `application/vnd.api+json`, 78 the three-value list, 3 `*/*` | the same split | one constant, the three-value list, likewise written over the capture's |
+| `X-Apple-App-Id` | 0/214 | 0/10 | **not sent, and no longer carried.** It is on none of the 413 requests, on any host |
+
+Three findings, all of them corrections rather than confirmations:
+
+- **The team pair is not a write header.** Sending it only when mutating went unnoticed
+  because a capture taken from a browser `GET` carries it and it arrived through the spread
+  anyway. A capture pasted as a bare cookie jar — which `README.md` offers as enough — has
+  neither, and its reads went out without them.
+- **The capture was deciding the media types.** `headersFor` set `Accept` and `Content-Type`
+  and then spread `session.headers` over them, so the capture won. iris is served from two
+  front-end bundles that disagree about both, and the split is per page rather than per
+  route: `apps/{id}/resolutionCenterThreads`, `apps/{id}/dataUsages` and
+  `resolutionCenterThreads` are each recorded under both spellings. So a capture taken from
+  the `application/json` half put that content type on `POST resolutionCenterMessages` — the
+  send to App Review, from which there is no return — where all four recorded `POST`s send
+  `application/vnd.api+json`. Both spellings are answered by iris on the routes recorded, so
+  no request is known to have failed over this; what was wrong was that the value was not the
+  client's to lose.
+- **`X-Apple-App-Id` was carried and never sent.** It sat in `KEEP_HEADERS` and appears on no
+  recorded request at all. It was also the only header there naming one app rather than the
+  account, so a session captured from one app's page would have labelled requests about
+  another app with it. That question needed a capture to settle, and this is the answer: the
+  browser never sends it.
+
+This changed bytes on the wire, unlike the narrowing above: reads gained the team pair, and
+both media types stopped varying with the capture. Every value now sent is one the
+recordings show the browser sending on iris.
 
 ## Capturing a new endpoint
 

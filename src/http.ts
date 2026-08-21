@@ -99,8 +99,19 @@ const TEAM_TYPE = 'PURPLESOFTWARE';
  * had neither a caller nor a live capture behind it since. One constant, named here rather
  * than repeated at every write; a gap that turns out to need something else brings a
  * capture showing it.
+ *
+ * A caller could not name a second one, but until 2026-08-21 the *capture* could — see
+ * `headersFor`, where this was set and then spread over.
  */
 const CONTENT_TYPE = 'application/vnd.api+json';
+
+/**
+ * The Accept every request here sends, and the wider of the two the browser is recorded
+ * sending: 78 of the 214 recorded reads ask for exactly this, and the other 133 for
+ * `application/vnd.api+json` alone. Asking for more than iris will send costs nothing, and
+ * a client that reads one media type from one base has no reason to vary it per call.
+ */
+const ACCEPT = 'application/vnd.api+json, application/json, text/csv';
 
 /**
  * The method to send, in the case the rest of this file expects.
@@ -150,29 +161,44 @@ function apiUrl(path: string): string {
 }
 
 /**
- * Reads and writes don't send the same headers: the browser adds an Origin and the
- * X-Connect-Team-* pair only when mutating. Mirror that rather than sending one header set
- * for everything.
+ * The headers a request goes out with: what the capture carried, then the ones this file
+ * owns.
  *
- * Content-Type is no longer part of the difference. It was, while a write could ask for
- * `application/json` — but every write left here sends what the reads send, so it goes on
- * once, above, and the mutating branch is the three headers that genuinely only appear on
- * a write.
+ * **The order is the rule.** The capture is spread first and the transport's own headers
+ * are written over it. It read the other way round until 2026-08-21, which made Accept and
+ * Content-Type the capture's rather than this file's — and iris is served from two
+ * front-end bundles that disagree about both. Of the 214 reads recorded from the browser,
+ * 133 send `application/vnd.api+json` as each, and 78 send `application/json` with the
+ * wider Accept; the split is per page, not per route, and both spellings reach routes this
+ * client uses. So the request that was right-clicked decided the media types on every
+ * request afterwards, including the POST that sends a reply to App Review — where all four
+ * recorded POSTs send `application/vnd.api+json`. `CONTENT_TYPE` says above that it is not
+ * something a caller passes; the capture is not a caller, and now neither is it.
+ *
+ * **The team pair is not a write header.** `X-Connect-Team-ID` and `X-Connect-Team-Type`
+ * are on every iris request in the recordings — 214 of 214 reads and 10 of 10 writes — so
+ * they go on both. Setting them only when mutating was invisible while the capture came
+ * from a browser GET, since it then carried them itself and they arrived through the
+ * spread; a capture that is only a cookie jar, which the CLI's help offers as enough, sent
+ * reads without either. The capture's own values win where it has them: they are that
+ * account's, and `session.teamId` is decoded from the cookie as the fallback.
+ *
+ * **`Origin` is the one that really is write-only**: absent from all 214 recorded reads,
+ * present on all 10 recorded writes.
  */
 function headersFor(session: Session, mutating: boolean): Record<string, string> {
   const headers: Record<string, string> = {
-    accept: 'application/vnd.api+json, application/json, text/csv',
-    'content-type': CONTENT_TYPE,
     ...session.headers,
+    accept: ACCEPT,
+    'content-type': CONTENT_TYPE,
     cookie: session.cookie,
   };
 
-  if (mutating) {
-    headers['origin'] = HOST;
-    const teamId = session.headers['x-connect-team-id'] ?? session.teamId;
-    if (teamId) headers['x-connect-team-id'] = teamId;
-    headers['x-connect-team-type'] = session.headers['x-connect-team-type'] ?? TEAM_TYPE;
-  }
+  const teamId = session.headers['x-connect-team-id'] ?? session.teamId;
+  if (teamId) headers['x-connect-team-id'] = teamId;
+  headers['x-connect-team-type'] = session.headers['x-connect-team-type'] ?? TEAM_TYPE;
+
+  if (mutating) headers['origin'] = HOST;
 
   return headers;
 }
