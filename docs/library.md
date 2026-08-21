@@ -98,10 +98,13 @@ words is the same question as sending them. Worth copying if you build your own.
   thread, an app list or a version has outgrown the number the UI was built for.
 - Nothing pages. One request gets one page, and a list that came back short is reported
   rather than followed: `read.clipped` in the log when iris gives a total bigger than what
-  it sent, `read.atLimit` when the page is exactly as long as the limit asked for. Worth
-  knowing because a clipped list is not obviously one — `listMessages` sends no top-level
-  limit by default, as the browser doesn't, so a long thread comes back cut off at the end,
-  which is the end you wanted. Pass `{ limit }` to see past it.
+  it sent, which it does on every collection recorded from the browser. `read.atLimit` is
+  the fallback for a route that reports no total — the page came back exactly as long as
+  the page size iris applied, per `meta.paging.limit`. Worth knowing because a clipped list
+  is not obviously one — `listMessages` and `listThreads` send no top-level limit, as the
+  browser doesn't, so iris's default page of 50 applies and a long thread comes back cut off
+  at the end, which is the end you wanted. Pass `{ limit }` to see past it; `listThreads`
+  has no such option, since the captured query has none.
 - So are the fieldsets. `{ fields }` is keyed by resource type and replaces one
   `fields[type]` list, again defaulting to the captured one. One call sends one now:
   `listAppMetrics`, where the fieldset is what keeps the read down to two private counters

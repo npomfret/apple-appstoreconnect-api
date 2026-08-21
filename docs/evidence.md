@@ -52,11 +52,18 @@ list is the tested one and an override is not.
 - `listMessages` and `getDraftMessage` — includes and the `limit[rejections]=2000` /
   `limit[resolutionCenterMessageAttachments]=1000` pair match exactly. The browser sends no
   top-level `limit` on the messages call and neither does this by default, so a thread
-  longer than iris's own page comes back clipped at the end; `read.clipped` and
-  `read.atLimit` in the log say when that may have happened, and `listMessages`'s `limit`
-  option is how to look further. Whether iris reports a total to check against is per
-  endpoint, and not something any recording here settles — the warning uses one when it is
-  offered and falls back to "the page is exactly as long as we asked for" when it isn't.
+  longer than iris's own page comes back clipped at the end; `read.clipped` in the log says
+  when that may have happened, and `listMessages`'s `limit` option is how to look further.
+  What iris reports about a page was read across every recording on 2026-08-21: **161
+  collection responses, every one carrying both `meta.paging.total` and
+  `meta.paging.limit`**. So a total is there to check against — the doubt recorded here
+  until that day, that whether one is offered might be per endpoint, is settled for every
+  route any recording covers. `meta.paging.limit` is the page size iris applied: the number
+  asked for in all 84 requests that named one, and `50` — its own default — in all 77 that
+  named none, which is the page `listMessages` and `listThreads` are held to. `read.atLimit`
+  is now the fallback for a route reporting no total, and reads that applied page size
+  rather than the outgoing query; before that it could not fire for either of those two
+  calls, and did fire on a complete list whose total equalled its limit.
   The `fromActor` include is what tells Apple's messages from your own, and the responses
   were re-read for it on 2026-08-21: every actor carries an `actorType`, it is `APPLE` or
   `USER` across 29 actors in five recordings, Apple's own actor has the literal id `APPLE`

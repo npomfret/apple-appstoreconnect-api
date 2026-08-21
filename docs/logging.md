@@ -44,12 +44,24 @@ you most want a log of.
 
 ## Reads that may have come back short
 
-Two warnings say when a list might not be the whole list. `read.clipped` is the definite
-one — iris reported a total larger than the page it sent. `read.atLimit` is the suspicion:
-the page came back exactly as long as the `limit` asked for, which is what a clipped page
-looks like when no total is reported. Neither fetches a second page; they exist so that a
-short list doesn't pass for a complete one, which is the failure that matters when the
-digest picks "Apple's latest message" out of it. Raise that call's `limit` to see past it.
+Two warnings say when a list might not be the whole list. Neither fetches a second page;
+they exist so that a short list doesn't pass for a complete one, which is the failure that
+matters when the digest picks "Apple's latest message" out of it. Raise that call's `limit`
+to see past it.
+
+`read.clipped` is the one you will see: iris reported a total larger than the page it sent.
+It reports one on every collection recorded from the browser — 161 array responses, all of
+them carrying `meta.paging.total` beside the page size — so a total is both definite and
+usually there, and where there is one it settles the question in both directions. A page
+exactly as long as the limit with a matching total is the whole list, and nothing is said
+about it.
+
+`read.atLimit` is the fallback for a route that reports no total, and no recording has one:
+the page came back exactly as long as the page size iris applied, which is what a clipped
+page looks like when there is no total to check. That page size is iris's own
+`meta.paging.limit` rather than whatever the request asked for, which matters because the
+two calls most likely to clip — the messages on a thread, and an app's threads — send no
+top-level `limit` at all and are held to iris's default of 50.
 
 ## What never reaches the log
 

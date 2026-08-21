@@ -250,10 +250,23 @@ export async function request<T = unknown>(
  * looking like a whole one, which is the failure worth catching: a digest built on the
  * first 50 of 60 messages reports the wrong "latest message from Apple" without saying so.
  *
- * Two signals, because they are separately available. If iris returns a total it is
- * believed; that is the definite one, and whether it does depends on the endpoint. Failing
- * that, a page that came back exactly as long as the limit asked for is suspicious rather
- * than proven — raise the call's `limit` to find out.
+ * **iris answers the question itself.** Every collection it returns carries
+ * `meta.paging.total` beside `meta.paging.limit` — 161 array responses across the browser
+ * recordings, all 161 with both — so the total is what decides this, and when there is one
+ * there is nothing left to suspect. Guessing on top of it was a false alarm: a page of 20
+ * out of a total of 20, asked for with `limit=20`, is the whole list and used to be
+ * reported as one that might be short.
+ *
+ * **The page size is iris's, not ours.** `meta.paging.limit` is the size it actually
+ * applied: the number asked for wherever a request named one, and `50` — its own default —
+ * in every recorded request that named none. Reading the limit off the outgoing query
+ * instead meant the fallback could not fire at all for the two calls whose page is most
+ * likely to clip, `listMessages` and `listThreads`, since neither sends a top-level `limit`
+ * and both are held to that default of 50.
+ *
+ * So the suspicion below is a guard rather than an observation: no recorded response omits
+ * a total. It stays because iris is undocumented and a route that reports none would
+ * otherwise clip in silence — and it now has iris's own page size to compare against.
  */
 function reportShortPage(url: string, query: Query | undefined, document: unknown): void {
   if (typeof document !== 'object' || document === null) return;
@@ -261,25 +274,35 @@ function reportShortPage(url: string, query: Query | undefined, document: unknow
   if (!Array.isArray(data)) return;
   const page: unknown[] = data;
 
-  const total = pagingTotal(meta);
-  if (total !== undefined && total > page.length) {
-    log.warn('read.clipped', { url, returned: page.length, total });
+  const { total, limit: applied } = paging(meta);
+
+  // A total is definite in both directions: bigger than the page means clipped, and equal
+  // to it means whole. Neither case has anything left for the heuristic to add.
+  if (total !== undefined) {
+    if (total > page.length) log.warn('read.clipped', { url, returned: page.length, total });
     return;
   }
 
-  const limit = query?.limit;
-  if (typeof limit === 'number' && page.length === limit && limit > 0) {
+  const limit = applied ?? query?.limit;
+  if (typeof limit === 'number' && limit > 0 && page.length === limit) {
     log.warn('read.atLimit', { url, returned: page.length, limit });
   }
 }
 
-/** JSON:API puts a collection's size under `meta.paging.total`, where the endpoint reports one. */
-function pagingTotal(meta: unknown): number | undefined {
-  if (typeof meta !== 'object' || meta === null) return undefined;
-  const paging = (meta as { paging?: unknown }).paging;
-  if (typeof paging !== 'object' || paging === null) return undefined;
-  const total = (paging as { total?: unknown }).total;
-  return typeof total === 'number' ? total : undefined;
+/**
+ * What iris says about the page it just sent: how many records exist, and how many it was
+ * willing to put in one response. JSON:API keeps both under `meta.paging`, and iris fills
+ * them in on every collection recorded from the browser.
+ */
+function paging(meta: unknown): { total?: number; limit?: number } {
+  if (typeof meta !== 'object' || meta === null) return {};
+  const record = (meta as { paging?: unknown }).paging;
+  if (typeof record !== 'object' || record === null) return {};
+  const { total, limit } = record as { total?: unknown; limit?: unknown };
+  return {
+    total: typeof total === 'number' ? total : undefined,
+    limit: typeof limit === 'number' ? limit : undefined,
+  };
 }
 
 export function get<T extends Document>(session: Session, path: string, query?: Query): Promise<T> {

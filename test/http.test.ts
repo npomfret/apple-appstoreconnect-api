@@ -169,34 +169,77 @@ describe('query strings', () => {
 });
 
 describe('answers that are not what they look like', () => {
-  test('a page shorter than the total it reports is called out', async () => {
-    const stub = stubFetch(() => ({ body: { data: [{ type: 'apps', id: '1' }], meta: { paging: { total: 9 } } } }));
-    const records = await withStderr(async (captured) => {
+  // Every collection recorded from the browser carries `meta.paging`, with the collection's
+  // real total beside the page size iris applied — 161 array responses, all 161 with both.
+  // So the total is the signal, and the fixtures below carry one wherever a real response
+  // would.
+  const page = (ids: string[], paging?: { total?: number; limit?: number }) => ({
+    body: { data: ids.map((id) => ({ type: 'apps', id })), ...(paging ? { meta: { paging } } : {}) },
+  });
+
+  const warnings = async (respond: () => ReturnType<typeof page>, run: () => Promise<unknown>) => {
+    const stub = stubFetch(respond);
+    return withStderr(async (captured) => {
       try {
-        await get(SESSION, 'apps');
+        await run();
       } finally {
         stub.restore();
       }
       return captured.records();
     });
+  };
+
+  test('a page shorter than the total it reports is called out', async () => {
+    const records = await warnings(
+      () => page(['1'], { limit: 50, total: 9 }),
+      () => get(SESSION, 'apps')
+    );
 
     const clipped = records.find((record) => record.event === 'read.clipped');
     assert.equal(clipped?.returned, 1);
     assert.equal(clipped?.total, 9);
   });
 
-  test('a page exactly as long as the limit is suspected', async () => {
-    const stub = stubFetch(() => ({ body: { data: [{ type: 'apps', id: '1' }, { type: 'apps', id: '2' }] } }));
-    const records = await withStderr(async (captured) => {
-      try {
-        await get(SESSION, 'apps', { limit: 2 });
-      } finally {
-        stub.restore();
-      }
-      return captured.records();
-    });
+  // The heuristic used to run whether or not iris had already answered the question, so a
+  // complete list that happened to be exactly as long as the limit was reported as one that
+  // might be short. `builds?limit=20` coming back as 20 of a total of 20 is that shape.
+  test('a page as long as the limit is not suspected when the total says it is whole', async () => {
+    const records = await warnings(
+      () => page(['1', '2'], { limit: 2, total: 2 }),
+      () => get(SESSION, 'apps', { limit: 2 })
+    );
 
-    assert.ok(records.some((record) => record.event === 'read.atLimit'));
+    assert.deepEqual(
+      records.map((record) => record.event).filter((event) => event === 'read.atLimit' || event === 'read.clipped'),
+      []
+    );
+  });
+
+  // A guard rather than an observation: no recorded response omits a total. It exists for a
+  // route that reports none, which would otherwise clip in silence.
+  test('a page exactly as long as the limit is suspected when no total is reported', async () => {
+    const records = await warnings(
+      () => page(['1', '2']),
+      () => get(SESSION, 'apps', { limit: 2 })
+    );
+
+    const atLimit = records.find((record) => record.event === 'read.atLimit');
+    assert.equal(atLimit?.limit, 2);
+  });
+
+  // The two calls whose page is most likely to clip — `listMessages` and `listThreads` —
+  // send no top-level limit and are held to iris's own default of 50. Reading the limit off
+  // the outgoing query meant the fallback could never fire for either of them; iris reports
+  // the page size it applied, so it can.
+  test('a page as long as the limit iris applied is suspected even when we asked for none', async () => {
+    const records = await warnings(
+      () => page(['1', '2'], { limit: 2 }),
+      () => get(SESSION, 'apps')
+    );
+
+    const atLimit = records.find((record) => record.event === 'read.atLimit');
+    assert.equal(atLimit?.returned, 2);
+    assert.equal(atLimit?.limit, 2);
   });
 
   // iris answers a query it doesn't support with a 403 and a JSON:API error document.

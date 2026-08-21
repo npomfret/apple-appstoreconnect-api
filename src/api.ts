@@ -136,8 +136,10 @@ function fieldsets<D extends Readonly<Record<string, readonly string[]>>>(
  *
  * The browser sends no top-level `limit` on this one and takes iris's default page, so
  * neither does this by default — but a thread that outlives that page comes back clipped
- * from the *end*, which is where the message you care about is. `read.atLimit` and
- * `read.clipped` in the log say when that may have happened; `limit` is how to see past it.
+ * from the *end*, which is where the message you care about is. That default is **50**:
+ * every recorded request that named no limit was answered with `meta.paging.limit: 50`, 77
+ * of them. `read.clipped` in the log is what says a thread has outgrown it, since iris
+ * reports the thread's real total beside the page; `limit` is how to see past it.
  */
 export function listMessages(
   session: Session,
@@ -228,7 +230,15 @@ export function listAppMetrics(
   });
 }
 
-/** Resolution Center threads on an app, optionally narrowed to one version. */
+/**
+ * Resolution Center threads on an app, optionally narrowed to one version.
+ *
+ * Like the messages call, the browser sends no top-level `limit` here and neither does
+ * this, so iris's default page of 50 applies. An app with more conversations than that
+ * comes back short and `read.clipped` says so; there is no `limit` option because the
+ * captured query has none, and one would be this client's invention rather than a
+ * recording.
+ */
 export function listThreads(
   session: Session,
   appId: string,
