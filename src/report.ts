@@ -645,10 +645,17 @@ export function formatReport(reports: SubmissionReport[]): string {
         }
       }
 
+      // The id leads the line because the name does not identify the file. Seven of the 21
+      // attachment groups in the recordings hold two files under one name, and in all seven
+      // the two also share a byte count — so a list of names alone prints two lines that are
+      // identical in every field, and a reader cannot tell two files from one listed twice.
+      // `collectAttachments` keys on the id for that reason; this is the same fact rendered.
+      // The size is left out for the same evidence: it never separates the pairs it would
+      // need to.
       if (report.attachments.length) {
         lines.push(`  attachments (${report.attachments.length})`);
         for (const attachment of report.attachments) {
-          lines.push(`    ${attachment.fileName}`);
+          lines.push(`    ${attachment.id.padEnd(36)}  ${attachment.fileName}`);
         }
       }
 

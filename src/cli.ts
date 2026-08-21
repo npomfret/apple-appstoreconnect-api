@@ -165,7 +165,17 @@ function describeDraft(threadId: string, draft: Denormalized): string[] {
     `  thread:      ${threadId}`,
     `  draft:       ${draft.id}`,
     `  message:     ${body.length} characters`,
-    ...attachments.map((file) => `  attachment:  ${String(file['fileName'] ?? file.id)}`),
+    // The id, then the name — not the name falling back to the id. Two attachments under
+    // one name is the ordinary case rather than the odd one (seven of the 21 attachment
+    // groups in the recordings, each pair sharing a byte count as well as a name), so a line
+    // showing only the name is a line that cannot be told from the one above it. It matters
+    // here more than in the digest: `delete-attachment` takes exactly this id, and this is
+    // the only place a draft's attachments are shown, so a name-only list left no way to
+    // name the one of the two you meant.
+    ...attachments.map((file) => {
+      const fileName = file['fileName'];
+      return `  attachment:  ${file.id}  ${typeof fileName === 'string' ? fileName : '(no file name)'}`;
+    }),
     '',
     rule,
     body.trimEnd(),

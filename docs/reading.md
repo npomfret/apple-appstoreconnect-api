@@ -26,7 +26,8 @@ thread     74533c00-b29e-3041-826a-1a221f522ecc
     4.1.0   Design: Copycats
     4.2.2   Design: Minimum Functionality
   attachments (2)
-    ...
+    3a1f5c00-...-...  Screen Recording.mp4
+    9c74e211-...-...  Screen Recording.mp4
   latest message from Apple:
     ...
 ```
@@ -65,7 +66,12 @@ Messages come first, newest first, then the rejections.
 Two entries can share a file name and that is not a repeat: every recorded thread has a
 message with two attachments of the same name, and a reviewer attaching `IMG_4821.png` in one
 round and a different `IMG_4821.png` in the next would look the same. The id is what tells
-them apart, and `--json` carries it.
+them apart, so the id is what each line leads with — seven of the 21 attachment groups in the
+recordings are such a pair, and in every one of them the two files share a byte count as well
+as a name, so neither the name nor the size separates them. The digest printed names alone
+until 2026-08-21, which showed those pairs as two identical lines. `asc draft` lists a draft's
+attachments the same way, and there it is the id you need: `delete-attachment` takes one, and
+that listing is the only place a draft's attachment ids are shown.
 
 The version each conversation is about comes off the thread's own `appStoreVersions`, which
 is a to-many relationship: a thread about two versions names both rather than having one

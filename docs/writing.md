@@ -34,7 +34,10 @@ thread with no draft is not asked at all, since creating one takes nothing.
 `delete-attachment` prints the id you passed and no more — nothing here reads a single
 attachment, so there is no file name to put beside it that didn't come off a draft you had
 already read. `asc draft <threadId>` is where those ids and their names are listed together,
-and is worth a look first.
+and is worth a look first — as is the draft printed by the confirmations above, which lists
+the same pair. Both showed the name alone until 2026-08-21, falling back to the id only when
+a file arrived without one, which left no way to name the one you meant when a draft carried
+two files under a single name.
 
 `send-reply` and `save-draft` both read the draft once more after the answer and refuse if
 it changed, because App Store Connect autosaves that box as you type and a browser open on

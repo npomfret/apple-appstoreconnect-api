@@ -236,6 +236,27 @@ describe('rendering the digest', () => {
       .find((line) => line.trim().startsWith('last msg'));
   }
 
+  // Seven of the 21 attachment groups recorded from the browser hold two files under one
+  // name, and in every one of those the two share a byte count as well — so the name is not
+  // what tells them apart, and nor would the size be. `collectAttachments` keys on the id;
+  // the rendering used to drop it, which put two identical lines under "attachments (2)".
+  test('two attachments under one name render as two distinguishable lines', () => {
+    const digest: SubmissionReport = {
+      ...report(undefined),
+      attachments: [
+        { id: 'a0000000-0000-0000-0000-00000000000a', fileName: 'crash.mp4', fileSize: 2048 },
+        { id: 'b0000000-0000-0000-0000-00000000000b', fileName: 'crash.mp4', fileSize: 2048 },
+      ],
+    };
+
+    const lines = formatReport([digest]).split('\n').slice(-2);
+
+    assert.deepEqual(lines, [
+      '    a0000000-0000-0000-0000-00000000000a  crash.mp4',
+      '    b0000000-0000-0000-0000-00000000000b  crash.mp4',
+    ]);
+  });
+
   test('a stamp with an offset keeps the offset', () => {
     const line = lastMessageLine('2026-04-25T07:34:29-07:00');
 
