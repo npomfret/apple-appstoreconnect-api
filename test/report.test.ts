@@ -17,8 +17,10 @@ import { Document, Resource } from '../src/jsonapi';
 import {
   fetchHistory,
   formatHistory,
+  formatPrivacy,
   formatReport,
   htmlToText,
+  PrivacyDeclaration,
   StateChange,
   SubmissionReport,
 } from '../src/report';
@@ -279,5 +281,51 @@ describe('rendering the digest', () => {
 
   test('no last message means no line about one', () => {
     assert.equal(lastMessageLine(undefined), undefined);
+  });
+});
+
+/**
+ * The privacy digest, where a suppressed row is a false claim rather than a missing line.
+ *
+ * The one sentence this rendering exists to say is "collects no data", and it used to be
+ * reached by an early return that stopped before printing anything — so a "collects
+ * nothing" row arriving beside a real collection printed the claim and hid what disproved
+ * it, while `--json` on the same read showed both. That is the `fetchPostActions` line
+ * again, one layer up: the answer is inverted, not merely short.
+ */
+describe('the privacy digest', () => {
+  function label(usages: PrivacyDeclaration['usages'], collectsNothing: boolean): string {
+    return formatPrivacy({ published: true, lastPublished: '2026-04-25', collectsNothing, usages });
+  }
+
+  const MARKER = { protection: 'DATA_NOT_COLLECTED' };
+  const EMAIL = { category: 'EMAIL_ADDRESS', purpose: 'ANALYTICS', protection: 'DATA_LINKED_TO_YOU' };
+
+  test('an app that declares nothing says so and stops', () => {
+    const text = label([MARKER], true);
+
+    assert.match(text, /Declares that it collects no data\./);
+    assert.doesNotMatch(text, /DATA_NOT_COLLECTED/);
+  });
+
+  test('a contradictory label prints every row rather than the claim that hides them', () => {
+    const text = label([MARKER, EMAIL], false);
+
+    assert.match(text, /Contradictory: the "collects nothing" row arrived alongside/);
+    assert.match(text, /EMAIL_ADDRESS/);
+    // The marker row is shown too — it is half of what contradicts the other half.
+    assert.match(text, /DATA_NOT_COLLECTED/);
+    assert.doesNotMatch(text, /Declares that it collects no data/);
+  });
+
+  test('an ordinary label says nothing about a contradiction', () => {
+    assert.doesNotMatch(label([EMAIL], false), /Contradictory/);
+  });
+
+  test('no rows at all is the unanswered questionnaire, not a contradiction', () => {
+    const text = label([], false);
+
+    assert.match(text, /has not answered the questionnaire/);
+    assert.doesNotMatch(text, /Contradictory/);
   });
 });

@@ -129,6 +129,27 @@ list is the tested one and an override is not.
   of which appears in no recording and is read off Apple's enum for the same field. Apple has
   no official state-change resource at all — zero schemas and zero paths in 4.4.1 — so the
   read itself is unambiguously a gap.
+
+  What `dataUsages` answers with was read on 2026-08-22 through an extractor emitting the
+  row count and, per row, only whether each of the four relationships is present and whether
+  the protection is the not-collected marker — no ids, no declared category, nothing else.
+  The one recorded declaration is **a single row, no category, no grouping, no purpose,
+  `DATA_NOT_COLLECTED`**: the marker is the whole answer, and it was never seen beside any
+  other row. So `collectsNothing` being read as "a marker is present *and* nothing else is
+  declared" — changed on 2026-08-22, from "a marker is present" — decides a shape Apple has
+  not been observed to send, and changes nothing about the shape it has. The two adjacent
+  reads in the same recording, `appDataUsageCategories` (35 rows) and `appDataUsagePurposes`
+  (6), are the questionnaire's vocabulary rather than an app's answers; nothing here calls
+  either.
+
+  **The digest stopped suppressing rows on 2026-08-22.** `formatPrivacy` returned after
+  printing "Declares that it collects no data", so had both ever arrived it would have
+  printed the claim and hidden the declared collections that disprove it, while `--json` on
+  the same read showed them — one command, two disagreeing answers. It now names the
+  contradiction and prints every row. This is deliberately *not* the `ci.ts` posture of
+  refusing: nothing is missing, both claims arrived, and the rows are the evidence for the
+  contradiction, so the only thing withheld is the one-line summary that would be false
+  either way round.
 - From one real send: `sendDraftMessage` — the `createFromDraftMessage` POST, its `201`,
   and the thread read back with the new message on it.
 - From one draft reply with an attachment: `createDraftMessage`, `updateDraftMessage`,

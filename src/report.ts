@@ -538,9 +538,24 @@ export interface PrivacyDeclaration {
   published: boolean;
   lastPublished?: string;
   lastPublishedBy?: string;
-  /** True when the app declares it collects nothing at all. */
+  /**
+   * True when the app declares it collects nothing at all, and that is the whole of what it
+   * declares. A "collects nothing" row arriving beside a declared collection leaves this
+   * `false`, since the app plainly collects something; the rows are all in `usages`.
+   */
   collectsNothing: boolean;
   usages: DataUsage[];
+}
+
+/**
+ * The row Apple uses to say "nothing at all", which is not the same as an empty list.
+ *
+ * Recorded once, from an app that declares nothing: one row with no category, no grouping,
+ * no purpose, and this protection. Shared by the field and the digest so that what
+ * `collectsNothing` is computed from and what the digest calls a contradiction cannot drift.
+ */
+function declaresNothingCollected(usage: DataUsage): boolean {
+  return usage.protection === 'DATA_NOT_COLLECTED' && !usage.category;
 }
 
 /** The relationship's id *is* the value on these — they are enum rows, not records. */
@@ -566,13 +581,19 @@ export async function fetchPrivacy(session: Session, appId: string): Promise<Pri
 
   const state = stateDoc.data?.attributes ?? {};
 
+  // Apple stores "nothing collected" as one row with no category and this protection, not
+  // as an empty list — an empty list would mean "not filled in yet". It is only an answer
+  // while it is the *whole* answer: a marker row sitting beside a declared collection is a
+  // label that contradicts itself, and saying `true` there would report an app that
+  // collects something as collecting nothing.
+  const marker = usages.some(declaresNothingCollected);
+  const declared = usages.filter((usage) => !declaresNothingCollected(usage));
+
   return {
     published: state['published'] === true,
     lastPublished: asString(state['lastPublished']),
     lastPublishedBy: asString(state['lastPublishedBy']),
-    // Apple stores "nothing collected" as one row with no category and this protection,
-    // not as an empty list — an empty list would mean "not filled in yet".
-    collectsNothing: usages.some((usage) => usage.protection === 'DATA_NOT_COLLECTED' && !usage.category),
+    collectsNothing: marker && declared.length === 0,
     usages,
   };
 }
@@ -593,6 +614,17 @@ export function formatPrivacy(privacy: PrivacyDeclaration): string {
   if (privacy.collectsNothing) {
     lines.push('Declares that it collects no data.');
     return lines.join('\n');
+  }
+
+  // The contradiction is shown rather than refused, unlike the missing fields in `ci.ts`.
+  // Nothing is absent here: Apple sent both claims, and the rows below are what make the
+  // contradiction visible, so failing the read would withhold the evidence for it. What is
+  // not available is the one-line summary above, which would be false either way round.
+  if (privacy.usages.some(declaresNothingCollected)) {
+    lines.push(
+      'Contradictory: the "collects nothing" row arrived alongside declared collections. ' +
+        'Both are below, that row included.'
+    );
   }
 
   lines.push('');

@@ -586,6 +586,27 @@ describe('the privacy label', () => {
     assert.equal(declared.collectsNothing, false, 'the marker row is the one with no category');
   });
 
+  /**
+   * The half that changed on 2026-08-22.
+   *
+   * "Collects nothing" is only an answer while it is the whole answer, and it used to be
+   * read as `some(marker)`. Every recorded declaration is the marker alone, so this is a
+   * decision about a shape Apple has not been seen to send rather than a fix to one it has.
+   */
+  test('the marker row beside a declared collection is not "collects nothing"', async () => {
+    const declared = await privacy(
+      [
+        usage('u-1', { dataProtection: 'DATA_NOT_COLLECTED' }),
+        usage('u-2', { category: 'EMAIL_ADDRESS', dataProtection: 'DATA_LINKED_TO_YOU' }),
+      ],
+      { published: true }
+    );
+
+    assert.equal(declared.collectsNothing, false);
+    // Neither row is dropped: they are what shows the label contradicts itself.
+    assert.equal(declared.usages.length, 2);
+  });
+
   test('an unpublished label says so rather than defaulting to live', async () => {
     assert.equal((await privacy([], {})).published, false);
   });

@@ -417,6 +417,14 @@ answered, which is a different problem, so the digest distinguishes them. Note t
 declarations, not measurements: they go stale silently when a dependency starts collecting
 something new.
 
+**"Collects no data" is only printed when it is the whole declaration.** If that row ever
+arrives beside a declared collection, the label contradicts itself, and the digest says so
+and prints every row it holds — including the "collects nothing" row — rather than picking
+one of the two claims. Until 2026-08-22 it printed the claim and stopped, which suppressed
+the rows that disproved it; `--json` on the same read showed them, so the two outputs
+disagreed. Every recorded declaration is that row on its own, so this decides what happens
+to a shape Apple has not been seen to send.
+
 ## Anything not mapped
 
 `asc get` sends a GET at a path you give it, for a query none of the commands above sends —

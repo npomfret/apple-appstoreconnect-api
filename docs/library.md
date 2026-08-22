@@ -98,6 +98,16 @@ in `unmodelled` and shown, since an unstable private field gaining a key is expe
 says nothing false. `name` and `type` are labels rather than answers, so a missing one is
 marked in place rather than refused.
 
+`fetchPrivacy`'s `collectsNothing` is a contract of the same kind, one layer up from a
+parse. It is true only when the "collects nothing" marker row is the *whole* declaration:
+that row arriving beside a declared collection leaves it `false`, because an app that
+declares a collection collects something whatever else it also says. `usages` always carries
+every row either way, marker included, so a caller can see the contradiction rather than
+being handed a summary of it. `formatPrivacy` names it and prints the rows; it does not
+throw, which is the difference between this and `ci.ts` — nothing is missing here, both
+claims arrived, and refusing the read would withhold the evidence for the contradiction
+while the only thing actually unavailable is the one-line summary.
+
 Two things about `fetchPlan` are contracts rather than incidental. Its minutes are
 **minutes**, established from the recording rather than from a field name; and its window is
 not `fetchUsage`'s window, so the two are never added together. `fetchPlan` throws if Apple
