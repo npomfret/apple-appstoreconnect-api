@@ -85,9 +85,13 @@ occupied box makes three GETs to the library call's one, and a save into an empt
 two; the library call asks nothing and checks nothing. Attachments go up in three steps —
 reserve, PUT the parts, then `{"uploaded":true}` — which is the same sequence App Store
 Connect uses for any asset, here against `resolutionCenterMessageAttachments`.
-`uploadPart` in `src/http.ts` sends those parts to
-`object-storage.apple.com` carrying no cookie, since the presigned query string is the
-whole of the authentication and the session must not follow the bytes to another host.
+`uploadPart` in `src/http.ts` sends those parts to a
+region under `object-storage.apple.com` — the recorded one is
+`northamerica-1.object-storage.apple.com` — carrying no cookie, since the presigned query
+string is the whole of the authentication and the session must not follow the bytes to
+another host. It refuses any other host, and anything not over https, before the file
+moves: where a part goes is iris's answer rather than this client's choice, and the part is
+the file itself.
 Neither the POST nor the PATCH response mentions attachments, so the draft is re-read at the
 end; that GET is what the command prints.
 

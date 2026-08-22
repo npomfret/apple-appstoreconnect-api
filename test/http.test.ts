@@ -7,7 +7,17 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { ApiError, BASE_URL, RequestOptions, SessionExpiredError, buildQuery, get, request } from '../src/http';
+import {
+  ApiError,
+  BASE_URL,
+  RequestOptions,
+  SessionExpiredError,
+  UploadOperation,
+  buildQuery,
+  get,
+  request,
+  uploadPart,
+} from '../src/http';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 describe('where a request goes', () => {
@@ -430,5 +440,89 @@ describe('answers that are not what they look like', () => {
     }
 
     assert.deepEqual(stub.calls, []);
+  });
+});
+
+/**
+ * The one call here that does not go through `apiUrl`, and until 2026-08-22 the one with no
+ * check on where it lands at all. What is asserted is the same thing `boundary.test.ts`
+ * asserts about a refused path: a refusal sends **nothing**. The bytes are the user's file.
+ *
+ * The host is the recorded one, region prefix included — `northamerica-1.` in front of the
+ * name the comments and the documentation used to give flat.
+ */
+describe('where an upload part goes', () => {
+  const RECORDED = 'https://northamerica-1.object-storage.apple.com/part/1?signature=not-a-real-one';
+
+  function part(url: string): UploadOperation {
+    return { method: 'PUT', url, offset: 0, length: 4, requestHeaders: [{ name: 'Content-Type', value: 'image/png' }] };
+  }
+
+  /** Attempts one part and reports what reached the network, whether it threw or not. */
+  async function attempt(url: string): Promise<{ urls: string[]; error?: string }> {
+    const stub = stubFetch();
+    try {
+      return await withStderr(async () => {
+        try {
+          await uploadPart(part(url), Buffer.from('abcd'));
+          return { urls: stub.calls.map((call) => call.url) };
+        } catch (error) {
+          return {
+            urls: stub.calls.map((call) => call.url),
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      });
+    } finally {
+      stub.restore();
+    }
+  }
+
+  test('the host Apple actually presigns is a region under the storage name, and is sent', async () => {
+    const attempted = await attempt(RECORDED);
+
+    assert.equal(attempted.error, undefined);
+    assert.deepEqual(attempted.urls, [RECORDED]);
+  });
+
+  test('the bare storage host is allowed too, since the suffix is what the rule is about', async () => {
+    const url = 'https://object-storage.apple.com/part/1?signature=not-a-real-one';
+
+    assert.deepEqual(await attempt(url), { urls: [url] });
+  });
+
+  test('a host that merely ends with the letters is not under the storage name', async () => {
+    // The bug a bare `endsWith` would have: this is a different host and reads like the same one.
+    const attempted = await attempt('https://not-object-storage.apple.com/part/1?signature=x');
+
+    assert.match(attempted.error ?? '', /not under object-storage\.apple\.com/);
+    assert.deepEqual(attempted.urls, []);
+  });
+
+  test('somewhere else entirely is refused before the file moves', async () => {
+    const attempted = await attempt('https://example.invalid/part/1?signature=x');
+
+    assert.match(attempted.error ?? '', /example\.invalid/);
+    assert.deepEqual(attempted.urls, []);
+  });
+
+  test('the storage host in clear is still refused: the query string is the authorisation', async () => {
+    const attempted = await attempt('http://northamerica-1.object-storage.apple.com/part/1?signature=x');
+
+    assert.match(attempted.error ?? '', /https only/);
+    assert.deepEqual(attempted.urls, []);
+  });
+
+  test('a url that is not a url names no host, so nothing is sent', async () => {
+    const attempted = await attempt('/part/1?signature=x');
+
+    assert.match(attempted.error ?? '', /does not parse as one/);
+    assert.deepEqual(attempted.urls, []);
+  });
+
+  test('a refusal never quotes the presigned url back', async () => {
+    const attempted = await attempt('https://example.invalid/part/1?signature=the-whole-authorisation');
+
+    assert.doesNotMatch(attempted.error ?? '', /signature|the-whole-authorisation|\/part\/1/);
   });
 });

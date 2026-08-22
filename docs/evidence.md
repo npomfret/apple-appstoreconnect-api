@@ -539,11 +539,33 @@ them is an option a caller picks, and each is what the recordings actually show.
 | `…/ci/api` — Xcode Cloud, read-only | `Accept: */*` and **no `Content-Type` at all** | all 34 `/ci/api` requests recorded from the browser, across the workflow and Usage pages, send exactly this. Sending `application/vnd.api+json` instead is answered **403** — established by hand on 2026-08-21, one header varied at a time on one URL, and the reason every `ci-*` command in this repository was refused for the whole of its life |
 
 `GET`, `POST`, `PATCH` and `DELETE`; anything else is refused. No call addressed to iris
-uses `PUT`, and the upload part that does goes to `object-storage.apple.com` through
-`uploadPart`, without the cookie and without `request`. On the Xcode Cloud base only `GET`
+uses `PUT`, and the upload part that does goes to a region under `object-storage.apple.com`
+through `uploadPart`, without the cookie and without `request` — and, since 2026-08-22,
+without being able to go anywhere else. On the Xcode Cloud base only `GET`
 is reachable at all: the base is declared read-only and the transport refuses the other
 three before a request is built, so the recorded `PUT` to `workflows-v15/{id}` — a
 full-document replace — cannot be sent by anything here.
+
+**Where an upload part may land, read from the recordings on 2026-08-22.** Every entry
+across the 16 recordings was counted by host, method and status, and every `uploadOperations`
+list in every response body by the *hostname*, scheme and method of the URLs on it — hosts
+and schemes only, never a path and never a query string, which is where Apple's signature
+is. Three hosts are contacted at all: `appstoreconnect.apple.com` (384 requests),
+`xp.apple.com` (28, Apple's own telemetry, nothing this client calls), and
+**`northamerica-1.object-storage.apple.com`** — one request, a `PUT`, `200`. That single
+upload is also the only `uploadOperations` entry there is: one operation, scheme `https:`,
+method `PUT`, and exactly one request header, `content-type`.
+
+The finding is the prefix. `uploadPart`'s comment, `architecture.md` and two passages here
+all named the destination `object-storage.apple.com` flat, and no recording contains that
+host — Apple presigns a **region** under it, so the name written down five times over is one
+Apple was never seen to use. Until that day it did not matter, because nothing checked:
+`uploadPart` is outside `request()` and therefore outside `apiUrl`, so the URL off the
+reservation response was fetched as given. `uploadTarget` now decides it on the parsed URL
+before the audit record — https, and a hostname that is `object-storage.apple.com` or ends
+in `.object-storage.apple.com`, spelled that way rather than as a bare `endsWith` that would
+also admit `not-object-storage.apple.com`. No cookie ever followed the bytes, which is what
+the absent check was leaning on; the user's file would have gone wherever iris said.
 
 **A 403 is read per base.** iris uses one to refuse a query it does not support as well as
 to reject a dead session, and tells them apart by whether the body is a JSON:API error
@@ -827,7 +849,7 @@ which is why they are not listed here.
   Apple validates server-side either way.
 
   What survives is the transport underneath: `uploadPart` in `src/http.ts` still sends
-  presigned parts to `object-storage.apple.com` with no cookie, because draft attachments
+  presigned parts to Apple's object storage with no cookie, because draft attachments
   reserve and upload through the same three steps and they are a retained gap.
 - Two Xcode Cloud sessions were recorded and mapped, and the slice went whole, taking the
   transport's second base with it. Apple's

@@ -218,6 +218,9 @@ words is the same question as sending them. Worth copying if you build your own.
   it's settled once from the normalised name; anything that isn't one of the four is refused
   rather than guessed at. `PUT` is not one of them — the only PUT here is an upload part,
   which goes to Apple's storage through `uploadPart()` and never through `request()`.
+  `uploadPart()` checks its own destination, since it is outside the one `request()`
+  applies: a part goes over https to a host under `object-storage.apple.com` or it is not
+  sent, and the refusal names the host without quoting the presigned URL.
 - **Two bases, each with its own media types**, declared as `Api` values in `src/http.ts`
   rather than assembled by a caller. `IRIS` is `https://appstoreconnect.apple.com/iris/v1`
   and sends `application/vnd.api+json` as both `Accept` and `Content-Type`; `CI` is

@@ -521,11 +521,78 @@ export interface UploadOperation {
 }
 
 /**
+ * The host an upload part is allowed to leave for, matched as a suffix.
+ *
+ * This is where the region prefix lives. Three documents and the comment below all named
+ * `object-storage.apple.com` flat, and the one upload recorded from the browser goes to
+ * **`northamerica-1.object-storage.apple.com`** — so a check spelled as the exact host
+ * everything here claimed would have refused the only upload there is evidence of, and the
+ * host this client has been describing for its whole life is one Apple was never seen to
+ * use. It is a suffix, and the prefix is where you are.
+ *
+ * Spelled `hostname === HOST || hostname.endsWith('.' + HOST)` rather than a bare
+ * `endsWith`, which would also admit `not-object-storage.apple.com`. That leaves it wide
+ * enough for a region nobody here has uploaded from and narrow enough to be a check.
+ */
+const UPLOAD_HOST = 'object-storage.apple.com';
+
+/**
+ * Where a part may be sent, decided on the parsed URL rather than on the text of it — the
+ * rule `apiUrl` applies to everything else in this file, arrived at for the same reason.
+ *
+ * A part is the user's own file. Where it goes is iris's answer rather than this client's
+ * choice, and until 2026-08-22 that answer was fetched as given: `uploadPart` is the one
+ * call here that does not go through `apiUrl`, so it was also the one with no check on
+ * where it lands. The property was written down five times over — in the comment below, in
+ * `architecture.md`, and in three passages of the documentation — and enforced nowhere. No
+ * cookie follows the bytes, which is what the absence of a check was implicitly leaning on;
+ * the file itself still would have gone.
+ *
+ * The URL is never quoted back, in an error or anywhere else: the signature that authorises
+ * the write is in its query string, and an error message reaches the audit trail. The
+ * hostname is the whole of what a refusal needs to name.
+ */
+function uploadTarget(url: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(
+      'An upload operation came back with a url that does not parse as one, so there is no ' +
+        'host to check and the part is not sent. It is not quoted here because it is presigned.'
+    );
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error(
+      `An upload operation named ${parsed.protocol}//${parsed.hostname}, and a part goes over ` +
+        'https only. The presigned query string is the whole of the authorisation to write, ' +
+        'so sending it in clear would publish the file and the means to replace it.'
+    );
+  }
+
+  if (parsed.hostname !== UPLOAD_HOST && !parsed.hostname.endsWith(`.${UPLOAD_HOST}`)) {
+    throw new Error(
+      `An upload operation named ${parsed.hostname}, which is not under ${UPLOAD_HOST}. The ` +
+        'part is the file itself, so an unrecognised destination is refused rather than ' +
+        'obeyed. If Apple has moved its storage, record a capture and widen this deliberately.'
+    );
+  }
+
+  return parsed;
+}
+
+/**
  * Sends one part to Apple's object storage. Deliberately does not go through `request`:
- * these leave for a different host (object-storage.apple.com) and the whole of the auth
- * is the presigned query string, so the session cookie must not follow the bytes there.
+ * these leave for a different host and the whole of the auth is the presigned query string,
+ * so the session cookie must not follow the bytes there.
+ *
+ * Not going through `request` meant not going through `apiUrl` either. `uploadTarget` is
+ * the check that closes that, and it runs before the audit record and before the body is
+ * sliced: a part addressed somewhere unexpected is refused, not reported on its way out.
  */
 export async function uploadPart(operation: UploadOperation, file: Buffer): Promise<void> {
+  const target = uploadTarget(operation.url);
   const headers: Record<string, string> = {};
   for (const header of operation.requestHeaders ?? []) headers[header.name] = header.value;
 
@@ -533,7 +600,7 @@ export async function uploadPart(operation: UploadOperation, file: Buffer): Prom
   const started = Date.now();
   // The presigned URL carries the signature in its query string, so only the host and
   // path go in the record — the rest is a credential.
-  const where = { method, host: safeHost(operation.url), offset: operation.offset, length: operation.length };
+  const where = { method, host: safeHost(target), offset: operation.offset, length: operation.length };
   audit('asset.part', 'start', where);
 
   let response: Response;
@@ -560,16 +627,17 @@ export async function uploadPart(operation: UploadOperation, file: Buffer): Prom
     // that query string is the whole of the authorisation to write to Apple's storage.
     // The body needs no separate treatment: a storage host will happily quote the request
     // it refused back at you, and `ApiError` scrubs what it is given.
-    throw new ApiError(response.status, safeHost(operation.url), await response.text());
+    throw new ApiError(response.status, safeHost(target), await response.text());
   }
 }
 
-/** Host and path of a URL, dropping the query string — which is where Apple's signatures live. */
-function safeHost(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.host}${parsed.pathname}`;
-  } catch {
-    return '<unparseable url>';
-  }
+/**
+ * Host and path of a URL, dropping the query string — which is where Apple's signatures live.
+ *
+ * Takes the parsed URL rather than the string, so there is no unparseable case to answer
+ * for: `uploadTarget` has already refused one, and the `'<unparseable url>'` this used to
+ * fall back to was a label on an audit record for a request that could never be sent.
+ */
+function safeHost(url: URL): string {
+  return `${url.host}${url.pathname}`;
 }

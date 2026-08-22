@@ -51,7 +51,12 @@ private service may change without notice, and write evidence varies by operatio
 - Whether a request mutates is decided once, from a normalised method, and passed to both
   the headers and the audit record. Do not re-derive it from a caller's string.
 - The only permitted exception is `uploadPart()`, which intentionally targets a presigned
-  object-storage URL without session authentication.
+  object-storage URL without session authentication. Being outside `request()` put it
+  outside `apiUrl` too, so until 2026-08-22 it was the one call here that fetched whatever
+  URL it was handed; `uploadTarget` now decides the destination on the parsed URL, before the
+  audit record and before any bytes are read. Storage is matched as a **suffix** of
+  `object-storage.apple.com`, because Apple presigns a region under it and the flat name
+  three documents gave is one no recording contains.
 - A response can reveal reviewer credentials or signed URLs. Redaction is part of every
   observability and rendering decision.
 
