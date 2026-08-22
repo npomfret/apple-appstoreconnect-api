@@ -22,11 +22,13 @@ import { Document, Resource } from '../src/jsonapi';
 import { buildReport, fetchPrivacy, formatReport, SubmissionReport } from '../src/report';
 import {
   fetchCapabilities,
+  fetchInfrastructureValidation,
   fetchPlan,
   fetchPostActions,
   fetchTeam,
   fetchUsage,
   formatCapabilities,
+  formatInfrastructureValidation,
   formatPostActions,
   formatTeam,
   formatUsage,
@@ -973,5 +975,99 @@ describe('what Xcode Cloud says this session may do', () => {
     assert.equal(digest.split('\n').length, 14);
     assert.match(digest, /^Xcode Cloud says this session may:/);
     assert.doesNotMatch(digest, /will|cannot be|refused/);
+  });
+});
+
+describe('what builds against pre-release macOS and Xcode', () => {
+  /**
+   * Every `opt_in` in the recording was `true` — the team, both products, the one workflow
+   * on each. The opted-out rows below are invented for the same reason the withheld
+   * capability above is: the case has to be tested and it has never been captured.
+   */
+  const TEAM = { opt_in: true };
+  const PRODUCTS = {
+    products: [
+      { product_id: 'p1', product_name: 'Storefront', opt_in: true },
+      { product_id: 'p2', product_name: 'Widget', opt_in: false },
+    ],
+  };
+  const WORKFLOWS = { workflows: [{ workflow_id: 'w1', workflow_name: 'Release', opt_in: false }] };
+
+  async function validation(
+    parts: { team?: unknown; products?: unknown; workflows?: unknown } = {},
+    productId?: string
+  ) {
+    const stub = stubFetch((call) =>
+      call.url.includes('/workflows')
+        ? { body: parts.workflows ?? WORKFLOWS }
+        : call.url.includes('/products')
+          ? { body: parts.products ?? PRODUCTS }
+          : { body: parts.team ?? TEAM }
+    );
+    try {
+      return await withStderr(() => fetchInfrastructureValidation(SESSION, productId));
+    } finally {
+      stub.restore();
+    }
+  }
+
+  test('the three levels come back as three separate answers, not one reconciled one', async () => {
+    const read = await validation({}, 'p1');
+
+    assert.equal(read.team, true);
+    assert.deepEqual(read.products, [
+      { id: 'p1', name: 'Storefront', optIn: true },
+      { id: 'p2', name: 'Widget', optIn: false },
+    ]);
+    // The team is opted in and both levels below disagree with it in different directions.
+    // Nothing collapses that into a single verdict.
+    assert.deepEqual(read.product, { id: 'p1', workflows: [{ id: 'w1', name: 'Release', optIn: false }] });
+  });
+
+  test('no product named means no third request and no workflows in the answer', async () => {
+    const read = await validation();
+
+    assert.equal(read.product, undefined);
+  });
+
+  test('a row Apple sent without an opt-in is refused rather than read as opted out', async () => {
+    await assert.rejects(
+      () => validation({ products: { products: [{ product_id: 'p1', product_name: 'Storefront' }] } }),
+      /did not say whether product "Storefront" builds against pre-release/
+    );
+  });
+
+  test('a row with no id is refused, because there is nothing to report it against', async () => {
+    await assert.rejects(
+      () => validation({ products: { products: [{ product_name: 'Storefront', opt_in: true }] } }),
+      /with no id/
+    );
+  });
+
+  test('a missing list is refused rather than read as no products at all', async () => {
+    await assert.rejects(() => validation({ products: {} }), /no "products" list/);
+  });
+
+  test('the digest names the switch and marks each row, without ids', async () => {
+    const digest = formatInfrastructureValidation(await validation({}, 'p1'));
+
+    assert.match(digest, /^team {7}opted in to pre-release macOS and Xcode$/m);
+    assert.match(digest, /yes {2}Storefront/);
+    assert.match(digest, / no {2}Widget/);
+    assert.match(digest, /workflows of Storefront:/);
+    assert.match(digest, / no {2}Release/);
+    assert.doesNotMatch(digest, /p1|p2|w1/);
+  });
+
+  test('the digest reports and does not predict', async () => {
+    const digest = formatInfrastructureValidation(await validation({}, 'p1'));
+
+    assert.doesNotMatch(digest, /will|because|overrides|takes precedence/);
+  });
+
+  test('a product named but not in the list is labelled by its id rather than guessed at', async () => {
+    const digest = formatInfrastructureValidation(await validation({}, 'gone'));
+
+    assert.match(digest, /workflows of gone:/);
   });
 });

@@ -290,6 +290,54 @@ error rather than a `no`, for the reason the PLA flags are: "Apple did not say" 
 not" are different answers. A fourteenth key would be Apple changing the response, and is
 neither carried nor absorbed silently.
 
+## Xcode Cloud: what builds against pre-release macOS and Xcode
+
+```sh
+asc infrastructure-validation
+asc infrastructure-validation <productId>
+asc infrastructure-validation --json
+```
+
+```
+team       opted in to pre-release macOS and Xcode
+
+products:
+  yes  Storefront
+   no  Widget
+
+workflows of Storefront:
+  yes  Release
+   no  Nightly
+```
+
+Apple keeps three switches, not one: the team, each product, and each workflow. Bare, this
+reads the first two — `GET ci/api/teams/{teamId}/infrastructure-validation` and
+`…/products`. Name a product and it also reads `…/products/{productId}/workflows`. The
+product id is explicit rather than looked up, because asking every listed product for its
+workflows is a fan-out, and the products list above is where the ids to ask about come from.
+
+**The three levels are reported, not reconciled.** Nothing observed says how they relate —
+whether the team switch overrides a product's, defaults it, or gates it — so a team line
+saying "opted in" above a product saying "no" is what Apple sent, and this does not decide
+which of them wins.
+
+Apple has no official equivalent: `infrastructure` does not occur in 4.4.1 at all, the seven
+occurrences of `optIn` are a subscription grace-period setting, `CiWorkflow`'s fifteen
+attributes and `CiProduct`'s three carry nothing like it, and there is no official team
+resource for the team-level switch to live on.
+
+**This reads the switches and cannot throw one.** The writes that set them were never
+recorded — `asc capabilities` reports a `configure infrastructure validation` permission, so
+they exist, but what they look like is unknown and is not guessed at. The standing is `asc
+team`'s: it will tell you the Program License Agreement is unsigned and will not sign it.
+
+Every `opt_in` in the recording was `yes`, so **a `no` has never been seen against real
+data**, and a row Apple sends without one is an error rather than a `no`. Only one page was
+ever reached — two products, one workflow each, against a page of 20 — and the response
+carries no cursor, so a full page is reported as possibly clipped rather than followed.
+
+## Ids, and the two halves of a metadata rejection
+
 `appId` defaults to the one scraped from the captured request's `Referer`. **`versionId` has
 no default** — `asc history <versionId>` requires it, because working one out means reading
 `apps/{id}/appStoreVersions`, which is Apple's own

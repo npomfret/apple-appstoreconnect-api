@@ -1,7 +1,8 @@
 /**
- * Xcode Cloud, for the four things on it Apple's official API cannot answer: whether a
+ * Xcode Cloud, for the five things on it Apple's official API cannot answer: whether a
  * build is handed to testers automatically, how much compute the team has left, where the
- * team stands with the Apple Developer Program, and what this session is permitted to do.
+ * team stands with the Apple Developer Program, what this session is permitted to do, and
+ * whether builds run against Apple's pre-release macOS and Xcode.
  *
  * Everything else about Xcode Cloud — products, workflows, repositories, build runs,
  * actions, issues, test results, and creating or updating a workflow — Apple serves
@@ -46,7 +47,18 @@
  * `NOTARIZATION` release destination and a `STAPLED_NOTARIZED_ARCHIVE` artifact type —
  * neither of them a permission to configure or trigger anything.
  *
- * All four are reads, and that is all this module does.
+ * The fifth is infrastructure validation — Apple's opt-in to building against pre-release
+ * macOS and Xcode, set for the team, for a product, or for a single workflow. Checked the
+ * same way on 2026-08-22: `infrastructure` occurs **zero** times in 4.4.1 and so does
+ * `optIn` in this sense — its seven occurrences are all `SubscriptionGracePeriod.optIn` and
+ * `sandboxOptIn`, a subscription setting. `CiWorkflow` has fifteen attributes, `name`
+ * through `lastModifiedDate`, and none of them is this; `CiProduct` has three; and there is
+ * no official team resource for the team-level switch to live on. The 213 occurrences of
+ * `preRelease` are `PrereleaseVersion` and its responses, which are TestFlight versions of
+ * an app rather than a build toolchain. So a workflow can be building against a beta Xcode
+ * and the official API will not say so.
+ *
+ * All five are reads, and that is all this module does.
  *
  * **It reads. There is no write here, and the base it uses cannot carry one** — see `CI` in
  * `http.ts`. The `PUT` that sets `post_actions` is recorded in both directions, so the gap
@@ -747,5 +759,155 @@ export function formatCapabilities(capabilities: SessionCapabilities): string {
     const [, phrase] = CAPABILITIES[field];
     lines.push(`  ${capabilities[field] ? 'yes' : ' no'}  ${phrase}`);
   }
+  return lines.join('\n');
+}
+
+/**
+ * The page size the browser asks the three infrastructure-validation reads for, beside an
+ * empty `continuation_offset`: `?continuation_offset=&limit=20`.
+ *
+ * Both are sent exactly as recorded. The empty offset is what the browser sends for a first
+ * page, and 20 is the size it asks for; nothing here raises it, because a larger page is a
+ * guess about what the route accepts rather than something observed. The recording never
+ * reached a second page — two products, one and one workflow — and the response carries no
+ * cursor to reach one with, so what `continuation_offset` takes on a later page is unknown
+ * and is not invented. A full page therefore means "there may be more and this client
+ * cannot see it", which the transport's short-page guard reports as `read.atLimit`.
+ */
+const VALIDATION_LIMIT = 20;
+
+/** Whether one thing is opted in to building against Apple's pre-release macOS and Xcode. */
+export interface ValidationOptIn {
+  /** Apple's `product_id` or `workflow_id`, whichever level this row came from. */
+  id: string;
+  /** Apple's `product_name` or `workflow_name` — the label on the switch, not a directory. */
+  name: string;
+  /** The switch itself, and the only reason this call is made. */
+  optIn: boolean;
+}
+
+/**
+ * Where the team, its products and one product's workflows stand on infrastructure
+ * validation.
+ *
+ * Three levels because Apple has three switches, not because three requests are better than
+ * one: the team-level opt-in is a single boolean, and it does not say which products or
+ * workflows below it are opted in.
+ */
+export interface InfrastructureValidation {
+  /** The team-level switch, from a response whose whole body is `{opt_in}`. */
+  team: boolean;
+  /** Every product Apple listed, each with its own switch. */
+  products: ValidationOptIn[];
+  /** The workflows of the one product named, where a caller named one. */
+  product?: { id: string; workflows: ValidationOptIn[] };
+}
+
+/**
+ * One row of an opt-in list, read strictly.
+ *
+ * Unlike the usage breakdown above, which drops a row it cannot read because a missing row
+ * is one line missing from a total, a row dropped here would be indistinguishable from a
+ * product that is not opted in — or from one that does not exist. The list *is* the answer,
+ * so a row that cannot be read is an error rather than a silence.
+ */
+function readOptIn(entry: unknown, kind: 'product' | 'workflow'): ValidationOptIn {
+  const source = record(entry);
+  const id = text(source?.[`${kind}_id`]);
+  const name = text(source?.[`${kind}_name`]);
+
+  if (!source || !id || !name) {
+    throw new Error(
+      `Xcode Cloud sent an infrastructure-validation ${kind} with no ${id ? 'name' : 'id'}, ` +
+        'so there is nothing to report it against. This is a private endpoint with no schema ' +
+        'behind it — re-capture an Xcode Cloud page.'
+    );
+  }
+
+  return { id, name, optIn: flag(source['opt_in'], `${kind} "${name}" builds against pre-release macOS and Xcode`) };
+}
+
+/** The rows of a one-key collection envelope, refused where the key is absent. */
+function rows(body: unknown, key: string): unknown[] {
+  const list = record(body)?.[key];
+  if (!Array.isArray(list)) {
+    throw new Error(`Xcode Cloud sent no "${key}" list for infrastructure validation, so there is nothing to report.`);
+  }
+  return list;
+}
+
+/**
+ * What builds against Apple's pre-release macOS and Xcode.
+ *
+ * Two requests, or three when a product is named. The product id is explicit for the same
+ * reason `listWorkflows` takes one — asking every product for its workflows would be a
+ * fan-out this client decides on a caller's behalf, and the products list above already
+ * says which ids there are to ask about.
+ *
+ * **This reads the switches; it cannot throw one.** The writes that set `opt_in` were never
+ * recorded, `asc capabilities` reports a `can_configure_infrastructure_validation` which
+ * implies they exist, and inventing one is the guess this repository refuses. That is the
+ * same standing as `asc team`, which reports an unsigned Program License Agreement it
+ * cannot sign.
+ */
+export async function fetchInfrastructureValidation(
+  session: Session,
+  productId?: string
+): Promise<InfrastructureValidation> {
+  const base = `teams/${teamOf(session)}/infrastructure-validation`;
+  const query = { continuation_offset: '', limit: VALIDATION_LIMIT };
+
+  const team = record(await request<unknown>(session, base, { api: CI }));
+  if (!team) {
+    throw new Error('Xcode Cloud returned no infrastructure-validation document, so there is nothing to report.');
+  }
+
+  const validation: InfrastructureValidation = {
+    team: flag(team['opt_in'], 'the team builds against pre-release macOS and Xcode'),
+    products: rows(await request<unknown>(session, `${base}/products`, { api: CI, query }), 'products').map((entry) =>
+      readOptIn(entry, 'product')
+    ),
+  };
+
+  if (productId !== undefined) {
+    const id = segment(productId, 'product id');
+    const body = await request<unknown>(session, `${base}/products/${id}/workflows`, { api: CI, query });
+    validation.product = { id, workflows: rows(body, 'workflows').map((entry) => readOptIn(entry, 'workflow')) };
+  }
+
+  return validation;
+}
+
+/**
+ * The digest.
+ *
+ * The team line is printed first and on its own because it is a different switch from the
+ * ones under it, not a summary of them. Nothing observed says how the three relate — whether
+ * the team switch overrides a product's, defaults it, or gates it — so this reports the
+ * levels as Apple sent them and does not reconcile them, for the same reason the plan window
+ * and the usage window are never summed.
+ *
+ * Every `opt_in` recorded was `true`: the team, both products, and the one workflow on each.
+ * So a `no` has never been seen rendered against real data, which is the caveat `formatTeam`
+ * and `formatCapabilities` both carry. What this prints is a report of what Apple said, and
+ * an opted-out row has never been observed to change what a build does.
+ */
+export function formatInfrastructureValidation(validation: InfrastructureValidation): string {
+  const mark = (entry: ValidationOptIn): string => `  ${entry.optIn ? 'yes' : ' no'}  ${entry.name}`;
+  const lines = [
+    `team       ${validation.team ? 'opted in to pre-release macOS and Xcode' : 'not opted in'}`,
+    '',
+    validation.products.length ? 'products:' : 'products:  (none listed)',
+    ...validation.products.map(mark),
+  ];
+
+  if (validation.product) {
+    const named = validation.products.find((entry) => entry.id === validation.product?.id);
+    lines.push('', `workflows of ${named ? named.name : validation.product.id}:`);
+    lines.push(
+      ...(validation.product.workflows.length ? validation.product.workflows.map(mark) : ['  (none listed)'])
+    );
+  }
+
   return lines.join('\n');
 }

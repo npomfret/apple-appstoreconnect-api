@@ -542,12 +542,13 @@ describe('the Xcode Cloud read', () => {
 /**
  * The compute reads. Apple has no usage resource of any kind — the only official `usage`
  * paths are TestFlight's, about testers rather than build minutes — so like the block
- * above this is a fence: a test here that needs editing to add a *fifth* Xcode Cloud call
+ * above this is a fence: a test here that needs editing to add a *sixth* Xcode Cloud call
  * means the slice grew past what it was allowed. It stood at three on 2026-08-22, when the
  * team read was added deliberately and this sentence was changed to say so; at four later
- * the same day, when the capabilities read was. Each step past this line is a decision
- * somebody took on its own evidence, which is why the count is written out rather than
- * incremented in passing.
+ * the same day, when the capabilities read was; at five later still, when the three
+ * infrastructure-validation reads were added as one capability. Each step past this line is
+ * a decision somebody took on its own evidence, which is why the count is written out rather
+ * than incremented in passing.
  */
 describe('the Xcode Cloud compute reads', () => {
   test('the plan is one GET, scoped by the session team, with no query at all', async () => {
@@ -654,5 +655,61 @@ describe('the Xcode Cloud capabilities read', () => {
 
     assert.equal(calls[0]!.headers['content-type'], undefined);
     assert.equal(calls[0]!.headers['accept'], '*/*');
+  });
+});
+
+/**
+ * Three requests for one capability, so the stub answers by path rather than by turn: a
+ * test that depended on the order they go out in would pass for the wrong reason if the
+ * order changed.
+ */
+describe('the Xcode Cloud infrastructure-validation reads', () => {
+  const CI_BASE = `https://appstoreconnect.apple.com/ci/api/teams/${SESSION.teamId}/infrastructure-validation`;
+  const PRODUCT = 'product-0000';
+
+  async function validation(productId?: string) {
+    const stub = stubFetch((call) => {
+      if (call.url.includes('/workflows')) {
+        return { body: { workflows: [{ workflow_id: 'w', workflow_name: 'Build', opt_in: true }] } };
+      }
+      if (call.url.includes('/products')) {
+        return { body: { products: [{ product_id: 'p', product_name: 'App', opt_in: true }] } };
+      }
+      return { body: { opt_in: true } };
+    });
+    try {
+      await withStderr(() => ci.fetchInfrastructureValidation(SESSION, productId));
+      return stub.calls;
+    } finally {
+      stub.restore();
+    }
+  }
+
+  test('the team switch is one GET with no query, and the products list carries the browser page', async () => {
+    const calls = await validation();
+
+    assert.equal(calls.length, 2);
+    assert.deepEqual(
+      calls.map((call) => call.method),
+      ['GET', 'GET']
+    );
+    assert.equal(calls[0]!.url, CI_BASE);
+    assert.equal(calls[1]!.url, `${CI_BASE}/products?continuation_offset=&limit=20`);
+  });
+
+  test('naming a product adds its workflows and nothing else', async () => {
+    const calls = await validation(PRODUCT);
+
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2]!.url, `${CI_BASE}/products/${PRODUCT}/workflows?continuation_offset=&limit=20`);
+  });
+
+  test('they do not claim to be JSON:API', async () => {
+    const calls = await validation(PRODUCT);
+
+    for (const call of calls) {
+      assert.equal(call.headers['content-type'], undefined);
+      assert.equal(call.headers['accept'], '*/*');
+    }
   });
 });

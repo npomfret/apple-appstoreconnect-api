@@ -57,6 +57,13 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
                               official API serves roles on /v1/users, not resolved
                               permissions, and none of these thirteen has an official schema
 
+  asc infrastructure-validation [productId]
+                              Whether builds run against Apple's pre-release macOS and
+                              Xcode: the team switch, then each product's, and each
+                              workflow's for the one product named. Read-only — the writes
+                              that set it were never recorded, so this reports the switches
+                              and cannot throw one. No official schema for any of it
+
   asc get <path> [k=v ...]    Raw GET, for a query the commands above don't send. Confined
                               to the private families this client is for; an officially
                               served path is refused rather than duplicated
@@ -78,8 +85,8 @@ This reaches Apple and cannot be undone. It shows what it is about to send and a
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
   --json                      For "report", "history", "privacy", "post-actions",
-                              "usage", "team" and "capabilities": emit JSON instead of
-                              the digest
+                              "usage", "team", "capabilities" and
+                              "infrastructure-validation": emit JSON instead of the digest
   --yes                       Skip the confirmation prompt on the commands that ask
   --attach <file>             For "save-draft": a file to attach. Repeat for several
 
@@ -488,7 +495,8 @@ async function main(argv: string[]): Promise<number> {
     /**
      * Team-scoped rather than app-scoped, which is a boundary this client did not cross
      * before: compute minutes describe the account, not one app. That was the open question
-     * in `tasks/xcode-cloud-usage-gap.md` and it was decided deliberately, not in passing.
+     * in `tasks/xcode-cloud-usage-gap.md` — since deleted, its findings folded into
+     * `docs/evidence.md` — and it was decided deliberately, not in passing.
      *
      * The day count is optional because the two reads answer different questions and cost a
      * request each. Bare, this is "how much is left", which is the whole point of the
@@ -538,6 +546,28 @@ async function main(argv: string[]): Promise<number> {
       const session = loadSession();
       const capabilities = await ci.fetchCapabilities(session);
       console.log(json ? JSON.stringify(capabilities, null, 2) : ci.formatCapabilities(capabilities));
+      return 0;
+    }
+
+    /**
+     * Two requests, or three when a product is named, because Apple keeps three switches
+     * rather than one and the team-level boolean does not say what is under it. The product
+     * id stays explicit for the reason `post-actions` takes one: asking every listed product
+     * for its workflows is a fan-out, and a command should not decide to make one on a
+     * caller's behalf.
+     *
+     * Read-only in a stronger sense than the other Xcode Cloud commands. The `/ci/api` base
+     * refuses any method but GET, and here the write is not merely unreachable but
+     * unrecorded — nothing in any capture shows how `opt_in` is set. So this says where the
+     * switches stand, in the way `asc team` says the Program License Agreement is unsigned
+     * without offering to sign it.
+     */
+    case 'infrastructure-validation': {
+      const session = loadSession();
+      const validation = await ci.fetchInfrastructureValidation(session, rest[0]);
+      console.log(
+        json ? JSON.stringify(validation, null, 2) : ci.formatInfrastructureValidation(validation)
+      );
       return 0;
     }
 

@@ -104,6 +104,19 @@ export const IRIS: Api = {
  * `content-type: text/html` with a zero-length body while `asc status` on the same capture
  * said the session was healthy with hours left. So a CI 403 is reported as the refusal it
  * is, with the cause that actually produced one.
+ *
+ * **A collection is a one-key envelope, and the key is not always `items`.** Across the
+ * recordings Xcode Cloud spells it three ways — `items` on ten routes, and `products` and
+ * `workflows` on the infrastructure-validation ones — so matching `items` by name meant the
+ * short-page guard could not fire for two of the three, and a products list clipped at the
+ * page size would have looked like the whole list. What separates a page from the compound
+ * documents on this base is the count of top-level keys rather than their spelling: a page
+ * has exactly one and it holds an array, where `usage/days`, `repos-v3` and
+ * `configuration-options-v10` each carry several and are not paged at all. The three routes
+ * that answer with a bare top-level array — `notices-v2`, `scm-providers-v2`,
+ * `product-environment-variables` — are deliberately not counted as pages: none is a call
+ * this client makes, and none is asked for with a limit, so there is nothing for the guard
+ * to compare against.
  */
 export const CI: Api = {
   name: 'Xcode Cloud',
@@ -115,9 +128,11 @@ export const CI: Api = {
     'A 403 here is a refusal rather than a dead session — check "asc status" before ' +
     'assuming otherwise. Xcode Cloud refuses any request that claims to be JSON:API.',
   pageOf: (document) => {
-    if (typeof document !== 'object' || document === null) return undefined;
-    const { items } = document as { items?: unknown };
-    return Array.isArray(items) ? { returned: items.length } : undefined;
+    if (typeof document !== 'object' || document === null || Array.isArray(document)) return undefined;
+    const entries = Object.entries(document);
+    if (entries.length !== 1) return undefined;
+    const value = entries[0][1];
+    return Array.isArray(value) ? { returned: value.length } : undefined;
   },
 };
 

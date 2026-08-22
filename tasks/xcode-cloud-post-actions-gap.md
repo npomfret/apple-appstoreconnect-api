@@ -61,5 +61,8 @@ invented from the shape.
 
 ## The other `/ci/api` surface
 
-One read from the Usage page recording is still unbuilt and unauthorised — infrastructure
-validation, in [xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md).
+Nothing is left open on it. The infrastructure-validation reads shipped as
+`asc infrastructure-validation` on 2026-08-22, and the calls from those recordings that were
+weighed and left out — `products-v4`, `scm-providers-v2`, `integrations/slack`, the empty
+`asc-extension-products`, and the `olympus` account plumbing — are recorded under "Seen but
+deliberately not mapped" in [evidence.md](../docs/evidence.md) rather than kept as tasks.

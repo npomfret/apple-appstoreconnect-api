@@ -302,7 +302,7 @@ hardcoding it here would be a guess wearing the clothes of a lookup.
 The 93 occurrences of `capabilit` are all `BundleIdCapability` — App ID entitlements, an
 unrelated sense of the word. The four of `notariz` are the `NOTARIZATION` release
 destination and a `STAPLED_NOTARIZED_ARCHIVE` artifact type, neither a permission.
-`tasks/xcode-cloud-usage-gap.md` recorded `notariz` as zero on 2026-08-21; the count is four
+The now-deleted `tasks/xcode-cloud-usage-gap.md` recorded `notariz` as zero on 2026-08-21; the count is four
 and the conclusion is unchanged, and it is corrected here rather than left to be
 re-discovered.
 
@@ -327,6 +327,64 @@ What the recordings settle, and what they do not:
   the `CI` base is read-only. What the command answers is what the *account* may do, wherever
   it is done from — not what `asc` will let anybody do.
 
+
+### The Xcode Cloud infrastructure-validation reads
+
+`fetchInfrastructureValidation` — the `infrastructure-validation` command — is three GETs,
+recorded from the browser's Xcode Cloud **Usage** page on 2026-08-21 and read on 2026-08-22
+through an extractor that emitted methods, redacted paths, query keys, statuses, response key
+structure with value types, and — for `opt_in` alone, which is the subject of the call —
+counts of `true` against `false`:
+
+| call | query | answer |
+| --- | --- | --- |
+| `GET ci/api/teams/{teamId}/infrastructure-validation` | none | `{opt_in}` |
+| `…/infrastructure-validation/products` | `continuation_offset=&limit=20` | `{products[]}` of `{product_id, product_name, opt_in}` |
+| `…/infrastructure-validation/products/{productId}/workflows` | `continuation_offset=&limit=20` | `{workflows[]}` of `{workflow_id, workflow_name, opt_in}` |
+
+All `200 application/json`. The workflows call appears twice, once per product; the other two
+once each.
+
+**No official equivalent, and the near-miss is not one.** Checked against **4.4.1** on
+2026-08-22: `infrastructure` occurs **zero** times. `optIn` occurs seven times and every one
+is `SubscriptionGracePeriod.optIn` or `.sandboxOptIn`, which is a subscription setting.
+`CiWorkflow` has fifteen attributes — `name`, `description`, the six start conditions and
+their manual counterparts, `actions`, `isEnabled`, `isLockedForEditing`, `clean`,
+`containerFilePath`, `lastModifiedDate` — and `CiProduct` has three: `name`, `createdDate`,
+`productType`. Neither carries this, and there is no official team resource at all for the
+team-level switch to hang off. The 213 occurrences of `preRelease` are `PrereleaseVersion`
+and its response schemas, which are TestFlight versions of an app rather than a build
+toolchain.
+
+What the recording settles, and what it does not:
+
+- **The read is the whole capability.** The writes that set `opt_in` were never recorded.
+  `asc capabilities` reports a `can_configure_infrastructure_validation`, so they exist; what
+  they are is unknown and is not invented. This reports the switches and cannot throw one,
+  which is the standing `asc team` has with an unsigned Program License Agreement.
+- **Every `opt_in` recorded was `true`** — the team, both products, and the one workflow on
+  each. So an opted-out row has never been seen rendered against real data, the same caveat
+  the team and capability digests carry.
+- **A row is read strictly.** A product or workflow whose `opt_in` is missing or is not a
+  boolean is an error, not a row dropped and not an opt-out. This is the opposite of
+  `fetchUsage`, which drops a row it cannot read: there a missing row is one line missing
+  from a total, here it would be indistinguishable from a product that is not opted in.
+- **Only one page was ever reached.** Two products, one workflow each, against a limit of 20.
+  The response carries no cursor, so what a later `continuation_offset` would take is
+  unobserved and no second page is requested. A full page is reported as `read.atLimit` and
+  left at that.
+- **The page size and the empty offset are the browser's own.** Nothing raises the limit;
+  a larger page is a guess about what the route accepts.
+
+**This is why `CI.pageOf` stopped matching the key `items`.** Xcode Cloud spells a collection
+three ways across the recordings — `items` on ten routes, `products` and `workflows` on these
+— so the short-page guard fired for one spelling in three, and a clipped products list would
+have looked like a whole one. What separates a page from a compound document on this base is
+that a page has exactly one top-level key holding an array, where `usage/days`, `repos-v3`,
+`test-destinations-v3` and `configuration-options-v10` carry several and are not paged. The
+three routes answering with a bare top-level array — `notices-v2`, `scm-providers-v2`,
+`product-environment-variables` — are deliberately not counted: this client calls none of
+them and asks none of them for a limit.
 
 ## Calls that are probe-only, and so likelier to shift
 
@@ -740,6 +798,29 @@ recorded, none ever mapped: they exist to fill in a form this client does not re
 scope twice over now, since Apple exposes Xcode Cloud officially and `asc get` speaks
 `iris/v1` only — `/ci/api` is not a base this client has, and `ciWorkflows` is not one of
 the private families the hatch is confined to.
+
+Four more from the same recordings were weighed against the boundary one at a time and left
+out, and they are recorded here so the comparison does not have to be made twice:
+
+- **`GET …/products-v4?limit=100`** duplicates official `ciProducts`. `id`, `name`,
+  `product_type`, `created_at` and `app_id` are `CiProduct.name`, `.productType`,
+  `.createdDate` and the `app` relationship. Only `modified_at` has no official field, and a
+  last-modified date is not on its own worth a private call.
+- **`GET …/scm-providers-v2`** is mostly official too: `provider`,
+  `provider_display_name` and `is_on_premise` are exactly `ScmProviderType.kind`,
+  `.displayName` and `.isOnPremise`, and `host` is `ScmProvider.url`. What is private is the
+  *connection* state — `is_registered`, `is_user_connected`, `supports_registration_flow`,
+  `register_type`, `install_type`, `connect_type`, `username`, `oauth_callback_base_uri` —
+  which is OAuth plumbing for rendering a Connect button, not a capability a CLI needs.
+- **`GET …/integrations/slack`** answers `{is_user_connected}`. No official equivalent, and
+  one boolean about a chat integration is thin.
+- **`asc-extension-products` and `/ci/status/system-status`** both returned empty in the
+  recording — `{"items":[]}` and `{}` — so nothing can be claimed about either.
+
+The `olympus` calls in the same recordings — `actors`, `people`, `sites`, `contractMessages`,
+`providerNews` and a `providerSwitchRequests` POST — are session and account plumbing on a
+third base this client does not have. `people` and `actors` carry personal data, which is the
+line `user-capabilities` was checked against and found not to cross.
 
 Recordings of the Monetization, Growth & Marketing and Trust & Safety tabs turn up about 40
 further endpoints. Pricing is the substantial one — `appPriceSchedules/{appId}/automaticPrices`

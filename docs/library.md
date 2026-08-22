@@ -2,8 +2,9 @@
 
 What this library exports is the gap surface and nothing else: Resolution Center threads,
 messages, rejections, drafts and attachments; unread review-message counts; version
-state-change history; App Privacy; and four Xcode Cloud reads — `post_actions`, compute
-usage, the team's Developer Program standing, and what the session is permitted to do.
+state-change history; App Privacy; and five Xcode Cloud reads — `post_actions`, compute
+usage, the team's Developer Program standing, what the session is permitted to do, and what
+builds against Apple's pre-release macOS and Xcode.
 Everything else App Store Connect can do, Apple serves through its
 [official API](https://developer.apple.com/documentation/appstoreconnectapi/) — with an API
 key rather than the browser cookie this client reads, and there is no export here that
@@ -79,8 +80,10 @@ productId)` answers whether an Xcode Cloud workflow hands its builds to TestFlig
 automatically; `fetchPlan(session)` and `fetchUsage(session, days)` answer how much build
 compute the team has left and where it went; and `fetchTeam(session)` answers where the team
 stands with the Apple Developer Program, including whether the Program License Agreement is
-waiting for a signature; and `fetchCapabilities(session)` answers what Xcode Cloud says this
-session is permitted to do. None of the four has a schema in Apple's official specification.
+waiting for a signature; `fetchCapabilities(session)` answers what Xcode Cloud says this
+session is permitted to do; and `fetchInfrastructureValidation(session, productId?)` answers
+what is opted in to building against Apple's pre-release macOS and Xcode. None of the five
+has a schema in Apple's official specification.
 They return plain objects rather than JSON:API — `listWorkflows` is the untouched response
 if you want it — and `denormalize` has nothing to do with any of them.
 
@@ -105,6 +108,14 @@ derived from one table of wire keys, so the field set and what the response is r
 cannot drift apart, and a fourteenth key is neither carried nor absorbed. `SessionCapabilities`
 is a fact about the *account*, not about this library: every one of the thirteen is a write,
 and the `/ci/api` base is read-only, so nothing here acts on any of them.
+
+`fetchInfrastructureValidation` is two requests, or three when a `productId` is given, and it
+parses a row the strict way rather than the lenient one: a product or workflow whose `opt_in`
+is missing or is not a boolean is an error, because a dropped row would be indistinguishable
+from a product that is not opted in. It never follows a second page — the response carries no
+cursor, so a full page is logged as possibly clipped and left there — and the three levels
+come back as three separate answers, since nothing observed says how a team switch relates to
+a product's. There is no counterpart that *sets* any of it: the writes were never recorded.
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
 `sendDraftReply()` called from code go straight to Apple, and neither can be undone.

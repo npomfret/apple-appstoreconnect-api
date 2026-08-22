@@ -17,6 +17,7 @@ import { describe, test } from 'node:test';
 import { ApiError, CI, request, SessionExpiredError } from '../src/http';
 import {
   fetchCapabilities,
+  fetchInfrastructureValidation,
   fetchPlan,
   fetchPostActions,
   fetchTeam,
@@ -288,6 +289,7 @@ describe('the compute window', () => {
       await assert.rejects(() => fetchUsage(without, 7), /no team id/);
       await assert.rejects(() => fetchTeam(without), /no team id/);
       await assert.rejects(() => fetchCapabilities(without), /no team id/);
+      await assert.rejects(() => fetchInfrastructureValidation(without), /no team id/);
     } finally {
       stub.restore();
     }
@@ -381,6 +383,73 @@ describe('the compute window', () => {
 
       assert.equal(window.days.length, 1, 'the day with no date is not a day');
       assert.equal(window.products.length, 0, 'and a product row with no id names no product');
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+/**
+ * The infrastructure-validation reads borrow the transport's short-page guard, and that is
+ * the reason `CI.pageOf` stopped matching the key `items` by name: two of the three
+ * collection spellings on this base are not `items`, so a clipped products list used to
+ * look like the whole list.
+ */
+describe('an infrastructure-validation list that may be short', () => {
+  const validation = (body: unknown) =>
+    stubFetch((call) => (call.url.includes('/products') ? { body } : { body: { opt_in: true } }));
+
+  async function events(body: unknown): Promise<string[]> {
+    const stub = validation(body);
+    return withStderr(async (captured) => {
+      try {
+        await fetchInfrastructureValidation(SESSION);
+      } finally {
+        stub.restore();
+      }
+      return captured.records().map((record) => String(record['event']));
+    });
+  }
+
+  test('a products page as long as the limit is suspected, exactly as an items page is', async () => {
+    const products = Array.from({ length: 20 }, (_unused, index) => ({
+      product_id: `p${index}`,
+      product_name: `Product ${index}`,
+      opt_in: true,
+    }));
+
+    assert.ok((await events({ products })).includes('read.atLimit'), 'a full products page should warn');
+  });
+
+  test('a short products page is not', async () => {
+    const products = [{ product_id: 'p', product_name: 'Product', opt_in: true }];
+
+    assert.ok(!(await events({ products })).includes('read.atLimit'));
+  });
+
+  test('the team switch is not a collection and is never suspected of being a short one', async () => {
+    const stub = stubFetch(() => ({ body: { opt_in: true, products: [] } }));
+    const records = await withStderr(async (captured) => {
+      try {
+        await fetchInfrastructureValidation(SESSION);
+      } finally {
+        stub.restore();
+      }
+      return captured.records().map((record) => String(record['event']));
+    });
+
+    // Two top-level keys, so not a page envelope — the shape `usage/days` and `repos-v3`
+    // arrive in, and the reason the guard counts keys rather than matching one by name.
+    assert.ok(!records.includes('read.atLimit'));
+  });
+
+  test('a product id that is not one segment is refused before a request is built', async () => {
+    const stub = stubFetch(() => ({ body: { opt_in: true, products: [] } }));
+    try {
+      await assert.rejects(
+        () => withStderr(() => fetchInfrastructureValidation(SESSION, '../teams')),
+        /product id/
+      );
     } finally {
       stub.restore();
     }
