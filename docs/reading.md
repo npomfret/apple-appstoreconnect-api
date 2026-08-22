@@ -73,6 +73,14 @@ until 2026-08-21, which showed those pairs as two identical lines. `asc draft` l
 attachments the same way, and there it is the id you need: `delete-attachment` takes one, and
 that listing is the only place a draft's attachment ids are shown.
 
+A file iris sends without a name is listed as `(no file name)` rather than left out, which is
+what the draft listing has always done and what the digest started doing on 2026-08-22. The
+count in the heading is the reason: a dropped file makes `attachments (2)` wrong about a
+thread that has three, and the id and download URL a nameless file arrives with are the parts
+you act on anyway. A file sent without an *id* is the one shape that stops the report instead,
+since nothing identifies it, nothing can fetch it, and dropping it would shorten that count
+the same way. Every attachment in the recordings has both.
+
 The version each conversation is about comes off the thread's own `appStoreVersions`, which
 is a to-many relationship: a thread about two versions names both rather than having one
 picked for it, and `--json` carries the full list as `versions` alongside the singular

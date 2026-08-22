@@ -21,7 +21,16 @@ export interface Guideline {
 export interface Attachment {
   /** iris's own id for the file, which is what makes two of them different. */
   id: string;
-  fileName: string;
+  /**
+   * What iris called the file, where it called it anything.
+   *
+   * Optional because a name is a label rather than an identity: a file with none is still
+   * on the thread, still countable, and still downloadable by the id above. It was
+   * required until 2026-08-22, and the effect of requiring it was that a nameless file was
+   * dropped — off a list whose own heading is a count. Every attachment recorded from the
+   * browser has a name.
+   */
+  fileName?: string;
   fileSize?: number;
   downloadUrl?: string;
 }
@@ -242,6 +251,18 @@ const ATTACHMENT_RELATIONSHIPS = ['resolutionCenterMessageAttachments', 'rejecti
  * files and the rejection files are disjoint in the two recordings that carry both. The map
  * is what stops a record sideloaded twice from being listed twice, which is the only
  * duplicate there is evidence for.
+ *
+ * **A file with no name is still a file, and an id is the one thing that cannot be missing.**
+ * Until 2026-08-22 a missing `fileName` was skipped in the same expression as the duplicate
+ * above, so a nameless attachment left the digest with no trace at all — while `asc draft`
+ * listed the same resource as `(no file name)` and `draftState` counted it into the change
+ * fingerprint. One resource type, three readers, and only this one made it disappear; the
+ * heading it disappeared from is a count, which is the failure the paragraph above is about
+ * arrived at by another route. A missing `id` is the opposite case and is refused rather
+ * than listed: there is nothing to deduplicate on, nothing to fetch the file with, and the
+ * line would name no file. All 34 attachment rows across the recordings carry an id, a name
+ * and a size — one, on a draft, carries no `downloadUrl` — so both of these decide shapes
+ * Apple has not been seen to send rather than fixing ones it has.
  */
 function collectAttachments(sources: Denormalized[]): Attachment[] {
   const byId = new Map<string, Attachment>();
@@ -252,11 +273,18 @@ function collectAttachments(sources: Denormalized[]): Attachment[] {
       if (!Array.isArray(attachments)) continue;
       for (const attachment of attachments as Array<Record<string, unknown>>) {
         const id = asString(attachment['id']);
-        const fileName = asString(attachment['fileName']);
-        if (!id || !fileName || byId.has(id)) continue;
+        if (!id) {
+          throw new Error(
+            'iris sideloaded an attachment with no id, so there is nothing to tell it from ' +
+              'another file by and nothing "delete-attachment" could be given. Refusing the ' +
+              'report rather than printing a line that identifies no file, or dropping it and ' +
+              'printing a count that is short by one.'
+          );
+        }
+        if (byId.has(id)) continue;
         byId.set(id, {
           id,
-          fileName,
+          fileName: asString(attachment['fileName']),
           fileSize: typeof attachment['fileSize'] === 'number' ? attachment['fileSize'] : undefined,
           downloadUrl: asString(attachment['downloadUrl']),
         });
@@ -687,7 +715,7 @@ export function formatReport(reports: SubmissionReport[]): string {
       if (report.attachments.length) {
         lines.push(`  attachments (${report.attachments.length})`);
         for (const attachment of report.attachments) {
-          lines.push(`    ${attachment.id.padEnd(36)}  ${attachment.fileName}`);
+          lines.push(`    ${attachment.id.padEnd(36)}  ${attachment.fileName ?? '(no file name)'}`);
         }
       }
 

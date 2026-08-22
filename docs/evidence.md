@@ -83,6 +83,19 @@ list is the tested one and an override is not.
   URLs. Whether those two are the same bytes twice or two files that happen to match is not
   something a recording can settle, and the digest does not have to guess to list them.
 
+  **The digest stopped dropping a nameless file on 2026-08-22.** Re-read the same day through
+  an extractor emitting the redacted path, the row count and, per row, whether `id`,
+  `fileName`, `fileSize` and `downloadUrl` were present — presence only, never a value: all
+  **34** rows carry an id, a name and a size, and the one without a `downloadUrl` is the file
+  on the *draft*, the one uploaded rather than sent. `collectAttachments` skipped a row with
+  no `fileName` in the same expression as a duplicate id, so such a file was neither listed
+  nor counted, while `asc draft` printed the same resource type as `(no file name)` and
+  `draftState` folded it into the change fingerprint — one resource, three readers, and only
+  the digest made it vanish from a list headed by a count. It is listed now, with the same
+  wording the draft listing uses; a row with no *id* is refused instead, since there is
+  nothing to deduplicate on and nothing `delete-attachment` could be given. Both decide
+  shapes no recording contains.
+
   Apple hangs files off two records, not one. `listRejections` sends
   `include=rejectionAttachments` with `limit[rejectionAttachments]=1000`, both the browser's
   own, and in the two recordings that send it a rejection comes back carrying **two files

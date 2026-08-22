@@ -259,6 +259,27 @@ describe('rendering the digest', () => {
     ]);
   });
 
+  // `asc draft` has printed `(no file name)` since it was written, so a nameless attachment
+  // was visible in one command and absent from another over the same resource type. The
+  // digest lists it now, in the same words, and the id is what makes the line usable anyway.
+  test('a file with no name still gets a line, under the same wording as the draft listing', () => {
+    const digest: SubmissionReport = {
+      ...report(undefined),
+      attachments: [
+        { id: 'a0000000-0000-0000-0000-00000000000a', fileSize: 4096 },
+        { id: 'b0000000-0000-0000-0000-00000000000b', fileName: 'crash.mp4', fileSize: 2048 },
+      ],
+    };
+
+    const lines = formatReport([digest]).split('\n').slice(-3);
+
+    assert.deepEqual(lines, [
+      '  attachments (2)',
+      '    a0000000-0000-0000-0000-00000000000a  (no file name)',
+      '    b0000000-0000-0000-0000-00000000000b  crash.mp4',
+    ]);
+  });
+
   test('a stamp with an offset keeps the offset', () => {
     const line = lastMessageLine('2026-04-25T07:34:29-07:00');
 

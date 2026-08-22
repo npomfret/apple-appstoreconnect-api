@@ -319,6 +319,56 @@ describe('what Apple attached', () => {
     );
   });
 
+  /**
+   * The half that changed on 2026-08-22.
+   *
+   * A missing `fileName` used to be skipped in the same expression as a duplicate id, so a
+   * nameless file was not listed and not counted, while `asc draft` showed the same
+   * resource as `(no file name)`. Every recorded attachment has a name, so this is a
+   * decision about a shape Apple has not been seen to send.
+   */
+  test('a file iris named nothing is still listed and still counted', async () => {
+    const digest = await report({
+      messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, ['a-1', 'a-2'])],
+      attachments: [
+        attachment('a-1', 'crash.mp4', 2048),
+        // Written out rather than built by the helper: what is being modelled is iris
+        // sending no `fileName` key at all, which the helper always sends.
+        {
+          type: 'resolutionCenterMessageAttachments',
+          id: 'a-2',
+          attributes: { fileSize: 4096, downloadUrl: 'https://example.invalid/a-2' },
+        },
+      ],
+    });
+
+    assert.equal(digest.attachments.length, 2);
+    assert.deepEqual(
+      digest.attachments.map((file) => file.fileName),
+      ['crash.mp4', undefined]
+    );
+    // The id and the URL are what a nameless file is worth having, and both survive.
+    assert.equal(digest.attachments[1]?.downloadUrl, 'https://example.invalid/a-2');
+  });
+
+  // The other half: an id is the identity, so a resource without one is refused rather than
+  // dropped. Dropping it would shorten the count the same way; listing it would print a line
+  // that names no file and that `delete-attachment` could not be given.
+  test('a file iris gave no id is refused, not quietly left out', async () => {
+    await assert.rejects(
+      report({
+        // The empty id is on the reference as well as the resource, since that is what makes
+        // the two join: `Resource.id` is typed `string`, so an unusable id is the shape a
+        // fixture can express and an absent one reads the same way through `asString`.
+        messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, [''])],
+        attachments: [
+          { type: 'resolutionCenterMessageAttachments', id: '', attributes: { fileName: 'crash.mp4', fileSize: 2048 } },
+        ],
+      }),
+      /attachment with no id/
+    );
+  });
+
   test('a rejection with no files of its own adds none', async () => {
     const digest = await report({
       messages: [message('m-1', '2026-04-27T15:51:00-07:00', '<p>See the video.</p>', APPLE, ['a-1'])],

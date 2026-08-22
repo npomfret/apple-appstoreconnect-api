@@ -57,6 +57,13 @@ rejections — Apple hangs them off both, on `resolutionCenterMessageAttachments
 under one name — every recording here has such a message — so deduplicating by name loses one
 of them.
 
+`Attachment.fileName` is optional, which it became on 2026-08-22. A name is a label and the
+`id` is the identity, so a file iris names nothing is still in the list and still in its
+count; before that it was dropped, which made the count wrong and disagreed with `asc draft`,
+which has always shown such a file. The one field that cannot be missing is `id`: an
+attachment without one makes `buildReport` throw rather than be dropped or listed, because
+there is nothing to deduplicate on and nothing `deleteMessageAttachment` could be given.
+
 `denormalize` splices JSON:API `included` resources into their relationships, so you can
 read `thread.app.name` instead of hand-joining sideloads. Flattening a resource that way is
 safe because JSON:API forbids an attribute or relationship named `type` or `id`; **where a
