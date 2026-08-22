@@ -72,4 +72,9 @@ This is the second field-level keep found while removing a slice whole. The firs
 `CiWorkflow.post_actions` in
 [xcode-cloud-post-actions-gap.md](xcode-cloud-post-actions-gap.md), handled the same way:
 take the slice out, record the field, decide on retention on its own evidence rather than
-in the middle of a deletion.
+in the middle of a deletion. That one came back on 2026-08-22 as a read-only command over
+the single field, which is what this approach is for — and it is also the contrast that
+matters here. `post_actions` had a recorded read that returns the field on its own, and this
+one does not: the GRAC number arrives inside an eight-include App Information page request,
+and the only recorded write is all 29 answers at once. The precedent is the method, not the
+outcome.

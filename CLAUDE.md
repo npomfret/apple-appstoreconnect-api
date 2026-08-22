@@ -8,10 +8,12 @@ smallest diff.
 
 ## The boundary
 
-The tree is gap-only as of 2026-08-21: no private implementation of an officially served
-capability remains, `asc get` is confined to the private families, there is no raw write,
-and the transport speaks one host, one base, one content type and four methods. Keep it
-that way.
+The tree is gap-only as of 2026-08-22: no private implementation of an officially served
+capability remains, `asc get` is confined to the private families and reaches iris only,
+there is no raw write, and the transport speaks one host, four methods, and two bases —
+`iris/v1`, and a **read-only** `/ci/api` carrying one Xcode Cloud field, `post_actions`,
+which is in none of 4.4.1's schemas. Keep it that way. A third base, or a write on the
+second, is an owner decision with a recording behind it, not an implementation detail.
 
 The rule for deciding is that **duplication is a property of a call, not of a resource**. A
 private read of an officially-available resource is retained only when it carries a field

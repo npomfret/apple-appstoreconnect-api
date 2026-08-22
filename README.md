@@ -2,15 +2,15 @@
 
 An unofficial client for the parts of App Store Connect that Apple does not expose through
 the official App Store Connect API: Resolution Center threads, messages, rejections, drafts
-and replies, plus unread review-message counts, version state-change history and the App
-Privacy questionnaire.
+and replies, plus unread review-message counts, version state-change history, the App
+Privacy questionnaire, and whether an Xcode Cloud workflow hands its builds to TestFlight.
 
 Everything Apple **does** expose officially is out of scope here, however convenient the
 private endpoint or the cookie it already has. Nothing in this client duplicates an official
 call, there is no escape hatch that reaches one — `asc get` is confined to the private
 families this client is for, and there is no raw write at all — and the transport is
-narrowed to match: one host, one base, one content type, four methods. The boundary was
-last audited on 2026-08-21 against Apple's OpenAPI specification 4.4.1, and
+narrowed to match: one host, two bases, four methods, and the second base read-only. The
+boundary was last audited on 2026-08-21 against Apple's OpenAPI specification 4.4.1, and
 [docs/evidence.md](docs/evidence.md) records what was checked and when.
 
 It talks to the same private `https://appstoreconnect.apple.com/iris/v1` service the web UI
@@ -74,9 +74,10 @@ all) works unedited.
 
 Every command below is something [Apple's official API](https://developer.apple.com/app-store-connect/api/)
 does not serve. That is the whole of what this project is: if you are looking for apps,
-versions, builds, screenshots, metadata, age ratings, review submissions, invitations or
-Xcode Cloud, Apple serves all of it officially and none of it is here — the pages to use
-instead are [at the bottom](#apples-official-api), and what was checked against what is in
+versions, builds, screenshots, metadata, age ratings, review submissions, invitations, or
+Xcode Cloud products, workflows, build runs and test results, Apple serves all of it
+officially and none of it is here — the pages to use instead are
+[at the bottom](#apples-official-api), and what was checked against what is in
 [docs/evidence.md](docs/evidence.md).
 
 **Reading** — [docs/reading.md](docs/reading.md)
@@ -88,6 +89,7 @@ instead are [at the bottom](#apples-official-api), and what was checked against 
 | `history <versionId>` | private version state-change history, including initiator and time in state |
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
 | `privacy` | App Privacy declarations, and whether they're live |
+| `post-actions <productId>` | private Xcode Cloud `post_actions`: whether a workflow hands each finished build to a TestFlight group. `ciWorkflows` has no such field officially. Read-only |
 | `get` | a raw GET at a path you give it, confined to the private families above — an officially served path is refused rather than duplicated |
 
 **Writing** — all but one copied from a capture of the browser doing it; `delete-attachment`
@@ -179,15 +181,17 @@ By topic, for the capabilities this project deliberately does not have:
   [user invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
   — team access, roles, app visibility, invitations and revocation.
 - [Xcode Cloud workflows and builds](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
-  — products, workflows, repositories, build runs, actions, issues and test results.
+  — products, workflows, repositories, build runs, actions, issues and test results, and
+  creating or updating a workflow. The one thing not on it is `post_actions`, which is why
+  `asc post-actions` exists and why it reads that field and nothing else.
 - [TestFlight](https://developer.apple.com/documentation/appstoreconnectapi/testflight) —
   beta groups, testers and beta app review, none of which this project touches.
 
 What is **not** in any of the above, and is why this project exists: Resolution Center
 threads, messages, guideline rejections, draft replies and their attachments; unread
-review-message counts; App Store version state-change *history*; and the App Privacy
-`dataUsages` questionnaire. Checked against 4.4.1 on 2026-08-21 — see
-[docs/evidence.md](docs/evidence.md).
+review-message counts; App Store version state-change *history*; the App Privacy
+`dataUsages` questionnaire; and an Xcode Cloud workflow's `post_actions`. Checked against
+4.4.1 on 2026-08-21 — see [docs/evidence.md](docs/evidence.md).
 
 One attribute, rather than a capability, sits on the line: iris carries
 `gracRatingClassificationNumber` on an age-rating declaration — the Korean GRAC

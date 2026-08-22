@@ -137,6 +137,53 @@ list is the tested one and an override is not.
   draft, recorded separately, replays through `updateDraftMessage` and `getDraftMessage`
   with nothing new in it.
 
+### The Xcode Cloud read
+
+`listWorkflows` / `fetchPostActions` — the `post-actions` command — is
+`GET ci/api/teams/{teamId}/products/{productId}/workflows-v15?limit=100&include_deleted=false`,
+which is the browser's own query, page size and flag. Recorded from the browser on
+2026-08-21 and read on 2026-08-22 through an extractor emitting methods, redacted paths,
+query keys, statuses and response *key structure*; no header, cookie, signature, CSRF value
+or personal detail was read out of it, and the fixtures in the tests are invented.
+
+**The gap is one field, not the resource.** Apple serves Xcode Cloud products, workflows,
+repositories, build runs, actions, issues and test results officially, and can create and
+update a workflow. Re-checked 2026-08-21 against specification **4.4.1**: `post_action`,
+`postAction`, `deployment_config`, `archive_action_id` and `testFlight_internal` occur
+**zero** times across its 966 paths and 1,393 schemas, and `CiWorkflow` has no post-action
+attribute and no `betaGroups` relationship — its relationships are `buildRuns`,
+`macOsVersion`, `product`, `repository` and `xcodeVersion`. So the official API cannot say
+whether a build is handed to testers automatically, and that is the whole of what this
+reads.
+
+What the recording settles, beyond the request:
+
+- **The document is `{id, content, metadata}`**, and the collection is `{items: […]}` with
+  no continuation key. `content` holds the fourteen keys `actions`, `clean`,
+  `container_file_path`, `description`, `disabled`, `environment_variables`, `locked`,
+  `macos_version`, `name`, `post_actions`, `product_environment_variables`, `repo`,
+  `start_conditions` and `xcode_version` — and the recorded `PUT` body is exactly that
+  object, which is what makes the write a full-document replace.
+- **A post-action is `{id, name, type, deployment_config}`**, with
+  `deployment_config.archive_action_id` and
+  `deployment_config.testflight_deployment_ids.{beta_group_ids, beta_tester_ids}`. `type` is
+  `testFlight_internal` — mixed case, worth writing down because a plausible guess would
+  have been wrong, and passed through rather than narrowed to a union of the one observed
+  value.
+- **`archive_action_id` names an action in the same workflow**, true of every post-action in
+  the recording, so a post-action follows a build step rather than the workflow as a whole.
+  The digest resolves it against that workflow's own `actions`, which costs no request.
+- **The team id needs no discovery.** On all 22 recorded `/ci/api` requests the
+  `teams/{id}` path segment is the same value as the `X-Connect-Team-ID` header, which the
+  session already carries and otherwise decodes from the `itctx` cookie. So this needs
+  neither a `--team` flag nor `olympus/v1/actors`, which would be a third base carrying
+  names and email addresses.
+- **`beta_tester_ids` was present and empty throughout.** Nothing shows what a populated one
+  looks like or whether the two lists combine.
+
+Beta group ids are printed as ids and never resolved to names: that is `GET /v1/betaGroups`,
+which Apple serves officially with `name` and `isInternalGroup` on it.
+
 ## Calls that are probe-only, and so likelier to shift
 
 - `deleteMessageAttachment` was **probed, not captured** — no browser request for it was
@@ -224,20 +271,34 @@ of the same climb passed this check and were sent with the session cookie until
 
 ## What the transport can express
 
-One host, one base, one content type, four methods. Each is a module constant rather than
-an option a caller picks, and each is what the recordings actually show — narrowed to that
-on 2026-08-21, once the boundary was closed.
+One host, two bases, four methods. A base carries its own media types, its own rule for
+reading a refusal and its own page shape, because the two disagree about all three; none of
+them is an option a caller picks, and each is what the recordings actually show.
 
-| What it sends | On what evidence |
-| --- | --- |
-| `https://appstoreconnect.apple.com/iris/v1`, and no other base | the only other one this client ever had was `/ci/api`, for Xcode Cloud, which Apple serves officially |
-| `application/vnd.api+json` on every request, read or write | every recorded Resolution Center call sends it, on reads and writes alike. The one capture that sent plain `application/json` was the version PATCH, which is `PATCH /v1/appStoreVersions/{id}` officially. **The capture could override this until 2026-08-21** — see the header audit below |
-| `GET`, `POST`, `PATCH`, `DELETE`, and refuses anything else | no call addressed to iris uses `PUT`. The upload part that does goes to `object-storage.apple.com` through `uploadPart`, without the cookie and without `request` |
+| Base | What it sends | On what evidence |
+| --- | --- | --- |
+| `…/iris/v1` — the Resolution Center | `application/vnd.api+json` as both `Accept` and `Content-Type`, on reads and writes alike | every recorded Resolution Center call sends it. The one capture that sent plain `application/json` was the version PATCH, which is `PATCH /v1/appStoreVersions/{id}` officially. **The capture could override this until 2026-08-21** — see the header audit below |
+| `…/ci/api` — Xcode Cloud, read-only | `Accept: */*` and **no `Content-Type` at all** | the 22 `/ci/api` requests recorded from the browser send exactly this. Sending `application/vnd.api+json` instead is answered **403** — established by hand on 2026-08-21, one header varied at a time on one URL, and the reason every `ci-*` command in this repository was refused for the whole of its life |
 
-A gap that turns out to need something else brings a recording showing it. That narrowing
-changed no byte on the wire: `test/gap-requests.test.ts` pins the method, body and content
-type of every retained call, and passed unedited across it. The `http.write` audit records,
-the redaction, the host check and the confirmations were not touched.
+`GET`, `POST`, `PATCH` and `DELETE`; anything else is refused. No call addressed to iris
+uses `PUT`, and the upload part that does goes to `object-storage.apple.com` through
+`uploadPart`, without the cookie and without `request`. On the Xcode Cloud base only `GET`
+is reachable at all: the base is declared read-only and the transport refuses the other
+three before a request is built, so the recorded `PUT` to `workflows-v15/{id}` — a
+full-document replace — cannot be sent by anything here.
+
+**A 403 is read per base.** iris uses one to refuse a query it does not support as well as
+to reject a dead session, and tells them apart by whether the body is a JSON:API error
+document. Xcode Cloud is not JSON:API and never sends one: its 403 came back as
+`text/html` with a zero-length body while `asc status` on the same capture said the session
+was healthy with hours left. So a 403 there is reported as the refusal it is, never as
+"log in again".
+
+A gap that turns out to need something else brings a recording showing it. Narrowing to one
+base on 2026-08-21 changed no byte on the wire, and neither did reopening the second one on
+2026-08-22: `test/gap-requests.test.ts` pins the method, body and content type of every
+retained call, and passed unedited across both. The `http.write` audit records, the
+redaction, the host check and the confirmations were not touched by either.
 
 ### Which headers the browser sends, and on what
 

@@ -20,6 +20,7 @@ import { describe, test } from 'node:test';
 
 import { Document, Resource } from '../src/jsonapi';
 import { buildReport, fetchPrivacy, formatReport, SubmissionReport } from '../src/report';
+import { fetchPostActions, formatPostActions } from '../src/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const APP = '123';
@@ -575,5 +576,82 @@ describe('the privacy label', () => {
 
   test('an unpublished label says so rather than defaulting to live', async () => {
     assert.equal((await privacy([], {})).published, false);
+  });
+});
+
+/**
+ * The Xcode Cloud answer: is a build handed to testers automatically, or is it not.
+ *
+ * The whole point of the read, and the thing `ciWorkflows` cannot say. The fixtures are
+ * invented in the shape recorded from the browser — a workflow is `{id, content, metadata}`
+ * and a post-action hangs off one of the workflow's own actions rather than off the
+ * workflow — and both directions are pinned, because "no post-actions" is a real answer
+ * here and not an empty result.
+ */
+describe('what a workflow says it does with a build', () => {
+  const ARCHIVE = 'action-archive';
+
+  function page(postActions: unknown[]): unknown {
+    return {
+      items: [
+        {
+          id: 'workflow-0000',
+          content: {
+            name: 'Nightly',
+            disabled: false,
+            actions: [{ id: ARCHIVE, action_type: 'archive', default_name: 'Release' }],
+            post_actions: postActions,
+          },
+        },
+      ],
+    };
+  }
+
+  const testFlight = {
+    id: 'post-0000',
+    name: 'Hand to internal testers',
+    type: 'testFlight_internal',
+    deployment_config: {
+      archive_action_id: ARCHIVE,
+      testflight_deployment_ids: { beta_group_ids: ['group-0000'], beta_tester_ids: [] },
+    },
+  };
+
+  async function read(body: unknown) {
+    const stub = stubFetch(() => ({ body }));
+    return withStderr(async () => {
+      try {
+        return await fetchPostActions(SESSION, 'product-0000');
+      } finally {
+        stub.restore();
+      }
+    });
+  }
+
+  test('nothing configured is an answer, not an absence', async () => {
+    const workflows = await read(page([]));
+
+    assert.equal(workflows.length, 1);
+    assert.deepEqual(workflows[0]!.postActions, []);
+    assert.match(formatPostActions(workflows), /not handed on automatically/);
+  });
+
+  test('a TestFlight hand-off names the build step it follows and the group it goes to', async () => {
+    const workflows = await read(page([testFlight]));
+    const [action] = workflows[0]!.postActions;
+
+    // Apple's own spelling, mixed case and all. A plausible guess would have been wrong.
+    assert.equal(action!.type, 'testFlight_internal');
+    assert.equal(action!.archiveActionId, ARCHIVE);
+    // Resolved from the same document — the id on its own says nothing a reader can use.
+    assert.equal(action!.archiveAction, 'archive (Release)');
+    assert.deepEqual(action!.betaGroupIds, ['group-0000']);
+    assert.deepEqual(action!.betaTesterIds, []);
+
+    const digest = formatPostActions(workflows);
+    assert.match(digest, /archive \(Release\)/);
+    // Ids, not names: resolving a beta group is `/v1/betaGroups`, which Apple serves.
+    assert.match(digest, /group-0000/);
+    assert.match(digest, /1 of 1 workflows/);
   });
 });

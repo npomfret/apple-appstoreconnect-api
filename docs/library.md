@@ -2,7 +2,7 @@
 
 What this library exports is the gap surface and nothing else: Resolution Center threads,
 messages, rejections, drafts and attachments; unread review-message counts; version
-state-change history; and App Privacy. Everything else App Store Connect can do, Apple
+state-change history; App Privacy; and one Xcode Cloud field, `post_actions`. Everything else App Store Connect can do, Apple
 serves through its
 [official API](https://developer.apple.com/documentation/appstoreconnectapi/) — with an API
 key rather than the browser cookie this client reads, and there is no export here that
@@ -70,8 +70,14 @@ rather than per request. `sessionFromCapture(text)` does the same parse on a str
 already have, if the capture reaches you some other way.
 
 `src/index.ts` re-exports everything, so any function in `src/api.ts` is importable from
-the package root. Everything it returns is a JSON:API document, which is what `denormalize`
+the package root. Everything there returns a JSON:API document, which is what `denormalize`
 and `denormalizeAll` are for.
+
+`src/ci.ts` is the exception and the only non-iris module: `fetchPostActions(session,
+productId)` answers whether an Xcode Cloud workflow hands its builds to TestFlight
+automatically, which is the one field on that surface Apple's official API has no schema
+for. It returns plain objects rather than JSON:API — `listWorkflows` is the untouched
+response if you want it — and `denormalize` has nothing to do with either.
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
 `sendDraftReply()` called from code go straight to Apple, and neither can be undone.
@@ -118,8 +124,8 @@ words is the same question as sending them. Worth copying if you build your own.
   app read back.
 - Query strings are built by hand rather than with `URLSearchParams`: Apple wants literal
   `[`, `]` and `,`, which `URLSearchParams` would percent-encode.
-- A path is a path — `resolutionCenterThreads/{id}` — always relative to
-  `https://appstoreconnect.apple.com/iris/v1`, and it is checked as the URL it **resolves
+- A path is a path — `resolutionCenterThreads/{id}` — relative to the base of the API it is
+  given, `iris/v1` unless a caller names another, and it is checked as the URL it **resolves
   to** rather than as the text you wrote. An absolute URL is refused, and so is a path that
   climbs out of that base: everything `request()` sends carries the session cookie and the
   CSRF header, so where it lands is the whole question, and `raw()` takes its path from
@@ -137,20 +143,37 @@ words is the same question as sending them. Worth copying if you build your own.
   and `appStoreVersions/{id}/appStoreVersionStateChanges`. Anything else throws before a
   request is built. There is no write-side counterpart: an unrestricted private PATCH is how
   every official write would come back within reach, and a hand-written body belongs at
-  Apple's official API, which asks for a key rather than a scraped cookie.
+  Apple's official API, which asks for a key rather than a scraped cookie. It reaches iris
+  and only iris — the Xcode Cloud base has no escape hatch of its own, and `raw()` cannot
+  be pointed at one.
 - The method is one of `GET`, `POST`, `PATCH` and `DELETE`, in whatever case you send it.
   Whether a request mutates decides its headers and whether it lands in the audit trail, so
   it's settled once from the normalised name; anything that isn't one of the four is refused
   rather than guessed at. `PUT` is not one of them — the only PUT here is an upload part,
   which goes to Apple's storage through `uploadPart()` and never through `request()`.
-- **One base and one content type**, both module constants rather than options. `BASE_URL`
-  is `https://appstoreconnect.apple.com/iris/v1`, every request sends
-  `application/vnd.api+json`, and neither is something a caller passes: `RequestOptions` is
-  `method`, `query` and `body`, and `patch()`/`post()` take a path and a body. Nor is the
-  capture a caller — it was until 2026-08-21, since its headers were spread over the
-  transport's own, which let whichever iris request was right-clicked pick the `Content-Type`
-  and `Accept` for every later one. A gap that needs something else brings a recording
-  showing it, which is a conversation rather than an argument.
+- **Two bases, each with its own media types**, declared as `Api` values in `src/http.ts`
+  rather than assembled by a caller. `IRIS` is `https://appstoreconnect.apple.com/iris/v1`
+  and sends `application/vnd.api+json` as both `Accept` and `Content-Type`; `CI` is
+  `https://appstoreconnect.apple.com/ci/api`, sends `Accept: */*` and **no `Content-Type` at
+  all**, because Xcode Cloud answers a request claiming to be JSON:API with a `403`. A
+  caller picks a base — `RequestOptions.api`, defaulting to `IRIS` — and does not pick the
+  media types. Nor does the capture, though it did until 2026-08-21, when its headers were
+  spread over the transport's own and whichever iris request was right-clicked chose the
+  `Content-Type` and `Accept` for every later one. A third base brings a recording showing
+  it, which is a conversation rather than an argument.
+- **`CI` is read-only, and that is enforced in the transport.** `request()` refuses any
+  method but `GET` on a base marked `readOnly` before a URL is even built. The `PUT` that
+  sets a workflow's `post_actions` is recorded in both directions, so this is not a gap in
+  the evidence: it is a full-document replace of fourteen keys, so a client that does not
+  model every one of them destroys what it fails to send back.
+- **A 403 is classified per base.** iris uses one both for a dead session and for a query it
+  refuses, and `Api.expiredOn403` tells them apart by whether the body is a JSON:API error
+  document. Xcode Cloud never sends one — its 403 is `text/html` with no body — so a 403
+  there is an `ApiError` carrying the likely cause, never a `SessionExpiredError`.
+- **A short page is spotted per base too.** `Api.pageOf` is what reads a collection: iris's
+  `data` with `meta.paging`, Xcode Cloud's `items` with neither a total nor an applied
+  limit — which is the case `read.atLimit` exists for, comparing against the size that was
+  asked for.
 - **The session supplies who you are, not how to talk.** A `Session`'s `headers` carry the
   account's — the CSRF value, the referer, the team pair, the user agent — and `request()`
   writes its own media types and cookie over them. The team pair goes on reads as well as

@@ -5,16 +5,124 @@ import { audit, log, redact } from './log';
 /** The one host this client will send the session cookie to. */
 const HOST = 'https://appstoreconnect.apple.com';
 
+/** What a collection said about the page it just sent, whatever shape it arrived in. */
+export interface Page {
+  /** How many records came back in this response. */
+  returned: number;
+  /** How many exist, where the API says so. */
+  total?: number;
+  /** The page size the API actually applied, where it says so. */
+  limit?: number;
+}
+
 /**
- * The one API this client speaks: the review centre, JSON:API under `iris/v1`.
+ * An API this client speaks, and everything that differs between one and the next.
  *
- * A constant rather than a set a caller picks from. It was a set while the Xcode Cloud
- * surface was here, and a set with one member after that left — a decision shaped like a
- * choice that isn't one. Everything built on this base goes out with the session cookie
- * attached, so the base is this file's to decide; a second one would arrive with its own
- * capture and its own reason to exist.
+ * There is one of these per base, and the list of them is this file's rather than a
+ * caller's, because everything built on a base goes out with the session cookie attached.
+ * `BASE_URL` was a bare constant until 2026-08-22, under a comment saying a second base
+ * "would arrive with its own capture and its own reason to exist". One has: see `CI`.
+ *
+ * The fields are what the two disagree about, and every one of them is a thing that was
+ * observed rather than assumed. Nothing general is here on the chance a third base wants
+ * it.
  */
-export const BASE_URL = `${HOST}/iris/v1`;
+export interface Api {
+  /** What to call this API when a message has to say which one refused something. */
+  readonly name: string;
+  readonly baseUrl: string;
+  readonly accept: string;
+  /**
+   * The `Content-Type` every request to this API carries, where it has one. Absent means
+   * the header is not sent at all, which is not the same as sending a default.
+   */
+  readonly contentType?: string;
+  /**
+   * Whether this API may only be read. A method other than GET is refused before a request
+   * is built, so a base mapped for a read cannot grow a write by accident.
+   */
+  readonly readOnly?: boolean;
+  /** Whether a 403 from this API means the session is dead rather than the request refused. */
+  readonly expiredOn403: (body: string) => boolean;
+  /** What this API says about a page it sent, or undefined where the response is not one. */
+  readonly pageOf: (document: unknown) => Page | undefined;
+  /** Added to a 403's message, where this API's refusals have a known common cause. */
+  readonly refusalHint?: string;
+}
+
+/**
+ * The review centre: JSON:API under `iris/v1`, and everything this client was built for.
+ *
+ * `accept` is the wider of the two the browser is recorded sending: 78 of the 214 recorded
+ * reads ask for exactly this, and the other 133 for `application/vnd.api+json` alone.
+ * Asking for more than iris will send costs nothing.
+ *
+ * `contentType` is on reads as well as writes, which is what the captures show. It used to
+ * be overridable per call because they disagreed: the version PATCH sent plain
+ * `application/json` where the Resolution Center endpoints send this. That PATCH left with
+ * the version slice and the hand-written one left with `asc patch`, so the other value has
+ * had neither a caller nor a live capture behind it since.
+ *
+ * A 403 here is not only an expired session: iris also uses it to refuse a query it does
+ * not support, and those refusals come back as a JSON:API error document where a dead
+ * session does not.
+ */
+export const IRIS: Api = {
+  name: 'iris',
+  baseUrl: `${HOST}/iris/v1`,
+  accept: 'application/vnd.api+json, application/json, text/csv',
+  contentType: 'application/vnd.api+json',
+  expiredOn403: (body) => !body.includes('"errors"'),
+  pageOf: (document) => {
+    if (typeof document !== 'object' || document === null) return undefined;
+    const { data, meta } = document as { data?: unknown; meta?: unknown };
+    if (!Array.isArray(data)) return undefined;
+    return { returned: data.length, ...irisPaging(meta) };
+  },
+};
+
+/**
+ * Xcode Cloud, for the one field on it Apple's official API has no schema for.
+ *
+ * **This is not JSON:API and answers a request claiming to be with a 403.** Established by
+ * hand against a healthy session on 2026-08-21, one header varied at a time on one URL:
+ * `accept: *\/*` 200, `content-type: application/json` 200, `content-type: text/plain` 200,
+ * `content-type: application/vnd.api+json` **403**. That single header is why every `ci-*`
+ * command in this repository was refused for the whole of its life, and it is why
+ * `contentType` is absent here rather than set to something. The browser sends no
+ * `Content-Type` at all on a CI read and `accept: *\/*` on every one of the 22 CI requests
+ * recorded from the browser.
+ *
+ * **Read-only, and enforced rather than intended.** A `PUT` to `workflows-v15/{id}` is
+ * recorded in both directions with read-backs, so the write is evidenced — and it is a
+ * full-document replace of fourteen keys, on the workflow that builds every push, which is
+ * a design and an approval of its own rather than a thing to leave reachable. Nothing here
+ * can send one.
+ *
+ * **A 403 cannot be read as an expired session here.** iris's rule is that a refusal
+ * carries a JSON:API error document; CI never returns one, and the 403 above came back as
+ * `content-type: text/html` with a zero-length body while `asc status` on the same capture
+ * said the session was healthy with hours left. So a CI 403 is reported as the refusal it
+ * is, with the cause that actually produced one.
+ */
+export const CI: Api = {
+  name: 'Xcode Cloud',
+  baseUrl: `${HOST}/ci/api`,
+  accept: '*/*',
+  readOnly: true,
+  expiredOn403: () => false,
+  refusalHint:
+    'A 403 here is a refusal rather than a dead session — check "asc status" before ' +
+    'assuming otherwise. Xcode Cloud refuses any request that claims to be JSON:API.',
+  pageOf: (document) => {
+    if (typeof document !== 'object' || document === null) return undefined;
+    const { items } = document as { items?: unknown };
+    return Array.isArray(items) ? { returned: items.length } : undefined;
+  },
+};
+
+/** The review centre's base, which is what a path means when nothing says otherwise. */
+export const BASE_URL = IRIS.baseUrl;
 
 export class SessionExpiredError extends Error {
   constructor(status: number) {
@@ -37,9 +145,9 @@ export class ApiError extends Error {
    */
   readonly body: string;
 
-  constructor(readonly status: number, readonly url: string, body: string) {
+  constructor(readonly status: number, readonly url: string, body: string, hint?: string) {
     const safe = redact(body);
-    super(`HTTP ${status} for ${url}\n${safe.slice(0, 2000)}`);
+    super(`HTTP ${status} for ${url}\n${safe.slice(0, 2000)}${hint ? `\n${hint}` : ''}`);
     this.body = safe;
     this.name = 'ApiError';
   }
@@ -84,34 +192,12 @@ export interface RequestOptions {
   method?: Method;
   query?: Query;
   body?: unknown;
+  /** Which API the path is relative to. The review centre unless a caller says otherwise. */
+  api?: Api;
 }
 
 /** Default team type for a normal App Store developer team, as the web UI sends it. */
 const TEAM_TYPE = 'PURPLESOFTWARE';
-
-/**
- * The Content-Type every request here sends.
- *
- * iris is JSON:API, and the captures send this on reads and writes alike. It used to be
- * overridable per call because the captures disagreed: the version PATCH sent plain
- * `application/json` where the Resolution Center endpoints send this. That PATCH left with
- * the version slice and the hand-written one left with `asc patch`, so the other value has
- * had neither a caller nor a live capture behind it since. One constant, named here rather
- * than repeated at every write; a gap that turns out to need something else brings a
- * capture showing it.
- *
- * A caller could not name a second one, but until 2026-08-21 the *capture* could — see
- * `headersFor`, where this was set and then spread over.
- */
-const CONTENT_TYPE = 'application/vnd.api+json';
-
-/**
- * The Accept every request here sends, and the wider of the two the browser is recorded
- * sending: 78 of the 214 recorded reads ask for exactly this, and the other 133 for
- * `application/vnd.api+json` alone. Asking for more than iris will send costs nothing, and
- * a client that reads one media type from one base has no reason to vary it per call.
- */
-const ACCEPT = 'application/vnd.api+json, application/json, text/csv';
 
 /**
  * The method to send, in the case the rest of this file expects.
@@ -125,19 +211,30 @@ const ACCEPT = 'application/vnd.api+json, application/json, text/csv';
  * consumer in plain JavaScript lives. A method that isn't one of the four is refused
  * rather than guessed at.
  */
-function methodOf(given: string | undefined): Method {
+function methodOf(api: Api, given: string | undefined): Method {
   const wanted = (given ?? 'GET').trim().toUpperCase();
   const method = METHODS.find((known) => known === wanted);
   if (!method) {
     throw new Error(`Unsupported HTTP method "${given}" — expected one of ${METHODS.join(', ')}`);
   }
 
+  // A base is mapped for the calls it was recorded making. Where those are all reads, the
+  // write is refused here rather than left to whoever adds the next function — which is
+  // the difference between a surface that is read-only and one that merely has no writes
+  // in it yet.
+  if (method !== 'GET' && api.readOnly) {
+    throw new Error(
+      `${api.name} is mapped read-only here, so a ${method} to ${api.baseUrl} is refused. ` +
+        'A write to it needs its own evidence, its own confirmation and its own design.'
+    );
+  }
+
   return method;
 }
 
 /**
- * The URL a resource path names, under the base above — checked on the URL that comes out,
- * not on the text that went in.
+ * The URL a resource path names, under the API it was given — checked on the URL that comes
+ * out, not on the text that went in.
  *
  * Paths here are relative — `appStoreVersions/{id}`, `apps/{id}/resolutionCenterThreads` —
  * and everything this returns is fetched with the session cookie and the CSRF header
@@ -149,7 +246,7 @@ function methodOf(given: string | undefined): Method {
  * paths spelled that way. The URL parser resolves more than a literal dot segment: `%2e%2e`
  * and `%2E%2E` are dot segments too, and on a special scheme `\` separates path segments
  * like `/` does — so `resolutionCenterThreads/%2e%2e/%2e%2e/%2e%2e/ci/api/v1/ciBuildRuns`
- * reached the `/ci/api` base this client closed, and `.../v1/apps` reached the official
+ * reached `/ci/api`, which was closed at the time, and `.../v1/apps` reached the official
  * record the gap boundary exists to refuse. `withinBoundary` in `api.ts` did not stop either:
  * it reads the first segment to decide the family, and the first segment said
  * `resolutionCenterThreads`. Both went out with the cookie on.
@@ -159,15 +256,21 @@ function methodOf(given: string | undefined): Method {
  * parser's and it is longer than it looks. The host check above stays for the message it
  * gives; this would catch an absolute URL as well.
  *
+ * `/ci/api` is a base in its own right again since 2026-08-22, which changes nothing here:
+ * a base is reached by the calls mapped onto it, each carrying the media types and the
+ * read-only rule that base was recorded needing, and not by an iris path that resolves into
+ * it. An iris request that landed there would arrive claiming to be JSON:API, which is the
+ * one thing Xcode Cloud refuses outright.
+ *
  * A query or a fragment is refused for a nearer reason: `request` appends `buildQuery` to
  * what comes back from here, so a `?` in the path makes a second one, and everything after a
  * `#` is not sent at all — `resolutionCenterThreads#` with a filter beside it silently asked
  * for the unfiltered list. The query is `options.query`'s to state.
  */
-function apiUrl(path: string): string {
+function apiUrl(api: Api, path: string): string {
   if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('//')) {
     throw new Error(
-      `"${path}" is a URL, and this takes a path relative to ${BASE_URL}. Sending it would ` +
+      `"${path}" is a URL, and this takes a path relative to ${api.baseUrl}. Sending it would ` +
         'carry the App Store Connect session cookie to whatever host it names.'
     );
   }
@@ -179,11 +282,12 @@ function apiUrl(path: string): string {
     );
   }
 
-  const url = new URL(`${BASE_URL}/${path.replace(/^\/+/, '')}`);
-  if (!url.href.startsWith(`${BASE_URL}/`)) {
+  const url = new URL(`${api.baseUrl}/${path.replace(/^\/+/, '')}`);
+  if (!url.href.startsWith(`${api.baseUrl}/`)) {
     throw new Error(
-      `"${path}" resolves to ${url.href}, which is outside ${BASE_URL}. This client speaks one ` +
-        'base, and every request built here goes out with the App Store Connect session on it.'
+      `"${path}" resolves to ${url.href}, which is outside ${api.baseUrl}. Each base here is ` +
+        'reached by the calls mapped onto it, and every request built here goes out with the ' +
+        'App Store Connect session on it.'
     );
   }
 
@@ -202,8 +306,8 @@ function apiUrl(path: string): string {
  * wider Accept; the split is per page, not per route, and both spellings reach routes this
  * client uses. So the request that was right-clicked decided the media types on every
  * request afterwards, including the POST that sends a reply to App Review — where all four
- * recorded POSTs send `application/vnd.api+json`. `CONTENT_TYPE` says above that it is not
- * something a caller passes; the capture is not a caller, and now neither is it.
+ * recorded POSTs send `application/vnd.api+json`. The media types belong to the `Api` above
+ * and not to a caller; the capture is not a caller, and now neither is it.
  *
  * **The team pair is not a write header.** `X-Connect-Team-ID` and `X-Connect-Team-Type`
  * are on every iris request in the recordings — 214 of 214 reads and 10 of 10 writes — so
@@ -216,13 +320,20 @@ function apiUrl(path: string): string {
  * **`Origin` is the one that really is write-only**: absent from all 214 recorded reads,
  * present on all 10 recorded writes.
  */
-function headersFor(session: Session, mutating: boolean): Record<string, string> {
+function headersFor(api: Api, session: Session, mutating: boolean): Record<string, string> {
   const headers: Record<string, string> = {
     ...session.headers,
-    accept: ACCEPT,
-    'content-type': CONTENT_TYPE,
+    accept: api.accept,
     cookie: session.cookie,
   };
+
+  // Set, or deleted. An API with no content type of its own is one that must not be sent a
+  // content type at all — Xcode Cloud answers `application/vnd.api+json` with a 403 — and
+  // the spread above is a `Session`, which a library caller builds as a plain record and
+  // may have put one in. `KEEP_HEADERS` stopped carrying either media type from a capture
+  // on 2026-08-21; this is the same rule holding for a session that did not come from one.
+  if (api.contentType) headers['content-type'] = api.contentType;
+  else delete headers['content-type'];
 
   const teamId = session.headers['x-connect-team-id'] ?? session.teamId;
   if (teamId) headers['x-connect-team-id'] = teamId;
@@ -233,7 +344,7 @@ function headersFor(session: Session, mutating: boolean): Record<string, string>
   return headers;
 }
 
-/** Issues a single authenticated request against the iris API. */
+/** Issues a single authenticated request against one of the APIs above. */
 export async function request<T = unknown>(
   session: Session,
   path: string,
@@ -244,8 +355,9 @@ export async function request<T = unknown>(
     throw new SessionExpiredError(401);
   }
 
-  const method = methodOf(options.method);
-  const target = `${apiUrl(path)}${buildQuery(options.query ?? {})}`;
+  const api = options.api ?? IRIS;
+  const method = methodOf(api, options.method);
+  const target = `${apiUrl(api, path)}${buildQuery(options.query ?? {})}`;
 
   // Every mutation in this client funnels through here, so auditing at this one point is
   // what makes the trail complete — the higher-level calls add meaning, not coverage.
@@ -261,7 +373,7 @@ export async function request<T = unknown>(
   try {
     response = await fetch(target, {
       method,
-      headers: headersFor(session, mutating),
+      headers: headersFor(api, session, mutating),
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
     text = await response.text();
@@ -278,13 +390,15 @@ export async function request<T = unknown>(
   if (mutating) audit('http.write', response.ok ? 'ok' : 'error', outcome);
   else log.debug('http.read', outcome);
 
-  // A 403 isn't only an expired session: iris also uses it to refuse a query it doesn't
-  // support, and reporting that as "log in again" sends you chasing the wrong problem.
-  // Those refusals come back as a JSON:API error document; a dead session does not.
-  if (response.status === 401 || (response.status === 403 && !text.includes('"errors"'))) {
+  // A 403 isn't only an expired session, and telling the two apart is the API's own rule
+  // rather than a general one — reporting a refusal as "log in again" sends you chasing
+  // the wrong problem, and each base refuses in its own dialect. A 401 needs no rule.
+  if (response.status === 401 || (response.status === 403 && api.expiredOn403(text))) {
     throw new SessionExpiredError(response.status);
   }
-  if (!response.ok) throw new ApiError(response.status, target, text);
+  if (!response.ok) {
+    throw new ApiError(response.status, target, text, response.status === 403 ? api.refusalHint : undefined);
+  }
   if (!text) return undefined as T;
 
   let parsed: T;
@@ -294,7 +408,7 @@ export async function request<T = unknown>(
     throw new ApiError(response.status, target, `Expected JSON, got:\n${text.slice(0, 500)}`);
   }
 
-  if (!mutating) reportShortPage(target, options.query, parsed);
+  if (!mutating) reportShortPage(api, target, options.query, parsed);
   return parsed;
 }
 
@@ -324,24 +438,24 @@ export async function request<T = unknown>(
  * a total. It stays because iris is undocumented and a route that reports none would
  * otherwise clip in silence — and it now has iris's own page size to compare against.
  */
-function reportShortPage(url: string, query: Query | undefined, document: unknown): void {
-  if (typeof document !== 'object' || document === null) return;
-  const { data, meta } = document as { data?: unknown; meta?: unknown };
-  if (!Array.isArray(data)) return;
-  const page: unknown[] = data;
-
-  const { total, limit: applied } = paging(meta);
+function reportShortPage(api: Api, url: string, query: Query | undefined, document: unknown): void {
+  const page = api.pageOf(document);
+  if (!page) return;
+  const { returned, total, limit: applied } = page;
 
   // A total is definite in both directions: bigger than the page means clipped, and equal
   // to it means whole. Neither case has anything left for the heuristic to add.
   if (total !== undefined) {
-    if (total > page.length) log.warn('read.clipped', { url, returned: page.length, total });
+    if (total > returned) log.warn('read.clipped', { url, returned, total });
     return;
   }
 
+  // Where an API reports no page size of its own — Xcode Cloud reports neither a total nor
+  // a limit — the number asked for is all there is to compare against, which is exactly
+  // the case this fallback was written for.
   const limit = applied ?? query?.limit;
-  if (typeof limit === 'number' && limit > 0 && page.length === limit) {
-    log.warn('read.atLimit', { url, returned: page.length, limit });
+  if (typeof limit === 'number' && limit > 0 && returned === limit) {
+    log.warn('read.atLimit', { url, returned, limit });
   }
 }
 
@@ -350,7 +464,7 @@ function reportShortPage(url: string, query: Query | undefined, document: unknow
  * willing to put in one response. JSON:API keeps both under `meta.paging`, and iris fills
  * them in on every collection recorded from the browser.
  */
-function paging(meta: unknown): { total?: number; limit?: number } {
+function irisPaging(meta: unknown): { total?: number; limit?: number } {
   if (typeof meta !== 'object' || meta === null) return {};
   const record = (meta as { paging?: unknown }).paging;
   if (typeof record !== 'object' || record === null) return {};

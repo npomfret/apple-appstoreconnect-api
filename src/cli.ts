@@ -14,6 +14,7 @@ import {
 } from './report';
 import { log } from './log';
 import * as api from './api';
+import * as ci from './ci';
 
 const USAGE = `App Store Connect review-centre client (unofficial, session-scraped).
 
@@ -32,6 +33,11 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
   asc messages <threadId>     List Resolution Center messages in a thread
   asc draft <threadId>        Show the thread's unsent draft reply, with its attachments
   asc rejections <threadId>   List guideline rejections for a thread
+  asc post-actions <productId>
+                              Xcode Cloud: what each of the product's workflows does when a
+                              build finishes — the TestFlight hand-off Apple's official API
+                              has no field for. Read-only. The product id is Apple's to
+                              serve: GET /v1/ciProducts on the official API
 
   asc get <path> [k=v ...]    Raw GET, for a query the commands above don't send. Confined
                               to the private families this client is for; an officially
@@ -53,8 +59,8 @@ This reaches Apple and cannot be undone. It shows what it is about to send and a
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
-  --json                      For "report", "history" and "privacy": emit JSON
-                              instead of the digest
+  --json                      For "report", "history", "privacy" and "post-actions": emit
+                              JSON instead of the digest
   --yes                       Skip the confirmation prompt on the commands that ask
   --attach <file>             For "save-draft": a file to attach. Repeat for several
 
@@ -435,6 +441,28 @@ async function main(argv: string[]): Promise<number> {
     case 'rejections': {
       const session = loadSession();
       emit(await api.listRejections(session, requireArg(rest[0], 'threadId', 'rejections <threadId>')), raw);
+      return 0;
+    }
+
+    /**
+     * The one Xcode Cloud read, and deliberately not `asc workflows`.
+     *
+     * Named for the field rather than for the resource it arrives on, because the resource
+     * is Apple's — `ciWorkflows` is official, and a command called `workflows` would read
+     * as general Xcode Cloud support and invite exactly the duplication that is out of
+     * scope. What is not official is `post_actions`, and that is what this prints.
+     *
+     * There is no `--raw` here, unlike the Resolution Center reads. The workflow document
+     * carries `environment_variables` and `product_environment_variables` alongside the
+     * field this wants, and nothing recorded shows whether their values come back or only
+     * their names. A command whose whole subject is one field has no reason to print a
+     * workflow's secrets on the chance that it can.
+     */
+    case 'post-actions': {
+      const session = loadSession();
+      const productId = requireArg(rest[0], 'productId', 'post-actions <productId>');
+      const workflows = await ci.fetchPostActions(session, productId);
+      console.log(json ? JSON.stringify(workflows, null, 2) : ci.formatPostActions(workflows));
       return 0;
     }
 

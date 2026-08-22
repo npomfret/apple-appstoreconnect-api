@@ -105,6 +105,52 @@ document):
 
 Every endpoint above is `iris/v1`, and every one of them is about an app.
 
+## Xcode Cloud: what happens when a build finishes
+
+```sh
+asc post-actions <productId>          # --json for the same thing as JSON
+```
+
+One read, on the one Xcode Cloud field Apple's official API has no schema for. A workflow
+can hand every build it finishes to a TestFlight group automatically, and `ciWorkflows` has
+no attribute that says so — checked against specification 4.4.1, where `post_action`,
+`deployment_config`, `archive_action_id` and `testFlight_internal` occur zero times. So
+"is this build going to testers, or did that stop working" is a question the official API
+cannot answer and this can.
+
+```
+Nightly   workflow-0000
+    Hand to internal testers   testFlight_internal
+      after        archive (Release)
+      beta groups  0e1f…
+      testers      none
+
+1 of 2 workflows hand a build on automatically.
+```
+
+`GET ci/api/teams/{teamId}/products/{productId}/workflows-v15`, with the browser's own
+`limit=100&include_deleted=false`. The team id comes from the session — it is the same value
+as the `X-Connect-Team-ID` header on every recorded Xcode Cloud request — so this costs one
+request and no discovery.
+
+**The product id is Apple's to serve.** It is not looked up from an app id, because
+`ciProducts` carries the `app` relationship officially and doing it here would restore the
+duplication the boundary exists to prevent. Take it from
+[`GET /v1/ciProducts`](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
+or out of the Xcode Cloud URL in the browser. Beta groups likewise print as ids: the name is
+on [`GET /v1/betaGroups`](https://developer.apple.com/documentation/appstoreconnectapi/testflight).
+
+There is no `--raw` on this one. The workflow document carries `environment_variables` and
+`product_environment_variables` beside the field being read, nothing recorded shows whether
+their values come back or only their names, and a command about one field has no reason to
+print a workflow's secrets on the chance that it can.
+
+**This is read-only, and the base it uses cannot carry a write at all.** The `PUT` that sets
+`post_actions` is recorded in both directions, so what stops it is not missing evidence: it
+replaces the entire fourteen-key workflow document, so a client that does not model every
+key destroys whatever it fails to send back. Setting a post-action stays a job for the web
+UI. See [evidence.md](evidence.md).
+
 `appId` defaults to the one scraped from the captured request's `Referer`. **`versionId` has
 no default** — `asc history <versionId>` requires it, because working one out means reading
 `apps/{id}/appStoreVersions`, which is Apple's own

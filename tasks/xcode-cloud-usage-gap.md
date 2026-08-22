@@ -4,7 +4,9 @@
 
 **Proposed. Nothing is authorised by this file.** It records what a browser recording of
 the Xcode Cloud *Usage* page contains, which of those calls Apple serves officially, and
-what integrating the rest would actually cost. No code has been written.
+what integrating the rest would actually cost. No code has been written for any read in
+this file. Updated 2026-08-22: the transport it was waiting on now exists, built for
+`post_actions`, so what remains is one product decision rather than a reversal.
 
 Audited **2026-08-21** against Apple's official OpenAPI specification **4.4.1**, generated
 2026-07-15 — re-downloaded that day from
@@ -127,51 +129,42 @@ equivalent, and one boolean is thin.
 
 ## What integrating this would cost
 
-This is the part to weigh before agreeing to any of it.
+**The transport half is done and is no longer a cost.** The `/ci/api` base was restored on
+2026-08-22 for `post_actions` — see
+[xcode-cloud-post-actions-gap.md](xcode-cloud-post-actions-gap.md) — and with it the things
+this file used to list as blockers: a per-base content type (`Accept: */*` and no
+`Content-Type`, which is what stops the 403 that refused every `ci-*` command for its whole
+life), a per-base 403 rule that does not report a refusal as a dead session, and a
+plain-JSON `items` page shape. The team id turned out to need no discovery either: on all 22
+recorded `/ci/api` requests the `teams/{id}` path segment is the same value as the
+`X-Connect-Team-ID` header the session already carries, so no `--team` flag and no third
+`olympus` base — which matters, because `actors` and `people` carry personal data this
+client has no reason to hold.
 
-1. **The `/ci/api` transport base was deliberately removed.** `src/http.ts` now has a
-   single `BASE_URL` constant, one content type and no notion of a second API at all — no
-   base map, no per-base header branch, no non-JSON:API page shape. Every call above needs
-   that whole mechanism reintroduced, not just an entry added to it. It is a real reversal
-   of a decision already taken, not an addition beside it.
-2. **`/ci/api` is not JSON:API.** Sending `content-type: application/vnd.api+json` to it is
-   answered **403** — the header bisect is in
-   [xcode-cloud-post-actions-gap.md](xcode-cloud-post-actions-gap.md), and it is why every
-   `ci-*` command in this repository was refused for its whole life. A restored base must
-   carry a per-base content-type rule, and the retained iris writes must not be able to
-   inherit the wrong one.
-3. **These are team-scoped, not app-scoped.** `.claude/references/architecture.md` records
-   that everything mapped is about an app, the People page having been the one account-wide
-   corner and having gone with the invitations slice. Every call here is `/{teamId}/…`. Accepting them
-   reopens an account-wide surface that was closed on purpose. **That is a product call for
-   the owner.**
-4. **The team id has to come from somewhere.** It is discoverable:
-   `GET /olympus/v1/actors` returns it at `data[].attributes.teamId` for the session's own
-   actor. That means either a third base (`olympus`) or an explicit `--team` flag. The
-   narrow read is preferable to widening `olympus` generally, since `actors` and `people`
-   carry personal data this client has no reason to hold.
-5. **Reads only.** Nothing here can be written on this evidence.
+A read added here is now roughly one function in `src/ci.ts`, one command, fixtures, and the
+evidence note. What is left to weigh is not plumbing:
+
+1. **These are team-scoped, and about the account rather than an app.** `post_actions` is
+   reached through a team id but describes a product's workflow. Compute minutes, per-user
+   capabilities and PLA status describe the *team*.
+   `.claude/references/architecture.md` records that nothing here reads account-wide state,
+   the People page having been the one such corner and having gone with the invitations
+   slice. **That is a product call for the owner**, and it is the whole of what this file
+   is still waiting on.
+2. **Reads only.** Nothing here can be written on this evidence, and the `CI` base is
+   declared read-only in the transport, so nothing here could be written by accident either.
 
 ## A smaller shape, if any of it is wanted
 
 If the answer is "the minutes, and nothing else", the honest slice is one read-only
 command — `asc usage` — over `usage/summary` and optionally `usage/days`, with the team id
-taken from a flag rather than discovered, so no *third* base is needed and no personal data
-is fetched. That is roughly: bringing back a base map and a per-base content-type rule —
-both of which the transport now holds as single constants — plus one plain-JSON page shape, one command,
-and the note in `docs/evidence.md` that it was recorded from the browser on 2026-08-21 and
-never written to.
-
-`user-capabilities` is the natural second, being a single flat GET with no pagination.
-Infrastructure validation is the natural last, because it is three nested reads whose only
-point is a write that was not recorded.
+from the session as `post-actions` takes it. `user-capabilities` is the natural second,
+being a single flat GET with no pagination. Infrastructure validation is the natural last,
+because it is three nested reads whose only point is a write that was not recorded.
 
 ## What would settle it
 
-1. The owner's decision on point 3 — whether an account-wide, team-scoped surface is back
-   in scope.
-2. Whether `asc usage` earns back a second base and a per-base content-type rule, both of
-   which the transport collapsed to constants on 2026-08-21 — see [CLAUDE.md](../CLAUDE.md)
-   on the boundary, and `docs/evidence.md` on what the transport can express.
-3. For infrastructure validation only: a browser recording of the opt-in toggle. Until then
+1. The owner's decision on point 1 — whether an account-wide, team-scoped surface is back
+   in scope. Nothing else blocks the usage read.
+2. For infrastructure validation only: a browser recording of the opt-in toggle. Until then
    it is a read of a switch this client cannot throw.

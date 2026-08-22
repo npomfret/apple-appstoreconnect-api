@@ -21,6 +21,7 @@ import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import * as api from '../src/api';
+import * as ci from '../src/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const BASE = 'https://appstoreconnect.apple.com/iris/v1';
@@ -496,5 +497,44 @@ describe('saving a reply', () => {
     } finally {
       stub.restore();
     }
+  });
+});
+
+/**
+ * The one Xcode Cloud read, and the only call here that is not iris.
+ *
+ * `post_actions` is the field: re-checked 2026-08-21 against specification 4.4.1, where
+ * `post_action`, `postAction`, `deployment_config`, `archive_action_id` and
+ * `testFlight_internal` occur zero times across 966 paths and 1,393 schemas, and
+ * `CiWorkflow` has no post-action attribute. Everything else about Xcode Cloud is official
+ * and is not here, so this file's rule applies with a second edge: a test below that needs
+ * editing during a removal means the removal took the gap, and one that needs editing to
+ * add a *second* Xcode Cloud call means the slice grew past the field it was allowed.
+ */
+describe('the Xcode Cloud read', () => {
+  test('one workflow list on one product, with the browser\'s own query', async () => {
+    const calls = await sent({ items: [] }, () => ci.fetchPostActions(SESSION, 'product-0000'));
+
+    assert.equal(calls.length, 1, 'the product id is given, never looked up from an app id');
+    assert.equal(calls[0]!.method, 'GET');
+    assert.equal(
+      calls[0]!.url,
+      'https://appstoreconnect.apple.com/ci/api' +
+        `/teams/${SESSION.teamId}/products/product-0000/workflows-v15` +
+        '?limit=100&include_deleted=false'
+    );
+  });
+
+  /**
+   * Not a detail. `/ci/api` answers a request carrying `application/vnd.api+json` with a
+   * 403, and that one header is why every `ci-*` command in this repository was refused for
+   * the whole of its life. The session is captured from an iris request, so the header has
+   * to be absent rather than merely unset.
+   */
+  test('nothing about this request claims to be JSON:API', async () => {
+    const calls = await sent({ items: [] }, () => ci.fetchPostActions(SESSION, 'product-0000'));
+
+    assert.equal(calls[0]!.headers['content-type'], undefined);
+    assert.equal(calls[0]!.headers['accept'], '*/*');
   });
 });
