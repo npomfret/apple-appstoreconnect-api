@@ -2,9 +2,9 @@
 
 What this library exports is the gap surface and nothing else: Resolution Center threads,
 messages, rejections, drafts and attachments; unread review-message counts; version
-state-change history; App Privacy; and three Xcode Cloud reads — `post_actions`, compute
-usage, and the team's Developer Program standing. Everything else App Store Connect can do,
-Apple serves through its
+state-change history; App Privacy; and four Xcode Cloud reads — `post_actions`, compute
+usage, the team's Developer Program standing, and what the session is permitted to do.
+Everything else App Store Connect can do, Apple serves through its
 [official API](https://developer.apple.com/documentation/appstoreconnectapi/) — with an API
 key rather than the browser cookie this client reads, and there is no export here that
 wraps or forwards to it.
@@ -79,7 +79,8 @@ productId)` answers whether an Xcode Cloud workflow hands its builds to TestFlig
 automatically; `fetchPlan(session)` and `fetchUsage(session, days)` answer how much build
 compute the team has left and where it went; and `fetchTeam(session)` answers where the team
 stands with the Apple Developer Program, including whether the Program License Agreement is
-waiting for a signature. None of the three has a schema in Apple's official specification.
+waiting for a signature; and `fetchCapabilities(session)` answers what Xcode Cloud says this
+session is permitted to do. None of the four has a schema in Apple's official specification.
 They return plain objects rather than JSON:API — `listWorkflows` is the untouched response
 if you want it — and `denormalize` has nothing to do with any of them.
 
@@ -90,12 +91,20 @@ sends no plan or a non-numeric total, because a missing allowance and an exhaust
 different answers. `fetchUsage` is lenient in the other direction: unrecognised rows are
 dropped, since a missing row is a gap in a breakdown rather than an unanswerable question.
 
-`fetchTeam` throws on the same principle, and it is the strictest of the three: a missing or
+`fetchTeam` throws on the same principle, and it is among the strictest here: a missing or
 non-boolean `wwdr_pla_needs_signing` is an error rather than a `false`, because reading an
 unanswered question as "nothing to sign" is the one wrong answer the call can give. It
 carries five of the response's eight keys — the team uuid it was called with, an unexplained
 `public_provider_id` and the page's own web links are all dropped — and `programState` is a
 `string` rather than a union, passed through and never compared against a literal.
+
+`fetchCapabilities` is stricter still: **all thirteen booleans are required**, and a missing
+one is an error rather than a `false`. Apple saying nothing about a permission is not Apple
+withholding it, so neither a `false` nor a `true` default is available. Its return type is
+derived from one table of wire keys, so the field set and what the response is read with
+cannot drift apart, and a fourteenth key is neither carried nor absorbed. `SessionCapabilities`
+is a fact about the *account*, not about this library: every one of the thirteen is a write,
+and the `/ci/api` base is read-only, so nothing here acts on any of them.
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
 `sendDraftReply()` called from code go straight to Apple, and neither can be undone.

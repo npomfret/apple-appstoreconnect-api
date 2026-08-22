@@ -15,7 +15,15 @@ import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import { ApiError, CI, request, SessionExpiredError } from '../src/http';
-import { fetchPlan, fetchPostActions, fetchTeam, fetchUsage, formatPostActions, listWorkflows } from '../src/ci';
+import {
+  fetchCapabilities,
+  fetchPlan,
+  fetchPostActions,
+  fetchTeam,
+  fetchUsage,
+  formatPostActions,
+  listWorkflows,
+} from '../src/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const CI_BASE = 'https://appstoreconnect.apple.com/ci/api';
@@ -279,6 +287,7 @@ describe('the compute window', () => {
       await assert.rejects(() => fetchPlan(without), /no team id/);
       await assert.rejects(() => fetchUsage(without, 7), /no team id/);
       await assert.rejects(() => fetchTeam(without), /no team id/);
+      await assert.rejects(() => fetchCapabilities(without), /no team id/);
     } finally {
       stub.restore();
     }
@@ -307,6 +316,29 @@ describe('the compute window', () => {
     const stub = stubFetch(() => ({ body: [] }));
     try {
       await assert.rejects(() => withStderr(() => fetchTeam(SESSION)), /no team document/);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a capabilities document that is not an object is refused rather than read as no permissions', async () => {
+    const stub = stubFetch(() => ({ body: [] }));
+    try {
+      await assert.rejects(() => withStderr(() => fetchCapabilities(SESSION)), /no capabilities document/);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  /**
+   * An empty object is the case worth naming separately. It parses, it is the right type,
+   * and reading it leniently would report every permission as withheld on a response that
+   * withheld nothing — it said nothing.
+   */
+  test('an empty capabilities document is refused rather than read as everything withheld', async () => {
+    const stub = stubFetch(() => ({ body: {} }));
+    try {
+      await assert.rejects(() => withStderr(() => fetchCapabilities(SESSION)), /did not say whether this session may/);
     } finally {
       stub.restore();
     }

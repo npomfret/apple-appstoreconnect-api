@@ -2,9 +2,8 @@
 
 ## Status
 
-Open. Added 2026-08-21, while removing the metadata, App Information and age-rating
-slice. Nothing is being asked for yet; this records a
-finding so it does not have to be found again.
+**Open, and blocked on a capture that does not exist.** Nothing is being asked for; this
+records a finding so it does not have to be found again.
 
 ## The finding
 

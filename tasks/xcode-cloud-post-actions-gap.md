@@ -2,8 +2,7 @@
 
 ## Status
 
-The read shipped on 2026-08-22 — `asc post-actions <productId>`, `fetchPostActions()` in
-`src/ci.ts`, evidence in `docs/evidence.md`. Nothing below is authorised by this file.
+The read shipped as `asc post-actions`. **Nothing below is authorised by this file.**
 
 ## What remains open
 
@@ -25,6 +24,20 @@ write to verify one.** The `CI` base in `src/http.ts` is declared `readOnly` and
 transport refuses any method but `GET` on it, so this is a decision to take deliberately
 rather than a gap to fill in passing.
 
+The same body is how the browser toggles a workflow on and off — one boolean, `disabled`,
+in an otherwise byte-identical fourteen-key `PUT`. That one is **closed, not open**: Apple
+serves it properly as `PATCH /v1/ciWorkflows/{id}` with `isEnabled`, so the private route is
+a strictly worse duplicate. Recorded in [evidence.md](../docs/evidence.md) and the
+[README](../README.md); it is not a decision waiting here.
+
+**Whether the environment-variable collections are worth reaching.** `environmentVariable`
+occurs **zero** times in 4.4.1 and `CiWorkflow` has no such attribute or relationship, so
+`environment_variables` and `product_environment_variables` are, like `post_actions`, fields
+Apple's specification has no schema for. That is a finding rather than a proposal: their
+values are secrets, the only recorded route to them is the full-document replace above, and
+reading them would put a workflow's secrets through this client for the first time. It is
+why `asc post-actions` has no `--raw`.
+
 **Whether any other `type` exists.** Only `testFlight_internal` was observed. The name
 implies an external counterpart, but implying is not observing, and nothing should accept
 or emit a second value on the strength of the first one's spelling. `PostAction.type` is a
@@ -32,44 +45,6 @@ passed-through string for that reason, not a union.
 
 **Whether `beta_tester_ids` behaves like `beta_group_ids`.** Present and empty throughout
 the recording. Nothing shows what a populated one looks like or whether the two combine.
-
-## Activating and deactivating a workflow is Apple's, not this repository's
-
-A capture of the Xcode Cloud **activate/deactivate** toggle was added on 2026-08-22
-(`tmp/workflow activate and deactivate.txt`, two curls). Read through the extractor, the two
-`PUT`s carry byte-identical fourteen-key bodies differing in exactly one boolean:
-`disabled: true` → `disabled: false`. So the private route to enabling a workflow is the
-same full-document replace described above.
-
-**It is out of scope, and not marginally.** Checked against 4.4.1 on 2026-08-22:
-`PATCH /v1/ciWorkflows/{id}` exists, `CiWorkflowUpdateRequest` declares every attribute
-optional, and `isEnabled` is one of them. So the officially supported way to deactivate a
-workflow is a partial update of a single attribute:
-
-```
-PATCH /v1/ciWorkflows/{id}
-{"data": {"id": "…", "type": "ciWorkflows", "attributes": {"isEnabled": false}}}
-```
-
-The private route is not merely a duplicate of that — it is a strictly worse one. Apple's
-version changes one attribute. This one replaces the whole document, so anything the client
-fails to send back is destroyed, on the workflow that builds every push. Mapping it would
-mean adding a write to a base declared read-only in order to do badly what Apple already
-does well, and by the rule in [CLAUDE.md](../CLAUDE.md) — duplication is a property of a
-call — it is a duplicate whichever way the route is spelled. Use the official API.
-
-The same check disposes of most of the fourteen keys: `name`, `description`, `clean`,
-`containerFilePath`, `isLockedForEditing`, `actions` and the start conditions are all
-`CiWorkflowUpdateRequest` attributes, and `macos_version`, `xcode_version` and `repo` are
-official relationships.
-
-**One thing in that body is a genuine gap and is recorded here rather than acted on.**
-`environmentVariable` occurs **zero** times in the whole of 4.4.1, and `CiWorkflow` has no
-environment-variable attribute and no such relationship — so `environment_variables` and
-`product_environment_variables` are, like `post_actions`, fields Apple's specification has no
-schema for. That is a finding, not a proposal: their values are secrets, the only route to
-them is the full-document replace, and reading them would put a workflow's secrets through
-this client for the first time. It is why `asc post-actions` has no `--raw`.
 
 ## Handling the recording
 
@@ -80,14 +55,11 @@ repository URLs, account identities and the workflow's environment variables. It
 sanitising authentication headers does not necessarily remove workflow content.
 
 Reading it means an extractor that emits methods, redacted paths, query keys, statuses and
-response key structure, and lets no credential or personal detail out — the way it was read
-on 2026-08-21 and again on 2026-08-22, and the way the Usage page recording was read for
-[xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md). Never use the recording itself in a
-test; the fixtures in `test/ci.test.ts` and `test/gap-*.test.ts` are invented from the shape.
+response key structure, and lets no credential or personal detail out. Never use the
+recording itself in a test; the fixtures in `test/ci.test.ts` and `test/gap-*.test.ts` are
+invented from the shape.
 
 ## The other `/ci/api` surface
 
-Two reads from the Usage page recording are still unbuilt and unauthorised —
-`user-capabilities` and infrastructure validation — in
-[xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md). Team/PLA state left that file on
-2026-08-22 as `asc team`.
+One read from the Usage page recording is still unbuilt and unauthorised — infrastructure
+validation, in [xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md).

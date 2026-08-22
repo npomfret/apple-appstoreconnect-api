@@ -1,7 +1,7 @@
 /**
- * Xcode Cloud, for the three things on it Apple's official API cannot answer: whether a
- * build is handed to testers automatically, how much compute the team has left, and where
- * the team stands with the Apple Developer Program.
+ * Xcode Cloud, for the four things on it Apple's official API cannot answer: whether a
+ * build is handed to testers automatically, how much compute the team has left, where the
+ * team stands with the Apple Developer Program, and what this session is permitted to do.
  *
  * Everything else about Xcode Cloud — products, workflows, repositories, build runs,
  * actions, issues, test results, and creating or updating a workflow — Apple serves
@@ -32,7 +32,21 @@
  * `agreementText` — the TestFlight tester agreement and the customer EULA, neither of them
  * the Program License Agreement. So there is no official way to see an unsigned PLA coming.
  *
- * All three are reads, and that is all this module does.
+ * The fourth is what the signed-in session may do in Xcode Cloud. Checked the same way on
+ * 2026-08-22: `canConfigure`, `canTrigger`, `canEdit`, `canRemove`, `canChange`, `canManage`,
+ * `canOnboard`, `canRestrict`, `restrictedWorkflow` and `infrastructureValidation` occur
+ * **zero** times in 4.4.1, and `privilege` zero as well. What Apple does serve is
+ * `/v1/users`, whose `User` carries `roles` — thirteen coarse `UserRole` values, `ADMIN`
+ * through `GENERATE_INDIVIDUAL_KEYS` — beside `username`, `firstName` and `lastName`. That
+ * is a directory of people and their job titles; this is thirteen resolved booleans about
+ * one session, with no identity attached and no official route to them. Turning a role into
+ * these booleans is a mapping Apple publishes in prose, not in the API, and hardcoding it
+ * would be exactly the guess this repository refuses. The 93 occurrences of `capabilit` are
+ * all `BundleIdCapability`, which is App ID entitlements, and the four of `notariz` are the
+ * `NOTARIZATION` release destination and a `STAPLED_NOTARIZED_ARCHIVE` artifact type —
+ * neither of them a permission to configure or trigger anything.
+ *
+ * All four are reads, and that is all this module does.
  *
  * **It reads. There is no write here, and the base it uses cannot carry one** — see `CI` in
  * `http.ts`. The `PUT` that sets `post_actions` is recorded in both directions, so the gap
@@ -639,5 +653,99 @@ export function formatTeam(team: TeamStanding): string {
   }
 
   lines.push(`dev team   ${team.developerTeamId}`);
+  return lines.join('\n');
+}
+
+/**
+ * The thirteen things Xcode Cloud says this session may do, in the order the digest prints
+ * them: the wire key, and the phrase that names the capability.
+ *
+ * One table rather than two. It is what `fetchCapabilities` reads the response with, what
+ * the fail-fast message quotes when a key is missing, and what `formatCapabilities` labels
+ * its lines with, so a capability cannot be parsed under one name and printed under
+ * another. Apple's `can_` prefix is kept on the field names because these are permissions
+ * and `canRemoveProducts` reads as one where `removeProducts` reads as an instruction.
+ *
+ * The set is closed on purpose. Thirteen keys arrived in each of the three recordings and a
+ * fourteenth would be Apple changing the response, which is a re-capture rather than
+ * something to absorb silently.
+ */
+const CAPABILITIES = {
+  canEditRestrictedWorkflows: ['can_edit_restricted_workflows', 'edit restricted workflows'],
+  canRestrictWorkflows: ['can_restrict_workflows', 'restrict a workflow to fewer people'],
+  canRemoveProducts: ['can_remove_products', 'remove products'],
+  canChangeNextBuildNumber: ['can_change_next_build_number', "change a product's next build number"],
+  canManageSubscriptions: ['can_manage_subscriptions', 'manage the Xcode Cloud subscription'],
+  canConfigureExternalDeployments: ['can_configure_external_deployments', 'configure external deployments'],
+  canTriggerExternalDeployments: ['can_trigger_external_deployments', 'trigger an external deployment'],
+  canConfigureNotarization: ['can_configure_notarization', 'configure notarization'],
+  canTriggerNotarization: ['can_trigger_notarization', 'trigger notarization'],
+  canConfigureLockedVersionAliases: ['can_configure_locked_version_aliases', 'configure locked version aliases'],
+  canConfigureLockedProductEnvironmentVariables: [
+    'can_configure_locked_product_environment_variables',
+    'configure locked product environment variables',
+  ],
+  canConfigureInfrastructureValidation: [
+    'can_configure_infrastructure_validation',
+    'configure infrastructure validation',
+  ],
+  canOnboardToDistribution: ['can_onboard_to_distribution', 'onboard the team to distribution'],
+} as const satisfies Record<string, readonly [string, string]>;
+
+/**
+ * What Xcode Cloud says the holder of this session may do.
+ *
+ * Read from `GET ci/api/teams/{teamId}/user-capabilities`, which despite its name returns
+ * **no identity at all** — thirteen booleans, no name, no email address, no user id. That is
+ * what makes it a read this client will make: it does not describe a person, it describes
+ * what the captured cookie is permitted to do, and the answer arrives with nobody's personal
+ * details attached. Reading *who is on the team* remains out of scope and unchanged.
+ *
+ * Derived from the type above so the field set and the wire keys cannot drift apart.
+ */
+export type SessionCapabilities = { -readonly [K in keyof typeof CAPABILITIES]: boolean };
+
+/**
+ * What Apple says this session is allowed to do in Xcode Cloud.
+ *
+ * Every one of the thirteen is required. A capability Apple did not mention is not a
+ * capability that is withheld — defaulting a missing key to `false` would report a
+ * permission as denied on the strength of Apple having said nothing, and defaulting it to
+ * `true` would be worse. `flag()` refuses both, for the reason it was written.
+ */
+export async function fetchCapabilities(session: Session): Promise<SessionCapabilities> {
+  const path = `teams/${teamOf(session)}/user-capabilities`;
+  const body = record(await request<unknown>(session, path, { api: CI }));
+
+  if (!body) {
+    throw new Error('Xcode Cloud returned no capabilities document, so there is nothing to report.');
+  }
+
+  const capabilities = {} as SessionCapabilities;
+  for (const field of Object.keys(CAPABILITIES) as (keyof SessionCapabilities)[]) {
+    const [key, phrase] = CAPABILITIES[field];
+    capabilities[field] = flag(body[key], `this session may ${phrase}`);
+  }
+  return capabilities;
+}
+
+/**
+ * The digest.
+ *
+ * All thirteen were `true` in all three recordings, so a withheld capability has never been
+ * seen rendered against real data — the same caveat `formatTeam` carries, and for the same
+ * reason. The wording is therefore a report of what Apple said and not a prediction: a `no`
+ * here has never been observed to precede a refusal, because no `no` has been observed.
+ *
+ * It is also not a promise about *this* client, which performs none of these operations —
+ * the `CI` base is read-only and every one of the thirteen is a write. What this answers is
+ * what the account may do, wherever it is done from.
+ */
+export function formatCapabilities(capabilities: SessionCapabilities): string {
+  const lines = ['Xcode Cloud says this session may:'];
+  for (const field of Object.keys(CAPABILITIES) as (keyof SessionCapabilities)[]) {
+    const [, phrase] = CAPABILITIES[field];
+    lines.push(`  ${capabilities[field] ? 'yes' : ' no'}  ${phrase}`);
+  }
   return lines.join('\n');
 }

@@ -11,9 +11,10 @@ smallest diff.
 The tree is gap-only as of 2026-08-22: no private implementation of an officially served
 capability remains, `asc get` is confined to the private families and reaches iris only,
 there is no raw write, and the transport speaks one host, four methods, and two bases —
-`iris/v1`, and a **read-only** `/ci/api` carrying the three Xcode Cloud capabilities in none
-of 4.4.1's schemas — a workflow's `post_actions`, compute usage against the plan, and the
-team's Developer Program standing including whether the PLA needs signing. Keep it that way. A third base, or a write on the
+`iris/v1`, and a **read-only** `/ci/api` carrying the four Xcode Cloud capabilities in none
+of 4.4.1's schemas — a workflow's `post_actions`, compute usage against the plan, the
+team's Developer Program standing including whether the PLA needs signing, and the thirteen
+booleans saying what the session is permitted to do. Keep it that way. A third base, or a write on the
 second, is an owner decision with a recording behind it, not an implementation detail.
 
 The rule for deciding is that **duplication is a property of a call, not of a resource**. A

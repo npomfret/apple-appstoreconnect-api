@@ -542,9 +542,12 @@ describe('the Xcode Cloud read', () => {
 /**
  * The compute reads. Apple has no usage resource of any kind — the only official `usage`
  * paths are TestFlight's, about testers rather than build minutes — so like the block
- * above this is a fence: a test here that needs editing to add a *fourth* Xcode Cloud call
+ * above this is a fence: a test here that needs editing to add a *fifth* Xcode Cloud call
  * means the slice grew past what it was allowed. It stood at three on 2026-08-22, when the
- * team read below was added deliberately and this sentence was changed to say so.
+ * team read was added deliberately and this sentence was changed to say so; at four later
+ * the same day, when the capabilities read was. Each step past this line is a decision
+ * somebody took on its own evidence, which is why the count is written out rather than
+ * incremented in passing.
  */
 describe('the Xcode Cloud compute reads', () => {
   test('the plan is one GET, scoped by the session team, with no query at all', async () => {
@@ -606,6 +609,48 @@ describe('the Xcode Cloud team read', () => {
 
   test('it does not claim to be JSON:API either', async () => {
     const calls = await sent(TEAM, () => ci.fetchTeam(SESSION));
+
+    assert.equal(calls[0]!.headers['content-type'], undefined);
+    assert.equal(calls[0]!.headers['accept'], '*/*');
+  });
+});
+
+/**
+ * The capabilities read. The thirteen booleans have no official schema — `canConfigure`,
+ * `canTrigger`, `canRestrict` and the rest occur zero times in 4.4.1 — and Apple's
+ * `/v1/users` serves coarse roles beside people's names rather than resolved permissions,
+ * so this belongs behind the same fence.
+ */
+describe('the Xcode Cloud capabilities read', () => {
+  const CAPS = {
+    can_edit_restricted_workflows: true,
+    can_restrict_workflows: true,
+    can_remove_products: true,
+    can_change_next_build_number: true,
+    can_manage_subscriptions: true,
+    can_configure_external_deployments: true,
+    can_trigger_external_deployments: true,
+    can_configure_notarization: true,
+    can_trigger_notarization: true,
+    can_configure_locked_version_aliases: true,
+    can_configure_locked_product_environment_variables: true,
+    can_configure_infrastructure_validation: true,
+    can_onboard_to_distribution: true,
+  };
+
+  test('one GET at the user-capabilities path, scoped by the session team, with no query', async () => {
+    const calls = await sent(CAPS, () => ci.fetchCapabilities(SESSION));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.method, 'GET');
+    assert.equal(
+      calls[0]!.url,
+      `https://appstoreconnect.apple.com/ci/api/teams/${SESSION.teamId}/user-capabilities`
+    );
+  });
+
+  test('it does not claim to be JSON:API either', async () => {
+    const calls = await sent(CAPS, () => ci.fetchCapabilities(SESSION));
 
     assert.equal(calls[0]!.headers['content-type'], undefined);
     assert.equal(calls[0]!.headers['accept'], '*/*');

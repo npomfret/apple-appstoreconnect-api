@@ -241,6 +241,55 @@ the response are deliberately not printed: the team uuid, which is just the id t
 sent; `public_provider_id`, a uuid nothing observed explains; and the page's own button
 links, one of which carries a person id.
 
+## Xcode Cloud: what this session is allowed to do
+
+```sh
+asc capabilities
+asc capabilities --json
+```
+
+```
+Xcode Cloud says this session may:
+  yes  edit restricted workflows
+  yes  restrict a workflow to fewer people
+  yes  remove products
+  yes  change a product's next build number
+  yes  manage the Xcode Cloud subscription
+  yes  configure external deployments
+  yes  trigger an external deployment
+  yes  configure notarization
+  yes  trigger notarization
+  yes  configure locked version aliases
+  yes  configure locked product environment variables
+  yes  configure infrastructure validation
+  yes  onboard the team to distribution
+```
+
+`GET ci/api/teams/{teamId}/user-capabilities`, no query. Thirteen booleans, and **that is
+the entire response** — no name, no email address, no user id, no role. Despite the path,
+this does not read a person: it reads what the captured cookie is permitted to do. That is
+why it is here when the People page is not, and reading who is on the team stays out of
+scope.
+
+Apple has no official equivalent. `/v1/users` serves `roles` — thirteen coarse `UserRole`
+values, `ADMIN` through `GENERATE_INDIVIDUAL_KEYS` — next to people's usernames and real
+names. Coarse roles beside a directory of humans are a different call from resolved
+per-capability booleans for one session, and the mapping from one to the other is something
+Apple documents in prose rather than serving; none of `canConfigure`, `canTrigger`,
+`canRestrict` or `infrastructureValidation` occurs anywhere in 4.4.1.
+
+**None of the thirteen is something `asc` does.** Every one of them is a write, and the
+`/ci/api` base this client speaks is read-only. What the command answers is what the account
+may do — in the browser, in Xcode, or through the official API — not what this tool will let
+you do.
+
+All thirteen were `yes` in all three recordings, so **a `no` has never been seen against
+real data.** A `no` is a report of what Apple said, not a prediction that something will be
+refused; nothing observed here connects the two. And a capability Apple simply omits is an
+error rather than a `no`, for the reason the PLA flags are: "Apple did not say" and "you may
+not" are different answers. A fourteenth key would be Apple changing the response, and is
+neither carried nor absorbed silently.
+
 `appId` defaults to the one scraped from the captured request's `Referer`. **`versionId` has
 no default** — `asc history <versionId>` requires it, because working one out means reading
 `apps/{id}/appStoreVersions`, which is Apple's own

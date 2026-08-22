@@ -50,6 +50,13 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
                               Program team id. Read-only. The official API has no team
                               resource and never mentions the PLA
 
+  asc capabilities            What Xcode Cloud says this session is permitted to do:
+                              thirteen booleans covering restricted workflows, external
+                              deployments, notarization and the rest. Read-only, and returns
+                              no identity — not a name, an email address or a user id. The
+                              official API serves roles on /v1/users, not resolved
+                              permissions, and none of these thirteen has an official schema
+
   asc get <path> [k=v ...]    Raw GET, for a query the commands above don't send. Confined
                               to the private families this client is for; an officially
                               served path is refused rather than duplicated
@@ -71,7 +78,8 @@ This reaches Apple and cannot be undone. It shows what it is about to send and a
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
   --json                      For "report", "history", "privacy", "post-actions",
-                              "usage" and "team": emit JSON instead of the digest
+                              "usage", "team" and "capabilities": emit JSON instead of
+                              the digest
   --yes                       Skip the confirmation prompt on the commands that ask
   --attach <file>             For "save-draft": a file to attach. Repeat for several
 
@@ -513,6 +521,23 @@ async function main(argv: string[]): Promise<number> {
       const session = loadSession();
       const team = await ci.fetchTeam(session);
       console.log(json ? JSON.stringify(team, null, 2) : ci.formatTeam(team));
+      return 0;
+    }
+
+    /**
+     * Team-scoped in the path, like `asc usage` and `asc team`, but the reason it is not a
+     * *person*-scoped read — the boundary this client has never crossed — is the response:
+     * thirteen booleans and nothing else. It answers "what may this cookie do", not "who is
+     * on this team", and it carries nobody's name or address to answer it.
+     *
+     * A `yes` here is Apple's word about the account, not a promise from this client, which
+     * does none of the thirteen: the `/ci/api` base is read-only and every one of them is a
+     * write. The value is knowing what the account may do before going somewhere that can.
+     */
+    case 'capabilities': {
+      const session = loadSession();
+      const capabilities = await ci.fetchCapabilities(session);
+      console.log(json ? JSON.stringify(capabilities, null, 2) : ci.formatCapabilities(capabilities));
       return 0;
     }
 

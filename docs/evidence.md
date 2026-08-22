@@ -279,6 +279,54 @@ What the recording settles, and what it does not:
   nothing says what the set is, so it is a string rather than a union and is never compared
   against a literal.
 
+### The Xcode Cloud capabilities read
+
+`fetchCapabilities` — the `capabilities` command — is
+`GET ci/api/teams/{teamId}/user-capabilities`, with no query at all. It appears once in each
+of **three** independent recordings — the post-actions capture, the Manage Workflows capture
+and the Usage capture — and all three agree exactly: `200`, `application/json`, thirteen
+keys, every one a boolean. Read on 2026-08-22 through an extractor that emitted the key
+names, the value *types*, and the count of `true` against `false`, which is the subject of
+the call.
+
+**Apple serves roles, not resolved permissions.** Checked against **4.4.1** on 2026-08-22:
+`canConfigure`, `canTrigger`, `canEdit`, `canRemove`, `canChange`, `canManage`, `canOnboard`,
+`canRestrict`, `restrictedWorkflow`, `infrastructureValidation` and `privilege` occur zero
+times. What is official is `/v1/users`, whose `User` carries `roles` — thirteen coarse
+`UserRole` values from `ADMIN` to `GENERATE_INDIVIDUAL_KEYS` — beside `username`,
+`firstName`, `lastName`, `allAppsVisible` and `provisioningAllowed`. A directory of people
+and their job titles is not the same call as thirteen resolved booleans about one session,
+and the mapping between them is something Apple publishes in prose rather than in the API;
+hardcoding it here would be a guess wearing the clothes of a lookup.
+
+The 93 occurrences of `capabilit` are all `BundleIdCapability` — App ID entitlements, an
+unrelated sense of the word. The four of `notariz` are the `NOTARIZATION` release
+destination and a `STAPLED_NOTARIZED_ARCHIVE` artifact type, neither a permission.
+`tasks/xcode-cloud-usage-gap.md` recorded `notariz` as zero on 2026-08-21; the count is four
+and the conclusion is unchanged, and it is corrected here rather than left to be
+re-discovered.
+
+What the recordings settle, and what they do not:
+
+- **The response carries no identity.** Thirteen booleans, and nothing else: no name, no
+  email address, no user id, no role. That is the finding the decision to build this turns
+  on. `user-capabilities` reads as a person-scoped call and is not one — it says what the
+  captured cookie may do, not who holds it — so it does not cross the boundary that keeps
+  the People page out of this client. Reading *who is on the team* stays out of scope.
+- **All thirteen were `true`, in all three recordings.** A withheld capability has never
+  been observed, so what the digest prints for one has never been seen rendered against real
+  data, and no `no` has ever been observed to precede a refusal. The wording is a report of
+  what Apple said rather than a prediction of what Apple will do.
+- **A missing capability is refused, not defaulted.** Apple saying nothing about a permission
+  is not Apple withholding it. Defaulting to `false` would print "no" over a question that
+  was never answered; defaulting to `true` would be worse. The same rule as the PLA booleans
+  and the plan total.
+- **The field set is closed.** Thirteen keys arrived every time; a fourteenth is Apple
+  changing the response, which is a re-capture rather than something to absorb.
+- **None of the thirteen is an operation this client performs.** Every one is a write, and
+  the `CI` base is read-only. What the command answers is what the *account* may do, wherever
+  it is done from — not what `asc` will let anybody do.
+
 
 ## Calls that are probe-only, and so likelier to shift
 

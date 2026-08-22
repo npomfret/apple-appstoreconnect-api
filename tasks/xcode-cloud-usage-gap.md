@@ -2,9 +2,10 @@
 
 ## Status
 
-**Proposed. Nothing is authorised by this file.** Two reads from the Xcode Cloud Usage page
-recording, neither built. What this file was opened for has left it as it shipped: the
-compute reads as `asc usage`, and team/PLA state as `asc team`.
+**Proposed. Nothing is authorised by this file.** One read from the Xcode Cloud Usage page
+recording, unbuilt. Everything else this file was opened for has left it as it shipped: the
+compute reads as `asc usage`, team/PLA state as `asc team`, and the session's Xcode Cloud
+permissions as `asc capabilities`.
 
 Audited **2026-08-21** against Apple's official OpenAPI specification **4.4.1**, generated
 2026-07-15, 966 paths and 1,393 schemas. The recording was read through an extractor that
@@ -15,23 +16,7 @@ a write on this evidence, and the `CI` base is declared read-only in the transpo
 
 ## What is left
 
-### 1. Xcode Cloud permissions for the signed-in user
-
-`GET /ci/api/teams/{teamId}/user-capabilities` returns thirteen booleans —
-`can_edit_restricted_workflows`, `can_restrict_workflows`,
-`can_configure_external_deployments`, `can_trigger_external_deployments`,
-`can_remove_products`, `can_change_next_build_number`, `can_manage_subscriptions`,
-`can_configure_notarization`, `can_trigger_notarization`,
-`can_configure_locked_version_aliases`,
-`can_configure_locked_product_environment_variables`,
-`can_configure_infrastructure_validation`, `can_onboard_to_distribution`.
-
-`notariz` occurs zero times in 4.4.1, and the official API has no per-user capability
-resource of any kind. This is the answer to "will this call be refused before I make it",
-which is worth more to a script than to the page it was recorded from. A single flat GET
-with no pagination, so it is the cheapest thing in this file.
-
-### 2. Infrastructure validation
+### 1. Infrastructure validation
 
 Opt-in state for Apple's pre-release macOS/Xcode validation, at three levels:
 
@@ -42,9 +27,9 @@ Opt-in state for Apple's pre-release macOS/Xcode validation, at three levels:
   → `workflows[] {workflow_id, workflow_name, opt_in}`
 
 No official equivalent. The writes that would set `opt_in` were **not** recorded, and
-`can_configure_infrastructure_validation` above implies they exist; inventing them is the
-guess this repository refuses. This is the weakest thing left in the file: three nested
-reads whose only point is a write nobody has captured.
+`asc capabilities` reports a `can_configure_infrastructure_validation`, which implies they
+exist; inventing them is the guess this repository refuses. This is the weakest thing left
+in the file: three nested reads whose only point is a write nobody has captured.
 
 ## What is *not* a gap
 
@@ -77,14 +62,18 @@ are exercised. A read added here is one function in `src/ci.ts`, one command, fi
 an evidence note.
 
 What is left to weigh is scope rather than cost. The team-scoped boundary has now been
-crossed twice deliberately — compute usage, then team/PLA state — each on the ground that
-what it reads has no per-app form and no official equivalent. It does not follow that it is
-open. `user-capabilities` in particular describes a *person* rather than a team, which is a
-boundary this client has not crossed at all: the People page went with the invitations slice
-and has not come back.
+crossed three times deliberately — compute usage, then team/PLA state, then the session's
+own permissions — each on the ground that what it reads has no per-app form and no official
+equivalent. It does not follow that it is open, and what remains here is not blocked on
+scope anyway: it is blocked on the toggle never having been recorded.
+
+One correction belongs here rather than in the deleted item. That item claimed `notariz`
+occurs zero times in 4.4.1; re-checked on 2026-08-22 it occurs **four** times — the
+`NOTARIZATION` release destination and a `STAPLED_NOTARIZED_ARCHIVE` artifact type, neither
+of them a permission. The conclusion the number was supporting survives unchanged, and the
+corrected count is in [evidence.md](../docs/evidence.md). Re-run a count before quoting one.
 
 ## What would settle it
 
-1. Whether either is worth a command, taken one at a time.
-2. For infrastructure validation only: a browser recording of the opt-in toggle. Until then
-   it is a read of a switch this client cannot throw.
+A browser recording of the opt-in toggle. Until there is one, this is a read of a switch
+this client cannot throw, and the three reads describe a setting nothing here can change.

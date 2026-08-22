@@ -92,6 +92,7 @@ officially and none of it is here — the pages to use instead are
 | `post-actions <productId>` | private Xcode Cloud `post_actions`: whether a workflow hands each finished build to a TestFlight group. `ciWorkflows` has no such field officially. Read-only |
 | `usage [days]` | private Xcode Cloud compute: build minutes on the plan, minutes left, reset date, and optionally a per-day and per-product breakdown. Apple has no compute-usage resource at all. Read-only, and the only team-scoped command here |
 | `team` | private Developer Program standing: the team name, the membership state, whether the Program License Agreement is waiting for a signature, and the Developer Program team id. The official API has no team resource and never mentions the PLA. Read-only, and team-scoped like `usage` |
+| `capabilities` | private Xcode Cloud permissions: thirteen booleans saying what this session may do — restricted workflows, external deployments, notarization and the rest. The official API serves coarse roles on `/v1/users`, not resolved permissions, and none of the thirteen has an official schema. Read-only, and returns no identity at all |
 | `get` | a raw GET at a path you give it, confined to the private families above — an officially served path is refused rather than duplicated |
 
 **Writing** — all but one copied from a capture of the browser doing it; `delete-attachment`
@@ -189,7 +190,10 @@ By topic, for the capabilities this project deliberately does not have:
   and compute usage, which is why `asc post-actions` and `asc usage` exist and why they
   read those and nothing else. There is no team resource anywhere in the official API
   either — the only `team` in 4.4.1 is `gameCenterMatchmakingTeams` — and nothing official
-  mentions the Program License Agreement, which is `asc team`.
+  mentions the Program License Agreement, which is `asc team`. Nor is there any per-user
+  capability resource: `/v1/users` carries coarse `UserRole` values beside people's names,
+  where `asc capabilities` reads thirteen resolved booleans about the session and no
+  identity at all.
 - [TestFlight](https://developer.apple.com/documentation/appstoreconnectapi/testflight) —
   beta groups, testers and beta app review, none of which this project touches.
 
@@ -197,8 +201,9 @@ What is **not** in any of the above, and is why this project exists: Resolution 
 threads, messages, guideline rejections, draft replies and their attachments; unread
 review-message counts; App Store version state-change *history*; the App Privacy
 `dataUsages` questionnaire; an Xcode Cloud workflow's `post_actions`; Xcode Cloud compute
-usage against the plan; and the team's Developer Program standing, including whether the
-Program License Agreement needs signing. Checked against 4.4.1 on 2026-08-22 — see
+usage against the plan; the team's Developer Program standing, including whether the
+Program License Agreement needs signing; and what Xcode Cloud says the session is permitted
+to do. Checked against 4.4.1 on 2026-08-22 — see
 [docs/evidence.md](docs/evidence.md).
 
 One attribute, rather than a capability, sits on the line: iris carries

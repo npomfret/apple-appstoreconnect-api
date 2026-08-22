@@ -21,10 +21,12 @@ import { describe, test } from 'node:test';
 import { Document, Resource } from '../src/jsonapi';
 import { buildReport, fetchPrivacy, formatReport, SubmissionReport } from '../src/report';
 import {
+  fetchCapabilities,
   fetchPlan,
   fetchPostActions,
   fetchTeam,
   fetchUsage,
+  formatCapabilities,
   formatPostActions,
   formatTeam,
   formatUsage,
@@ -868,5 +870,108 @@ describe('what Xcode Cloud says about the team', () => {
     assert.doesNotMatch(carried, /public_provider_id|00000000-0000/);
     assert.doesNotMatch(carried, /appstoreconnect\.apple\.com/);
     assert.equal(Object.keys(team).length, 5);
+  });
+});
+
+describe('what Xcode Cloud says this session may do', () => {
+  /**
+   * All thirteen `true`, which is what all three recordings carried. The withheld case
+   * below is invented: no `false` has ever been observed, and these tests say so by
+   * constructing one rather than by pretending one was captured.
+   */
+  const CAPS = {
+    can_edit_restricted_workflows: true,
+    can_restrict_workflows: true,
+    can_remove_products: true,
+    can_change_next_build_number: true,
+    can_manage_subscriptions: true,
+    can_configure_external_deployments: true,
+    can_trigger_external_deployments: true,
+    can_configure_notarization: true,
+    can_trigger_notarization: true,
+    can_configure_locked_version_aliases: true,
+    can_configure_locked_product_environment_variables: true,
+    can_configure_infrastructure_validation: true,
+    can_onboard_to_distribution: true,
+  };
+
+  async function capabilities(body: unknown) {
+    const stub = stubFetch(() => ({ body }));
+    try {
+      return await withStderr(() => fetchCapabilities(SESSION));
+    } finally {
+      stub.restore();
+    }
+  }
+
+  test('all thirteen are carried, and nothing else is', async () => {
+    const caps = await capabilities(CAPS);
+
+    assert.equal(Object.keys(caps).length, 13);
+    assert.equal(caps.canEditRestrictedWorkflows, true);
+    assert.equal(caps.canConfigureLockedProductEnvironmentVariables, true);
+    assert.equal(caps.canOnboardToDistribution, true);
+  });
+
+  test('a withheld capability reads as withheld, and the rest are unaffected', async () => {
+    const caps = await capabilities({ ...CAPS, can_remove_products: false });
+
+    assert.equal(caps.canRemoveProducts, false);
+    assert.equal(caps.canRestrictWorkflows, true);
+    assert.match(formatCapabilities(caps), /no {2}remove products/);
+    assert.match(formatCapabilities(caps), /yes {2}restrict a workflow/);
+  });
+
+  /**
+   * The failure that matters, and it is the same one `fetchTeam` guards. Apple saying
+   * nothing about a permission is not Apple withholding it, and a digest that prints "no"
+   * on a key that never arrived is answering a question that was not asked.
+   */
+  test('a missing capability is refused rather than read as withheld', async () => {
+    const { can_trigger_notarization: _dropped, ...rest } = CAPS;
+
+    await assert.rejects(() => capabilities(rest), /did not say whether this session may trigger notarization/);
+  });
+
+  test('a non-boolean capability is not coerced, in either direction', async () => {
+    await assert.rejects(() => capabilities({ ...CAPS, can_remove_products: 'false' }), /did not say whether/);
+    await assert.rejects(() => capabilities({ ...CAPS, can_remove_products: 1 }), /did not say whether/);
+    await assert.rejects(() => capabilities({ ...CAPS, can_remove_products: null }), /did not say whether/);
+  });
+
+  /**
+   * A fourteenth key is Apple changing the response. It is not absorbed silently, and it is
+   * not carried either — the field set is the one that was recorded.
+   */
+  test('a capability nobody has recorded is not carried out of the response', async () => {
+    const caps = await capabilities({ ...CAPS, can_do_something_new: true });
+
+    assert.equal(Object.keys(caps).length, 13);
+    assert.doesNotMatch(JSON.stringify(caps), /something_new|somethingNew/);
+  });
+
+  /**
+   * The reason this read is not the person-scoped one the client has never made. The
+   * response carries no identity, so neither can anything built from it.
+   */
+  test('nothing identifying anybody comes out of it', async () => {
+    const caps = await capabilities({
+      ...CAPS,
+      username: 'someone@example.com',
+      first_name: 'Someone',
+      last_name: 'Else',
+    });
+    const carried = JSON.stringify(caps);
+
+    assert.doesNotMatch(carried, /example\.com|Someone|Else|username/);
+    assert.doesNotMatch(formatCapabilities(caps), /example\.com|Someone|Else/);
+  });
+
+  test('the digest names every capability it was given, and claims nothing beyond them', async () => {
+    const digest = formatCapabilities(await capabilities(CAPS));
+
+    assert.equal(digest.split('\n').length, 14);
+    assert.match(digest, /^Xcode Cloud says this session may:/);
+    assert.doesNotMatch(digest, /will|cannot be|refused/);
   });
 });
