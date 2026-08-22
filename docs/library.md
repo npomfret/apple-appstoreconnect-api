@@ -46,7 +46,10 @@ each one once, as `{ code, description }`. `code` is Apple's own `4.1.0` and `de
 Apple's own `Design: Copycats` — the section's name is the front of the description, not a
 field of its own. Apple does send a `reasonSection`, but it is the code with its last segment
 cut off (`4.1`), so it carries nothing `code` doesn't; it is read only as the code for a
-reason that arrives without one. A rejection has no date — `reasons` is its only attribute —
+reason that arrives without one. A reason naming neither, or a rejection carrying no `reasons`
+list, is refused rather than skipped: the digest prints the block only when it has rows, so a
+skipped reason would read as a rejection that cited nothing. A reason with no description is
+listed with an empty one — the number is the half you can look up. A rejection has no date — `reasons` is its only attribute —
 so where two rejections cite the same code, the first wording is kept and there is no later
 one to prefer.
 

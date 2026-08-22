@@ -446,6 +446,47 @@ describe('the guidelines behind a rejection', () => {
   test('a thread with no rejections has no guidelines, which is not an error', async () => {
     assert.deepEqual((await report({})).guidelines, []);
   });
+
+  test('a reason with no title is still listed, since the number is what you look up', async () => {
+    const digest = await report({
+      rejections: [rejection('r-1', [{ reasonCode: '4.3.0', reasonSection: '4.3' }])],
+    });
+
+    assert.deepEqual(digest.guidelines, [{ code: '4.3.0', description: '' }]);
+  });
+
+  // The two shapes below were skipped until 2026-08-22, and the digest prints this block only
+  // when it has rows — so either one dropped is a rejection that reads as citing no guideline
+  // at all. Neither has been recorded: every rejection served across the recordings carries
+  // `reasons` as its only attribute, and every reason on one carries a code, a section and a
+  // description.
+  test('a rejection with no list of reasons is refused, not read as citing nothing', async () => {
+    await assert.rejects(
+      report({ rejections: [{ type: 'reviewRejections', id: 'r-1', attributes: {} }] }),
+      /rejection arrived with no list of reasons/
+    );
+  });
+
+  test('a reason naming neither a code nor a section is refused', async () => {
+    await assert.rejects(
+      report({
+        rejections: [
+          rejection('r-1', [{ reasonCode: '4.3.0', reasonSection: '4.3', reasonDescription: 'Design: Spam' }]),
+          rejection('r-2', [{ reasonDescription: 'Something Apple has not been seen to send' }]),
+        ],
+      }),
+      /neither a reasonCode nor a reasonSection/
+    );
+  });
+
+  test('a reason that is not an object at all names no guideline either', async () => {
+    await assert.rejects(
+      report({
+        rejections: [{ type: 'reviewRejections', id: 'r-1', attributes: { reasons: [null] } }],
+      }),
+      /neither a reasonCode nor a reasonSection/
+    );
+  });
 });
 
 describe('starting without an official read', () => {

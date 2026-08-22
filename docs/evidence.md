@@ -117,6 +117,21 @@ list is the tested one and an override is not.
   carried a `section` field holding the numeric prefix until that day, which no output
   printed. Because rejections are undated, a code cited by two of them has no "latest"
   wording to prefer, and `report` keeps the first.
+
+  **Re-counted on 2026-08-22, to decide what may be dropped.** Every `reviewRejections`
+  resource in every recording was counted by attribute key name and by the key names and
+  value types on each reason — names and types, never a value. Four distinct rejections
+  exist, each re-served in all 16 recordings, carrying one, two, two and three reasons: 64
+  rejection resources and 128 reason objects as they appear on the wire. `reasons` is present
+  on all 64, is a list on all 64, and is the only attribute on all 64; all 128 reasons carry
+  exactly `reasonCode`, `reasonSection` and `reasonDescription`, and all three are non-empty
+  strings every time. Until that day `collectGuidelines` skipped a rejection whose `reasons`
+  was not a list and skipped a reason naming neither a code nor a section — and the digest
+  prints the guidelines block only when it has rows, so either skip would have printed a
+  rejection as citing no guideline on a report whose subject is why the submission was
+  refused. Both are refusals now, on the same rule as `collectAttachments` and its missing
+  id: a missing *label* still lists, a missing *identity* is refused. A reason with no
+  description is listed with an empty one.
 - `listThreads` — the app's Resolution Center thread list, and since the thread-first
   rebuild the starting point of `report`. The include list, the seven `filter[threadType]`
   values and `limit[appStoreVersions]=2000` are the browser's own. Two things that query

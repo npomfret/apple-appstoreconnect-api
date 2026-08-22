@@ -195,6 +195,22 @@ function sortByDateDesc(items: Denormalized[], field: string): Denormalized[] {
  * a guideline you can look up and nothing is not. No recorded reason is missing a code, so
  * that branch is a guard rather than an observation.
  *
+ * **What cannot be dropped.** A reason names a guideline or it names nothing, and the digest
+ * prints this block only when it has rows — so a reason skipped here is a thread that reads
+ * as citing no guideline at all, on a report whose entire subject is why the submission was
+ * rejected. Until 2026-08-22 two shapes were skipped in exactly that way: a rejection whose
+ * `reasons` was not a list, and a reason carrying neither a code nor a section. Both are
+ * refused now, the way `collectAttachments` refuses a file with no id and for the same
+ * reason — a missing identity is not a missing label. The description *is* the label, and an
+ * absent one still lists: a guideline number with no title is the half you can look up.
+ *
+ * Counted across the recordings on 2026-08-22: four distinct rejections, each re-served in
+ * all 16 and carrying one, two, two and three reasons — 64 rejection resources and 128 reason
+ * objects as they appear on the wire. Every one has `reasons` as its only attribute and every
+ * one of those is a list; every reason carries exactly `reasonCode`, `reasonSection` and
+ * `reasonDescription`, all three non-empty strings. So both refusals decide shapes Apple has
+ * not been seen to send rather than correcting ones it has.
+ *
  * **Deduplicating by code** is what the map is for, and both duplicates it covers are
  * recorded: one rejection cites the same code twice inside its own `reasons`, and the four
  * rejections on the recorded thread cite two codes between them. The first wording wins,
@@ -206,10 +222,25 @@ function collectGuidelines(rejections: Denormalized[]): Guideline[] {
 
   for (const rejection of rejections) {
     const reasons = rejection['reasons'];
-    if (!Array.isArray(reasons)) continue;
-    for (const reason of reasons as Array<Record<string, unknown>>) {
-      const code = asString(reason['reasonCode']) ?? asString(reason['reasonSection']);
-      if (!code || byCode.has(code)) continue;
+    if (!Array.isArray(reasons)) {
+      throw new Error(
+        'A review rejection arrived with no list of reasons, which is the only attribute iris ' +
+          'puts on one. Refusing the report rather than reading it as a rejection that cited ' +
+          'no guideline, which is what skipping it would print.'
+      );
+    }
+    for (const entry of reasons) {
+      const reason = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : undefined;
+      const code = reason && (asString(reason['reasonCode']) ?? asString(reason['reasonSection']));
+      if (!code) {
+        throw new Error(
+          'A rejection reason arrived with neither a reasonCode nor a reasonSection, so it names ' +
+            'no guideline and there is nothing to tell it from another reason by. Refusing the ' +
+            'report rather than dropping it: the guidelines are printed only when there are ' +
+            'rows, so a dropped reason is a rejection that reads as citing nothing.'
+        );
+      }
+      if (byCode.has(code)) continue;
       byCode.set(code, { code, description: asString(reason['reasonDescription']) ?? '' });
     }
   }
