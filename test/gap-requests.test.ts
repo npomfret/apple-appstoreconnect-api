@@ -542,8 +542,9 @@ describe('the Xcode Cloud read', () => {
 /**
  * The compute reads. Apple has no usage resource of any kind — the only official `usage`
  * paths are TestFlight's, about testers rather than build minutes — so like the block
- * above this is a fence: a test here that needs editing to add a *third* Xcode Cloud call
- * means the slice grew past what it was allowed.
+ * above this is a fence: a test here that needs editing to add a *fourth* Xcode Cloud call
+ * means the slice grew past what it was allowed. It stood at three on 2026-08-22, when the
+ * team read below was added deliberately and this sentence was changed to say so.
  */
 describe('the Xcode Cloud compute reads', () => {
   test('the plan is one GET, scoped by the session team, with no query at all', async () => {
@@ -575,6 +576,36 @@ describe('the Xcode Cloud compute reads', () => {
 
   test('neither compute read claims to be JSON:API either', async () => {
     const calls = await sent({ usage: [], product_usage: [], info: {} }, () => ci.fetchUsage(SESSION, 7));
+
+    assert.equal(calls[0]!.headers['content-type'], undefined);
+    assert.equal(calls[0]!.headers['accept'], '*/*');
+  });
+});
+
+/**
+ * The team read. There is no team resource in Apple's official API at all — the only
+ * `team` in 4.4.1 is `gameCenterMatchmakingTeams` — and nothing official mentions the
+ * Program License Agreement, so this belongs behind the same fence.
+ */
+describe('the Xcode Cloud team read', () => {
+  const TEAM = {
+    name: 'A team',
+    program_state: 'active',
+    wwdr_pla_needs_signing: false,
+    wwdr_team_within_pla_grace_period: false,
+    wwdr_team_id: 'AB12CD34EF',
+  };
+
+  test('one GET at the bare team path, scoped by the session team, with no query', async () => {
+    const calls = await sent(TEAM, () => ci.fetchTeam(SESSION));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.method, 'GET');
+    assert.equal(calls[0]!.url, `https://appstoreconnect.apple.com/ci/api/teams/${SESSION.teamId}`);
+  });
+
+  test('it does not claim to be JSON:API either', async () => {
+    const calls = await sent(TEAM, () => ci.fetchTeam(SESSION));
 
     assert.equal(calls[0]!.headers['content-type'], undefined);
     assert.equal(calls[0]!.headers['accept'], '*/*');

@@ -1,6 +1,7 @@
 /**
- * Xcode Cloud, for the two things on it Apple's official API cannot answer: whether a build
- * is handed to testers automatically, and how much compute the team has left.
+ * Xcode Cloud, for the three things on it Apple's official API cannot answer: whether a
+ * build is handed to testers automatically, how much compute the team has left, and where
+ * the team stands with the Apple Developer Program.
  *
  * Everything else about Xcode Cloud — products, workflows, repositories, build runs,
  * actions, issues, test results, and creating or updating a workflow — Apple serves
@@ -23,7 +24,15 @@
  * `CiBuildRun` carries `startedDate` and `finishedDate`, so wall-clock per run is derivable
  * one build at a time; billed compute, an allowance, and a reset date are not.
  *
- * Both are reads, and that is all this module does.
+ * The third is the team's standing in the Developer Program. Checked the same way on
+ * 2026-08-22: `wwdr`, `programState` and `program_state` occur **zero** times in 4.4.1, and
+ * the only `team` anywhere in the specification is `gameCenterMatchmakingTeams`, which is a
+ * matchmaking concept rather than a developer account. The two license-agreement schemas
+ * are `BetaLicenseAgreement` and `EndUserLicenseAgreement`, each carrying nothing but
+ * `agreementText` — the TestFlight tester agreement and the customer EULA, neither of them
+ * the Program License Agreement. So there is no official way to see an unsigned PLA coming.
+ *
+ * All three are reads, and that is all this module does.
  *
  * **It reads. There is no write here, and the base it uses cannot carry one** — see `CI` in
  * `http.ts`. The `PUT` that sets `post_actions` is recorded in both directions, so the gap
@@ -55,7 +64,7 @@ function segment(value: string, what: string): string {
 /**
  * The team every `/ci/api` path is scoped by, taken from the session.
  *
- * Not discovered, and not a flag. On all 22 `/ci/api` requests recorded from the browser
+ * Not discovered, and not a flag. On all 34 `/ci/api` requests recorded from the browser
  * the `teams/{id}` path segment is the same value as the `X-Connect-Team-ID` header, which
  * `src/curl.ts` already keeps from the capture and otherwise decodes from the `itctx`
  * cookie. So this costs no request: in particular it does not need `olympus/v1/actors`,
@@ -537,5 +546,98 @@ export function formatUsage(plan: ComputePlan, window?: UsageWindow): string {
     lines.push('', 'Apple says this account cannot see every product, so the breakdown is partial.');
   }
 
+  return lines.join('\n');
+}
+
+/**
+ * Where the team stands with the Apple Developer Program.
+ *
+ * Read from `GET ci/api/teams/{teamId}`, whose response has eight keys. Three are not
+ * carried here: `id` is by construction the id that was sent, `public_provider_id` is an
+ * identifier nothing observed explains, and `links` are web URLs for the page's own buttons
+ * — one of which carries a person id — which this never reads and never follows.
+ */
+export interface TeamStanding {
+  /** Apple's name for the team, passed through. */
+  name: string;
+  /**
+   * Apple's word for the state of the membership, passed through un-interpreted.
+   *
+   * One lowercase value was observed and nothing says what the whole set is, so this is a
+   * string rather than a union and is never compared against a literal.
+   */
+  programState: string;
+  /**
+   * Whether the Program License Agreement is waiting for a signature.
+   *
+   * The reason the call is worth making: an unsigned PLA is a thing that happens to an
+   * account rather than to a release, and no official resource mentions one.
+   */
+  plaNeedsSigning: boolean;
+  /** Apple's own `wwdr_team_within_pla_grace_period`, passed through. */
+  plaWithinGracePeriod: boolean;
+  /**
+   * Ten characters of letters and digits — the shape Apple uses for the Developer Program
+   * team id that appears on certificates and provisioning profiles. It is not the uuid the
+   * `/ci/api` paths are scoped by, which is 36 characters and a different value.
+   */
+  developerTeamId: string;
+}
+
+/**
+ * A boolean Apple was expected to send, refused rather than defaulted.
+ *
+ * Defaulting a missing `wwdr_pla_needs_signing` to `false` would answer "nothing to sign"
+ * to a question that was not answered, and that is the one wrong answer this call can give.
+ * The same reasoning as `count()` above, for the same reason.
+ */
+function flag(value: unknown, what: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(
+      `Xcode Cloud did not say whether ${what}. This is a private endpoint with no schema ` +
+        'behind it, so a changed response is a real possibility — re-capture an Xcode Cloud page.'
+    );
+  }
+  return value;
+}
+
+/** The team's Developer Program standing, including whether the PLA needs signing. */
+export async function fetchTeam(session: Session): Promise<TeamStanding> {
+  const body = record(await request<unknown>(session, `teams/${teamOf(session)}`, { api: CI }));
+
+  if (!body) {
+    throw new Error('Xcode Cloud returned no team document, so there is nothing to report.');
+  }
+
+  return {
+    name: text(body['name']) ?? '(unnamed)',
+    programState: text(body['program_state']) ?? '(not stated)',
+    plaNeedsSigning: flag(body['wwdr_pla_needs_signing'], 'the Program License Agreement needs signing'),
+    plaWithinGracePeriod: flag(body['wwdr_team_within_pla_grace_period'], 'the team is inside the PLA grace period'),
+    developerTeamId: text(body['wwdr_team_id']) ?? '(not stated)',
+  };
+}
+
+/**
+ * The digest.
+ *
+ * Both booleans were `false` in the only recording, so what this prints when either is true
+ * has never been seen rendered against real data. The wording is therefore a description of
+ * the fields and not of their consequences: nothing observed here says what Apple stops
+ * when a PLA goes unsigned, or how long a grace period runs, and the digest does not claim
+ * to know. Apple's documentation is where that belongs.
+ */
+export function formatTeam(team: TeamStanding): string {
+  const lines = [
+    `team       ${team.name}`,
+    `program    ${team.programState}`,
+    `PLA        ${team.plaNeedsSigning ? 'signature outstanding' : 'signed'}`,
+  ];
+
+  if (team.plaWithinGracePeriod) {
+    lines.push('           Apple reports the team inside the PLA grace period');
+  }
+
+  lines.push(`dev team   ${team.developerTeamId}`);
   return lines.join('\n');
 }

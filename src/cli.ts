@@ -44,6 +44,12 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
                               per-day and per-product breakdown for that window. Read-only.
                               Apple's official API has no compute-usage resource at all
 
+  asc team                    Where the team stands with the Apple Developer Program: its
+                              name, the membership state, whether the Program License
+                              Agreement is waiting for a signature, and the Developer
+                              Program team id. Read-only. The official API has no team
+                              resource and never mentions the PLA
+
   asc get <path> [k=v ...]    Raw GET, for a query the commands above don't send. Confined
                               to the private families this client is for; an officially
                               served path is refused rather than duplicated
@@ -64,8 +70,8 @@ This reaches Apple and cannot be undone. It shows what it is about to send and a
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
-  --json                      For "report", "history", "privacy", "post-actions" and
-                              "usage": emit JSON instead of the digest
+  --json                      For "report", "history", "privacy", "post-actions",
+                              "usage" and "team": emit JSON instead of the digest
   --yes                       Skip the confirmation prompt on the commands that ask
   --attach <file>             For "save-draft": a file to attach. Repeat for several
 
@@ -491,6 +497,22 @@ async function main(argv: string[]): Promise<number> {
       }
       const window = given === undefined ? undefined : await ci.fetchUsage(session, Number(given));
       console.log(json ? JSON.stringify({ plan, window }, null, 2) : ci.formatUsage(plan, window));
+      return 0;
+    }
+
+    /**
+     * Team-scoped, like `asc usage` and for the same reason: an unsigned Program License
+     * Agreement is a fact about the account rather than about one app, and it has no
+     * per-app form to read instead.
+     *
+     * Deliberately not folded into `asc status`. That command is about the captured session
+     * — whose cookie it is and how long it has left — and answers without a request. This
+     * one costs a request to Apple and reports Apple's state, not the capture's.
+     */
+    case 'team': {
+      const session = loadSession();
+      const team = await ci.fetchTeam(session);
+      console.log(json ? JSON.stringify(team, null, 2) : ci.formatTeam(team));
       return 0;
     }
 

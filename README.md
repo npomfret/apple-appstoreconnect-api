@@ -10,7 +10,7 @@ private endpoint or the cookie it already has. Nothing in this client duplicates
 call, there is no escape hatch that reaches one — `asc get` is confined to the private
 families this client is for, and there is no raw write at all — and the transport is
 narrowed to match: one host, two bases, four methods, and the second base read-only. The
-boundary was last audited on 2026-08-21 against Apple's OpenAPI specification 4.4.1, and
+boundary was last audited on 2026-08-22 against Apple's OpenAPI specification 4.4.1, and
 [docs/evidence.md](docs/evidence.md) records what was checked and when.
 
 It talks to the same private `https://appstoreconnect.apple.com/iris/v1` service the web UI
@@ -91,6 +91,7 @@ officially and none of it is here — the pages to use instead are
 | `privacy` | App Privacy declarations, and whether they're live |
 | `post-actions <productId>` | private Xcode Cloud `post_actions`: whether a workflow hands each finished build to a TestFlight group. `ciWorkflows` has no such field officially. Read-only |
 | `usage [days]` | private Xcode Cloud compute: build minutes on the plan, minutes left, reset date, and optionally a per-day and per-product breakdown. Apple has no compute-usage resource at all. Read-only, and the only team-scoped command here |
+| `team` | private Developer Program standing: the team name, the membership state, whether the Program License Agreement is waiting for a signature, and the Developer Program team id. The official API has no team resource and never mentions the PLA. Read-only, and team-scoped like `usage` |
 | `get` | a raw GET at a path you give it, confined to the private families above — an officially served path is refused rather than duplicated |
 
 **Writing** — all but one copied from a capture of the browser doing it; `delete-attachment`
@@ -186,15 +187,18 @@ By topic, for the capabilities this project deliberately does not have:
   creating or updating a workflow — including enabling and disabling one, which is
   `PATCH /v1/ciWorkflows/{id}` with `isEnabled`. The things not on it are `post_actions`
   and compute usage, which is why `asc post-actions` and `asc usage` exist and why they
-  read those and nothing else.
+  read those and nothing else. There is no team resource anywhere in the official API
+  either — the only `team` in 4.4.1 is `gameCenterMatchmakingTeams` — and nothing official
+  mentions the Program License Agreement, which is `asc team`.
 - [TestFlight](https://developer.apple.com/documentation/appstoreconnectapi/testflight) —
   beta groups, testers and beta app review, none of which this project touches.
 
 What is **not** in any of the above, and is why this project exists: Resolution Center
 threads, messages, guideline rejections, draft replies and their attachments; unread
 review-message counts; App Store version state-change *history*; the App Privacy
-`dataUsages` questionnaire; an Xcode Cloud workflow's `post_actions`; and Xcode Cloud
-compute usage against the plan. Checked against 4.4.1 on 2026-08-21 — see
+`dataUsages` questionnaire; an Xcode Cloud workflow's `post_actions`; Xcode Cloud compute
+usage against the plan; and the team's Developer Program standing, including whether the
+Program License Agreement needs signing. Checked against 4.4.1 on 2026-08-22 — see
 [docs/evidence.md](docs/evidence.md).
 
 One attribute, rather than a capability, sits on the line: iris carries

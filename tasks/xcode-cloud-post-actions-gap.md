@@ -87,9 +87,7 @@ test; the fixtures in `test/ci.test.ts` and `test/gap-*.test.ts` are invented fr
 
 ## The other `/ci/api` surface
 
-The Xcode Cloud **Usage** page recording found thirteen more `/ci/api` reads — compute
-minutes against the plan, per-user capabilities, infrastructure-validation opt-in and
-team/PLA status — written up in [xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md). The
-transport blocker they shared with this file is gone: the base, the content type and the 403
-rule were built here and are reusable as they stand. What still gates that file is the
-product question in it, not the plumbing.
+Two reads from the Usage page recording are still unbuilt and unauthorised —
+`user-capabilities` and infrastructure validation — in
+[xcode-cloud-usage-gap.md](xcode-cloud-usage-gap.md). Team/PLA state left that file on
+2026-08-22 as `asc team`.

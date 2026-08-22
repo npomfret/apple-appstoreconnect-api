@@ -227,6 +227,11 @@ What the recording settles:
 - **`links.csv_export` and `links.manage` are web URLs for the page's own buttons.** They
   are not read, not followed and not printed.
 
+The window is computed in UTC so that the same command asks for the same window wherever it
+runs. Apple's own page asked for 31 days; nothing observed says what a longer range does, so
+no range is capped here — a cap invented from one recording would be as much a guess as no
+cap.
+
 **Activating and deactivating a workflow was captured on 2026-08-22 and deliberately not
 mapped.** The two recorded `PUT`s differ in one boolean, `disabled`, on an otherwise
 identical fourteen-key document. Apple serves that officially and better:
@@ -235,10 +240,45 @@ identical fourteen-key document. Apple serves that officially and better:
 document and destroys whatever is not sent back. Checked against 4.4.1 on 2026-08-22. See
 `tasks/xcode-cloud-post-actions-gap.md`.
 
-The window is computed in UTC so that the same command asks for the same window wherever it
-runs. Apple's own page asked for 31 days; nothing observed says what a longer range does, so
-no range is capped here — a cap invented from one recording would be as much a guess as no
-cap.
+### The Xcode Cloud team read
+
+`fetchTeam` — the `team` command — is `GET ci/api/teams/{teamId}`, with no query at all.
+Recorded from the browser's Xcode Cloud **Usage** page on 2026-08-21 and read on 2026-08-22
+through an extractor that emitted key structure, string *shapes* rather than strings, and
+the booleans themselves, which are the subject of the call. One such request appears in the
+recording, `200`, `application/json`.
+
+**Apple has no team resource, and nothing official mentions the Program License Agreement.**
+Checked against **4.4.1** on 2026-08-22: `wwdr`, `programState` and `program_state` occur
+zero times; the only `team` in the whole specification is `gameCenterMatchmakingTeams`,
+which is a matchmaking concept and not a developer account; and the two license-agreement
+schemas, `BetaLicenseAgreement` and `EndUserLicenseAgreement`, carry nothing but
+`agreementText` — the TestFlight tester agreement and the customer EULA, neither of them the
+Program License Agreement. The 571 occurrences of the substring `pla` are all `platform`,
+`marketplace`, `playstyle`, `plan` and the like.
+
+What the recording settles, and what it does not:
+
+- **The response has eight keys and five are carried.** `id`, `public_provider_id` and
+  `links` are not. `id` is byte-for-byte the id that was sent, so it reports nothing;
+  `public_provider_id` is a uuid nothing observed explains, and an identifier that cannot be
+  explained is noise; `links` are web URLs for the page's own buttons, one of them carrying
+  a person id, and they are neither read nor followed — the same rule the compute links get.
+- **`wwdr_team_id` is not the team id the path is scoped by.** Ten characters of letters and
+  digits against the path's 36-character uuid, and a different value. It is the shape Apple
+  uses for the Developer Program team id on certificates and provisioning profiles.
+- **Both booleans were `false`.** `wwdr_pla_needs_signing` and
+  `wwdr_team_within_pla_grace_period` have never been observed true, so what the digest
+  prints in either case has never been seen rendered against real data. The wording
+  describes the fields and not their consequences: nothing here says what Apple stops when a
+  PLA goes unsigned, or how long a grace period runs, and the digest does not claim to know.
+- **A missing boolean is refused, not defaulted.** Reading an absent
+  `wwdr_pla_needs_signing` as `false` would print "signed" over a question Apple did not
+  answer, which is the one wrong answer this call can give.
+- **`program_state` is passed through un-interpreted.** One lowercase value was observed;
+  nothing says what the set is, so it is a string rather than a union and is never compared
+  against a literal.
+
 
 ## Calls that are probe-only, and so likelier to shift
 

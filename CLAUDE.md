@@ -11,8 +11,9 @@ smallest diff.
 The tree is gap-only as of 2026-08-22: no private implementation of an officially served
 capability remains, `asc get` is confined to the private families and reaches iris only,
 there is no raw write, and the transport speaks one host, four methods, and two bases —
-`iris/v1`, and a **read-only** `/ci/api` carrying the two Xcode Cloud capabilities in none
-of 4.4.1's schemas — a workflow's `post_actions`, and compute usage against the plan. Keep it that way. A third base, or a write on the
+`iris/v1`, and a **read-only** `/ci/api` carrying the three Xcode Cloud capabilities in none
+of 4.4.1's schemas — a workflow's `post_actions`, compute usage against the plan, and the
+team's Developer Program standing including whether the PLA needs signing. Keep it that way. A third base, or a write on the
 second, is an owner decision with a recording behind it, not an implementation detail.
 
 The rule for deciding is that **duplication is a property of a call, not of a resource**. A
@@ -21,7 +22,7 @@ the official specification has no schema for, and is then narrowed to exactly th
 So do not delete a private read because its *resource* is official, and do not keep one
 because the resource has a private *route*: check the fields. Last audited against Apple's
 OpenAPI specification **4.4.1** (generated 2026-07-15, 966 paths, 1,393 schemas) on
-2026-08-21. `docs/evidence.md` records what was checked, how, and when.
+2026-08-22. `docs/evidence.md` records what was checked, how, and when.
 
 **The trade this makes, and why it is the intended one.** The official API authenticates
 with a JWT signed by a `.p8` key an Account Holder generates. This client's premise is a

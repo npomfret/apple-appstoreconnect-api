@@ -15,7 +15,7 @@ import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import { ApiError, CI, request, SessionExpiredError } from '../src/http';
-import { fetchPlan, fetchPostActions, fetchUsage, formatPostActions, listWorkflows } from '../src/ci';
+import { fetchPlan, fetchPostActions, fetchTeam, fetchUsage, formatPostActions, listWorkflows } from '../src/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const CI_BASE = 'https://appstoreconnect.apple.com/ci/api';
@@ -272,17 +272,44 @@ describe('the compute window', () => {
     assert.deepEqual(stub.calls, []);
   });
 
-  test('both compute reads need the team id, and say so when it is missing', async () => {
+  test('every team-scoped read needs the team id, and says so when it is missing', async () => {
     const stub = stubFetch();
     try {
       const without = { ...SESSION, teamId: undefined };
       await assert.rejects(() => fetchPlan(without), /no team id/);
       await assert.rejects(() => fetchUsage(without, 7), /no team id/);
+      await assert.rejects(() => fetchTeam(without), /no team id/);
     } finally {
       stub.restore();
     }
 
     assert.deepEqual(stub.calls, []);
+  });
+
+  /**
+   * The team path has no trailing segment, so a team id that is not one path segment would
+   * be the whole of what the URL says. `teamOf` checks it for the same reason every other
+   * id here is checked, and this is the one call where nothing follows it to disguise a
+   * bad one.
+   */
+  test('a team id that is not a path segment is refused before a request is built', async () => {
+    const stub = stubFetch();
+    try {
+      await assert.rejects(() => fetchTeam({ ...SESSION, teamId: '../../v1/apps' }), /not a team id/);
+    } finally {
+      stub.restore();
+    }
+
+    assert.deepEqual(stub.calls, []);
+  });
+
+  test('a team document that is not an object is refused rather than read as an empty team', async () => {
+    const stub = stubFetch(() => ({ body: [] }));
+    try {
+      await assert.rejects(() => withStderr(() => fetchTeam(SESSION)), /no team document/);
+    } finally {
+      stub.restore();
+    }
   });
 
   /**

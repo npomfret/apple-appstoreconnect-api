@@ -1,16 +1,14 @@
-# The rest of the `/ci/api` surface — what is left after compute usage
+# The rest of the `/ci/api` surface
 
 ## Status
 
-**Proposed. Nothing is authorised by this file.** The compute reads it was opened for
-shipped on 2026-08-22 as `asc usage` — see `docs/evidence.md`. What remains is the three
-smaller reads from the same recording, none of which has been built.
+**Proposed. Nothing is authorised by this file.** Two reads from the Xcode Cloud Usage page
+recording, neither built. What this file was opened for has left it as it shipped: the
+compute reads as `asc usage`, and team/PLA state as `asc team`.
 
 Audited **2026-08-21** against Apple's official OpenAPI specification **4.4.1**, generated
 2026-07-15, 966 paths and 1,393 schemas. The recording was read through an extractor that
-emits methods, redacted paths, query keys, statuses and response key structure only; the two
-`olympus` responses carrying names and email addresses were reduced to key names with every
-value discarded.
+emits methods, redacted paths, query keys, statuses and response key structure only.
 
 Every `/ci/api` request in the recording is a **GET**. Nothing here could be implemented as
 a write on this evidence, and the `CI` base is declared read-only in the transport anyway.
@@ -33,15 +31,7 @@ resource of any kind. This is the answer to "will this call be refused before I 
 which is worth more to a script than to the page it was recorded from. A single flat GET
 with no pagination, so it is the cheapest thing in this file.
 
-### 2. Team and programme state
-
-`GET /ci/api/teams/{teamId}` returns `{id, name, program_state, wwdr_pla_needs_signing,
-wwdr_team_id, public_provider_id, wwdr_team_within_pla_grace_period, links}`. `team` as a
-resource does not exist in the official API. `wwdr_pla_needs_signing` is the useful one: an
-unsigned Program License Agreement stops builds and submissions, and there is no official
-way to see it coming.
-
-### 3. Infrastructure validation
+### 2. Infrastructure validation
 
 Opt-in state for Apple's pre-release macOS/Xcode validation, at three levels:
 
@@ -53,8 +43,8 @@ Opt-in state for Apple's pre-release macOS/Xcode validation, at three levels:
 
 No official equivalent. The writes that would set `opt_in` were **not** recorded, and
 `can_configure_infrastructure_validation` above implies they exist; inventing them is the
-guess this repository refuses. This is the natural last of the three, because it is three
-nested reads whose only point is a write nobody has captured.
+guess this repository refuses. This is the weakest thing left in the file: three nested
+reads whose only point is a write nobody has captured.
 
 ## What is *not* a gap
 
@@ -86,14 +76,15 @@ per-base content type, the per-base 403 rule and the team id from the session al
 are exercised. A read added here is one function in `src/ci.ts`, one command, fixtures and
 an evidence note.
 
-What is left to weigh is that all three are **team-scoped** — they describe the account, not
-an app. That boundary was crossed once, deliberately, for compute usage, on the ground that
-an allowance has no per-app form and no official equivalent at all. It does not follow that
-it is now open: each of these is its own decision, and `user-capabilities` in particular
-describes a *person* rather than a team.
+What is left to weigh is scope rather than cost. The team-scoped boundary has now been
+crossed twice deliberately — compute usage, then team/PLA state — each on the ground that
+what it reads has no per-app form and no official equivalent. It does not follow that it is
+open. `user-capabilities` in particular describes a *person* rather than a team, which is a
+boundary this client has not crossed at all: the People page went with the invitations slice
+and has not come back.
 
 ## What would settle it
 
-1. Whether any of the three is worth a command, taken one at a time.
+1. Whether either is worth a command, taken one at a time.
 2. For infrastructure validation only: a browser recording of the opt-in toggle. Until then
    it is a read of a switch this client cannot throw.

@@ -20,7 +20,15 @@ import { describe, test } from 'node:test';
 
 import { Document, Resource } from '../src/jsonapi';
 import { buildReport, fetchPrivacy, formatReport, SubmissionReport } from '../src/report';
-import { fetchPlan, fetchPostActions, fetchUsage, formatPostActions, formatUsage } from '../src/ci';
+import {
+  fetchPlan,
+  fetchPostActions,
+  fetchTeam,
+  fetchUsage,
+  formatPostActions,
+  formatTeam,
+  formatUsage,
+} from '../src/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const APP = '123';
@@ -779,5 +787,86 @@ describe('what Xcode Cloud says about compute', () => {
 
     assert.match(digest, /1,500 minutes/);
     assert.doesNotMatch(digest, /counted separately/);
+  });
+});
+
+describe('what Xcode Cloud says about the team', () => {
+  const TEAM = {
+    id: SESSION.teamId,
+    name: 'Acme Widgets',
+    program_state: 'active',
+    wwdr_pla_needs_signing: false,
+    wwdr_team_id: 'AB12CD34EF',
+    public_provider_id: '00000000-0000-0000-0000-000000000000',
+    links: { team_setting_link: 'https://appstoreconnect.apple.com/teams/x/settings' },
+    wwdr_team_within_pla_grace_period: false,
+  };
+
+  async function standing(body: unknown) {
+    const stub = stubFetch(() => ({ body }));
+    try {
+      return await withStderr(() => fetchTeam(SESSION));
+    } finally {
+      stub.restore();
+    }
+  }
+
+  test('a signed agreement reads as signed, and the two ids stay distinct', async () => {
+    const team = await standing(TEAM);
+
+    assert.equal(team.name, 'Acme Widgets');
+    assert.equal(team.programState, 'active');
+    assert.equal(team.plaNeedsSigning, false);
+    assert.equal(team.plaWithinGracePeriod, false);
+    assert.equal(team.developerTeamId, 'AB12CD34EF');
+    assert.notEqual(team.developerTeamId, SESSION.teamId);
+  });
+
+  test('an outstanding signature is the answer the command exists for', async () => {
+    const team = await standing({ ...TEAM, wwdr_pla_needs_signing: true, wwdr_team_within_pla_grace_period: true });
+    const digest = formatTeam(team);
+
+    assert.match(digest, /PLA .*signature outstanding/);
+    assert.match(digest, /inside the PLA grace period/);
+  });
+
+  test('a grace period is not mentioned when the team is not in one', async () => {
+    assert.doesNotMatch(formatTeam(await standing(TEAM)), /grace period/);
+    assert.match(formatTeam(await standing(TEAM)), /PLA .*signed/);
+  });
+
+  /**
+   * The failure that matters. A missing flag defaulted to `false` would print "signed" over
+   * a question Apple did not answer, which is worse than not answering it here either.
+   */
+  test('a missing signing flag is refused rather than read as nothing to sign', async () => {
+    const { wwdr_pla_needs_signing: _dropped, ...rest } = TEAM;
+    await assert.rejects(() => standing(rest), /did not say whether the Program License Agreement needs signing/);
+  });
+
+  test('a missing grace-period flag is refused the same way', async () => {
+    const { wwdr_team_within_pla_grace_period: _dropped, ...rest } = TEAM;
+    await assert.rejects(() => standing(rest), /did not say whether the team is inside the PLA grace period/);
+  });
+
+  test('a non-boolean flag is not coerced', async () => {
+    await assert.rejects(() => standing({ ...TEAM, wwdr_pla_needs_signing: 'true' }), /did not say whether/);
+  });
+
+  test('the program state is passed through, never interpreted', async () => {
+    const team = await standing({ ...TEAM, program_state: 'something-nobody-has-seen' });
+
+    assert.equal(team.programState, 'something-nobody-has-seen');
+    assert.match(formatTeam(team), /something-nobody-has-seen/);
+  });
+
+  /** The three keys deliberately not carried: they would be noise, or a person id. */
+  test('the identifiers and links this cannot explain are not carried out of the response', async () => {
+    const team = await standing(TEAM);
+    const carried = JSON.stringify(team);
+
+    assert.doesNotMatch(carried, /public_provider_id|00000000-0000/);
+    assert.doesNotMatch(carried, /appstoreconnect\.apple\.com/);
+    assert.equal(Object.keys(team).length, 5);
   });
 });

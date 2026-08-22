@@ -199,8 +199,47 @@ printed as ids and never resolved. The name is on
 [`GET /v1/ciProducts`](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
 for the ones that are still there.
 
-This is team-scoped rather than app-scoped: it describes the account, not one app. That is
-the one boundary this command crosses that the rest of the client does not.
+This is team-scoped rather than app-scoped: it describes the account, not one app — the one
+boundary this command and `asc team` cross that the rest of the client does not.
+
+## Xcode Cloud: where the team stands with the Developer Program
+
+```sh
+asc team
+```
+
+```
+team       Acme Widgets
+program    active
+PLA        signed
+dev team   AB12CD34EF
+```
+
+`GET ci/api/teams/{teamId}`, no query. Apple's official API has **no team resource** — the
+only `team` in 4.4.1 is `gameCenterMatchmakingTeams`, which is a matchmaking concept — and
+nothing official mentions the Program License Agreement at all. The two license-agreement
+schemas it does have, `BetaLicenseAgreement` and `EndUserLicenseAgreement`, are the
+TestFlight tester agreement and the customer EULA.
+
+`PLA` is the one worth having: an unsigned Program License Agreement is an account-level
+thing that no release-level API will warn you about, and when Apple says the team is inside
+the grace period the digest adds a line saying so.
+
+Both of those flags were `false` in the recording, so **what this prints when either is true
+has never been seen against real data.** The wording describes the fields rather than their
+consequences on purpose — what Apple actually stops when a PLA goes unsigned, and how long a
+grace period runs, are Apple's to state, not this client's to infer from one capture. A
+missing flag is an error rather than a `false`, for the same reason: "Apple did not say" and
+"nothing to sign" are different answers.
+
+`program` is passed through exactly as Apple sends it and is never compared against a
+literal — one value has been observed and nothing says what the set is.
+
+`dev team` is the ten-character Developer Program team id, the one on certificates and
+provisioning profiles. It is not the uuid the `/ci/api` paths are scoped by. Three keys on
+the response are deliberately not printed: the team uuid, which is just the id that was
+sent; `public_provider_id`, a uuid nothing observed explains; and the page's own button
+links, one of which carries a person id.
 
 `appId` defaults to the one scraped from the captured request's `Referer`. **`versionId` has
 no default** — `asc history <versionId>` requires it, because working one out means reading
