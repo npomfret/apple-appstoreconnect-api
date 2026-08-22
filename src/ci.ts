@@ -194,12 +194,50 @@ function ids(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((one): one is string => typeof one === 'string') : [];
 }
 
+/**
+ * A boolean Apple was expected to send, refused rather than defaulted.
+ *
+ * The counterpart of `count()` below, and shared by every reader here for one reason: a
+ * missing boolean is not a `false`. Defaulting `wwdr_pla_needs_signing` would answer
+ * "nothing to sign" to a question that was never answered, Apple saying nothing about a
+ * permission is not Apple withholding it, an absent `opt_in` is not "not opted in", and an
+ * absent `disabled` is not a workflow that runs.
+ */
+function flag(value: unknown, what: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(
+      `Xcode Cloud did not say whether ${what}. This is a private endpoint with no schema ` +
+        'behind it, so a changed response is a real possibility — re-capture an Xcode Cloud page.'
+    );
+  }
+  return value;
+}
+
 const MODELLED = new Set(['id', 'name', 'type', 'deployment_config']);
 
-function readPostAction(entry: unknown, actions: Map<string, string>): PostAction | undefined {
+/**
+ * One post-action, refused rather than dropped when it cannot be read.
+ *
+ * A row this client skipped would leave the workflow printing "no post-actions — a build
+ * from this workflow is not handed on automatically", which is the one sentence the command
+ * exists to say and would be false. That is the `fetchUsage` line drawn the other way: a
+ * usage row is one line missing from a total, this is an answer inverted.
+ *
+ * `name` and `type` are labels rather than answers, so their absence is marked in place and
+ * shown; an unknown key is kept by name in `unmodelled`. Tolerating a key Apple *added* is
+ * the right posture for an unstable private field. Tolerating one it stopped sending is not.
+ */
+function readPostAction(entry: unknown, actions: Map<string, string>, workflow: string): PostAction {
   const source = record(entry);
   const id = text(source?.['id']);
-  if (!source || !id) return undefined;
+  if (!source || !id) {
+    throw new Error(
+      `Xcode Cloud sent a post-action on workflow "${workflow}" with no id, so there is no ` +
+        'saying what it hands a build to — and dropping it would report the workflow as ' +
+        'handing nothing on. This is a private field with no schema behind it; re-capture an ' +
+        'Xcode Cloud workflow page.'
+    );
+  }
 
   const deployment = record(source['deployment_config']);
   const testflight = record(deployment?.['testflight_deployment_ids']);
@@ -239,32 +277,47 @@ function actionNames(content: Record<string, unknown>): Map<string, string> {
   return actions;
 }
 
-function readWorkflow(entry: unknown): WorkflowPostActions | undefined {
+function readWorkflow(entry: unknown): WorkflowPostActions {
   const source = record(entry);
   const content = record(source?.['content']);
   const workflowId = text(source?.['id']);
-  if (!content || !workflowId) return undefined;
+  if (!content || !workflowId) {
+    throw new Error(
+      `Xcode Cloud sent a workflow with no ${workflowId ? 'content block' : 'id'}, and a ` +
+        'workflow skipped here is one this product is not reported as having at all. ' +
+        'Re-capture an Xcode Cloud workflow page.'
+    );
+  }
+
+  const name = text(content['name']) ?? '(unnamed)';
+  const list = content['post_actions'];
+  if (!Array.isArray(list)) {
+    throw new Error(
+      `Xcode Cloud sent workflow "${name}" without a "post_actions" list, so whether it hands ` +
+        'a build on cannot be answered. A workflow with none carries an empty array rather ' +
+        'than omitting the key, so an absent one is a change in the response, not a "no".'
+    );
+  }
 
   const actions = actionNames(content);
-  const list = Array.isArray(content['post_actions']) ? content['post_actions'] : [];
 
   return {
     workflowId,
-    name: text(content['name']) ?? '(unnamed)',
-    disabled: content['disabled'] === true,
-    postActions: list
-      .map((entry) => readPostAction(entry, actions))
-      .filter((action): action is PostAction => action !== undefined),
+    name,
+    disabled: flag(content['disabled'], `workflow "${name}" is switched off`),
+    postActions: list.map((entry) => readPostAction(entry, actions, name)),
   };
 }
 
 /**
  * What every workflow on a product does when a build finishes.
  *
- * Parsed leniently, which is the right posture for a private field with no schema behind
- * it: a workflow missing an id or a content block is dropped rather than throwing, and a
- * post-action carrying keys this client has never seen keeps them — by name — in
- * `unmodelled` rather than being refused.
+ * Additive change is tolerated and subtractive change is not, which is the posture a
+ * private field with no schema behind it earns: a key Apple has added is kept by name in
+ * `unmodelled`, while anything missing that the answer depends on is an error. Nothing here
+ * is dropped in silence, because every silence this call could keep would read back as
+ * "this workflow hands nothing on" — including a dropped workflow, which would also shrink
+ * the denominator the digest counts against.
  */
 export async function fetchPostActions(
   session: Session,
@@ -272,9 +325,14 @@ export async function fetchPostActions(
   limit?: number
 ): Promise<WorkflowPostActions[]> {
   const page = await listWorkflows(session, productId, limit);
-  const items = Array.isArray(page.items) ? page.items : [];
+  if (!Array.isArray(page.items)) {
+    throw new Error(
+      'Xcode Cloud sent no "items" list of workflows, so this product cannot be reported as ' +
+        'having none. Re-capture an Xcode Cloud workflow page.'
+    );
+  }
 
-  return items.map(readWorkflow).filter((workflow): workflow is WorkflowPostActions => workflow !== undefined);
+  return page.items.map(readWorkflow);
 }
 
 /**
@@ -608,23 +666,6 @@ export interface TeamStanding {
    * `/ci/api` paths are scoped by, which is 36 characters and a different value.
    */
   developerTeamId: string;
-}
-
-/**
- * A boolean Apple was expected to send, refused rather than defaulted.
- *
- * Defaulting a missing `wwdr_pla_needs_signing` to `false` would answer "nothing to sign"
- * to a question that was not answered, and that is the one wrong answer this call can give.
- * The same reasoning as `count()` above, for the same reason.
- */
-function flag(value: unknown, what: string): boolean {
-  if (typeof value !== 'boolean') {
-    throw new Error(
-      `Xcode Cloud did not say whether ${what}. This is a private endpoint with no schema ` +
-        'behind it, so a changed response is a real possibility — re-capture an Xcode Cloud page.'
-    );
-  }
-  return value;
 }
 
 /** The team's Developer Program standing, including whether the PLA needs signing. */

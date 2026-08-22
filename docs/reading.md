@@ -140,6 +140,15 @@ duplication the boundary exists to prevent. Take it from
 or out of the Xcode Cloud URL in the browser. Beta groups likewise print as ids: the name is
 on [`GET /v1/betaGroups`](https://developer.apple.com/documentation/appstoreconnectapi/testflight).
 
+**It stops rather than under-reports.** If Apple sends a workflow or a post-action in a
+shape this client cannot read, the command fails and says which one. That is deliberate and
+specific to this read: everything it could quietly skip comes back out as an answer rather
+than as a gap — a skipped post-action prints the workflow as handing nothing on, and a
+skipped workflow leaves the product looking as though it has one fewer. A missing
+`post_actions` key is refused for the same reason, since a workflow with none carries an
+empty list rather than omitting it. Contrast `asc usage`, which drops a row it cannot read:
+there a lost row is a line short of a total, not an inverted answer.
+
 There is no `--raw` on this one. The workflow document carries `environment_variables` and
 `product_environment_variables` beside the field being read, nothing recorded shows whether
 their values come back or only their names, and a command about one field has no reason to

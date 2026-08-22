@@ -213,37 +213,83 @@ describe('a page that may be short', () => {
 // What an empty and a populated `post_actions` come out as is pinned in gap-shapes.test.ts.
 // These are about the parse surviving a document it was not expecting.
 describe('reading a document nobody promised', () => {
+  /** The read with every request answered by `body`, and the stub cleaned up either way. */
+  async function read(body: unknown) {
+    const stub = stubFetch(() => ({ body }));
+    return withStderr(async () => {
+      try {
+        return await fetchPostActions(SESSION, PRODUCT);
+      } finally {
+        stub.restore();
+      }
+    });
+  }
+
   /**
    * The field has no official schema to check against and the API is undocumented, so a key
    * this client has never seen is reported rather than dropped — by name, since a value
    * from an unknown key is not a thing to print.
    */
   test('a key Apple has added is named rather than dropped', async () => {
-    const stub = stubFetch(() => ({ body: { items: [workflow([postAction({ notarize_config: { on: true } })])] } }));
-    const workflows = await withStderr(async () => {
-      try {
-        return await fetchPostActions(SESSION, PRODUCT);
-      } finally {
-        stub.restore();
-      }
-    });
+    const workflows = await read({ items: [workflow([postAction({ notarize_config: { on: true } })])] });
 
     assert.deepEqual(workflows[0]!.postActions[0]!.unmodelled, ['notarize_config']);
     assert.match(formatPostActions(workflows), /also sent {4}notarize_config/);
   });
 
-  test('a workflow with no content block is dropped rather than throwing', async () => {
-    const stub = stubFetch(() => ({ body: { items: [{ id: 'workflow-0001' }, workflow([])] } }));
-    const workflows = await withStderr(async () => {
-      try {
-        return await fetchPostActions(SESSION, PRODUCT);
-      } finally {
-        stub.restore();
-      }
-    });
+  /**
+   * The other half of the same posture, and the half that changed on 2026-08-22.
+   *
+   * A key Apple *added* is tolerated; one it stopped sending is not. Everything this call
+   * could skip reads back as an answer rather than as a gap — a dropped post-action prints
+   * the workflow as handing nothing on, and a dropped workflow leaves the product reported
+   * as not having it — so none of the five below is allowed to pass silently. That is the
+   * line `fetchUsage` sits on the other side of: a usage row missing from a breakdown is a
+   * line short of a total, not an inverted answer.
+   */
+  test('a workflow with no content block is refused rather than dropped', async () => {
+    await assert.rejects(
+      () => read({ items: [{ id: 'workflow-0001' }, workflow([])] }),
+      /workflow with no content block/
+    );
+  });
 
-    assert.equal(workflows.length, 1);
-    assert.equal(workflows[0]!.workflowId, 'workflow-0000');
+  test('a workflow with no id is refused, since it cannot be reported against', async () => {
+    await assert.rejects(() => read({ items: [{ content: {} }] }), /workflow with no id/);
+  });
+
+  /**
+   * Recorded: a workflow with no post-actions carries `post_actions: []`. So an absent key
+   * is a change in the response, and reading it as "hands nothing on" would be a guess
+   * dressed as an answer.
+   */
+  test('a workflow with no post_actions list is refused, because an empty one is what none looks like', async () => {
+    const { post_actions: _absent, ...content } = (workflow([]) as { content: Record<string, unknown> }).content;
+
+    await assert.rejects(
+      () => read({ items: [{ id: 'workflow-0000', content }] }),
+      /without a "post_actions" list/
+    );
+  });
+
+  test('a post-action with no id is refused, not skipped into a workflow that hands nothing on', async () => {
+    const { id: _dropped, ...action } = postAction() as Record<string, unknown>;
+
+    await assert.rejects(() => read({ items: [workflow([action])] }), /post-action on workflow "Nightly" with no id/);
+  });
+
+  test('no items list at all is refused rather than read as a product with no workflows', async () => {
+    await assert.rejects(() => read({}), /no "items" list of workflows/);
+  });
+
+  /** A missing `disabled` is not an enabled workflow, for the same reason as every other flag here. */
+  test('a workflow that does not say whether it is switched off is refused', async () => {
+    const { disabled: _dropped, ...content } = (workflow([]) as { content: Record<string, unknown> }).content;
+
+    await assert.rejects(
+      () => read({ items: [{ id: 'workflow-0000', content }] }),
+      /did not say whether workflow "Nightly" is switched off/
+    );
   });
 });
 

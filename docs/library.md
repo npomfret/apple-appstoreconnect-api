@@ -87,12 +87,24 @@ has a schema in Apple's official specification.
 They return plain objects rather than JSON:API — `listWorkflows` is the untouched response
 if you want it — and `denormalize` has nothing to do with any of them.
 
+`fetchPostActions` refuses what it cannot read rather than skipping it, and that is a
+contract: a workflow with no id or no `content`, a workflow whose `post_actions` is missing
+or is not a list, a post-action with no id, a missing `disabled`, and a response with no
+`items` list are all errors. The reason is that this call has no harmless silence — every
+one of those, dropped, comes back out of `formatPostActions` as "a build from this workflow
+is not handed on automatically" or as a product with one workflow fewer. What it does
+tolerate is the opposite direction: a key Apple has *added* to a post-action is kept by name
+in `unmodelled` and shown, since an unstable private field gaining a key is expected and
+says nothing false. `name` and `type` are labels rather than answers, so a missing one is
+marked in place rather than refused.
+
 Two things about `fetchPlan` are contracts rather than incidental. Its minutes are
 **minutes**, established from the recording rather than from a field name; and its window is
 not `fetchUsage`'s window, so the two are never added together. `fetchPlan` throws if Apple
 sends no plan or a non-numeric total, because a missing allowance and an exhausted one are
-different answers. `fetchUsage` is lenient in the other direction: unrecognised rows are
+different answers. `fetchUsage` is the one lenient reader here: unrecognised rows are
 dropped, since a missing row is a gap in a breakdown rather than an unanswerable question.
+It is the only place in `ci.ts` where that is true.
 
 `fetchTeam` throws on the same principle, and it is among the strictest here: a missing or
 non-boolean `wwdr_pla_needs_signing` is an error rather than a `false`, because reading an

@@ -181,9 +181,31 @@ What the recording settles, beyond the request:
   names and email addresses.
 - **`beta_tester_ids` was present and empty throughout.** Nothing shows what a populated one
   looks like or whether the two lists combine.
+- **A workflow with no post-actions carries `post_actions: []`.** Re-read on 2026-08-22
+  through a counts-only extractor over both workflow recordings: every workflow document
+  carried all fourteen `content` keys, one with a one-entry `post_actions` and one with an
+  empty array, and every post-action in them had a usable `id`. So an *absent* key would be
+  a change in the response rather than a way of saying "none", which is why the read refuses
+  it instead of reporting a workflow that hands nothing on.
+- **The single-workflow route answers with the bare document, not a page.** Three of the six
+  recorded `workflows-v15` reads are `{content, id, metadata}` rather than `{items: […]}`.
+  This client calls the collection and never that route, and `CI.pageOf` counts a document
+  with three top-level keys as not a page, so neither the read nor the short-page guard is
+  affected — recorded because a future caller reaching for the single-workflow URL would
+  otherwise expect the collection's shape.
 
 Beta group ids are printed as ids and never resolved to names: that is `GET /v1/betaGroups`,
 which Apple serves officially with `name` and `isInternalGroup` on it.
+
+**This read refuses rather than drops, changed on 2026-08-22.** It previously skipped a
+workflow or a post-action it could not parse, which is the posture `fetchUsage` keeps
+deliberately. It is the wrong one here: `fetchUsage` losing a row loses a line from a total,
+whereas a post-action skipped here prints "a build from this workflow is not handed on
+automatically" — the exact claim the command exists to make — and a skipped workflow leaves
+the product reported as not having it. Nothing in the recording is malformed, so this
+changes no observed behaviour; it decides what happens when Apple's undocumented shape
+moves. Additive change is still tolerated: an unrecognised key on a post-action is reported
+by name in `unmodelled` rather than refused.
 
 ### The Xcode Cloud compute reads
 
