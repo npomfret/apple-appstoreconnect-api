@@ -215,5 +215,5 @@ One attribute, rather than a capability, sits on the line: iris carries
 classification number — and it is in none of 4.4.1's 1,393 schemas, where the other 28
 questions on that form all are. It is **not** implemented here, because writing it back
 means resending the whole questionnaire and no single-attribute PATCH has ever been
-recorded. Whether it should be is an open question:
-[tasks/grac-rating-classification-number-gap.md](tasks/grac-rating-classification-number-gap.md).
+recorded. Whether it should be is an open question, and what would settle it is recorded in
+[docs/evidence.md](docs/evidence.md).

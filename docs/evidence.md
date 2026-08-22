@@ -308,8 +308,33 @@ mapped.** The two recorded `PUT`s differ in one boolean, `disabled`, on an other
 identical fourteen-key document. Apple serves that officially and better:
 `PATCH /v1/ciWorkflows/{id}` takes `isEnabled` on its own, every attribute of
 `CiWorkflowUpdateRequest` being optional, where the private route replaces the whole
-document and destroys whatever is not sent back. Checked against 4.4.1 on 2026-08-22. See
-`tasks/xcode-cloud-post-actions-gap.md`.
+document and destroys whatever is not sent back. Checked against 4.4.1 on 2026-08-22.
+
+**The write half of `post_actions` is unauthorised, and this is where that now lives.** It
+was `tasks/xcode-cloud-post-actions-gap.md` until 2026-08-22, and moved here because that
+directory holds planned development work and this is a decision nobody has taken.
+`PUT ci/api/teams/{teamId}/products/{productId}/workflows-v15/{workflowId}` is recorded in
+both directions with read-backs — the browser removed a post-action and put it back 23
+seconds later, both `200`, and the workflow was left as it was found — so the request shape
+is evidence rather than guesswork. What stops it is what the body *is*: the whole fourteen-key
+`content` object, so what a client fails to send back is what the workflow loses, including
+both environment-variable collections, on the workflow that builds every push.
+
+Having watched the browser do it authorises nothing. A scripted replace needs its own design
+and its own approval: read-modify-write of a document this client only partly models,
+preservation of fields it does not understand, a before/after confirmation, complete write
+auditing, non-TTY refusal, and a post-write read-back. **Do not make a live write to verify
+one.** The `CI` base in `src/http.ts` is declared `readOnly` and the transport refuses any
+method but `GET` on it, so this is a decision to take deliberately rather than a gap to fill
+in passing.
+
+**Neither environment-variable collection is reached, and that is a finding rather than a
+proposal.** `environmentVariable` occurs **zero** times in 4.4.1 and `CiWorkflow` has no such
+attribute and no such relationship, so `environment_variables` and
+`product_environment_variables` are, like `post_actions`, fields Apple's specification has no
+schema for — and they are left alone anyway. Their values are secrets, the only recorded
+route to them is the full-document replace above, and reading them would put a workflow's
+secrets through this client for the first time. It is why `asc post-actions` has no `--raw`.
 
 ### The Xcode Cloud team read
 
@@ -780,13 +805,44 @@ which is why they are not listed here.
   **One attribute was not.** `AgeRatingDeclaration.Attributes` has 29 properties and so did
   the recorded body, but they are not the same 29: Apple has `ageRatingOverride`, which the
   recording did not carry, and the recording had **`gracRatingClassificationNumber`** — the
-  Korean GRAC classification number — which occurs nowhere in 4.4.1 (its only `grac` tokens
-  are subscription *grace* periods) and is absent from the published
+  Korean GRAC classification number — which occurs nowhere in 4.4.1 (all 135 of its `grac`
+  tokens are subscription *grace* periods) and is absent from the published
   `AgeRatingDeclaration.Attributes`. By this repository's own rule that is a keep narrowed
   to one field, and it left with the rest anyway: the only recorded write is the whole
   questionnaire in one body, so writing that field back means resending 28 fields Apple
-  serves officially. Retention is an open question and is not settled by this page — see
-  [tasks/grac-rating-classification-number-gap.md](../tasks/grac-rating-classification-number-gap.md).
+  serves officially. Retention is an open question, blocked on a capture that does not
+  exist. It was `tasks/grac-rating-classification-number-gap.md` until 2026-08-22 and moved
+  here, because that directory holds planned development work and nothing about this can be
+  planned until a recording exists.
+
+  **Narrowing to the one field is not free, which is what to weigh before reversing the
+  removal.** The browser resends all 29 answers on every Save, so keeping the GRAC number
+  means continuing to send 28 attributes Apple serves officially — the duplication the
+  boundary exists to end. A single-attribute PATCH has never been recorded, and whether iris leaves the omitted answers
+  alone or clears them is unknown; a cleared age-rating answer is not a failure anyone would
+  notice quickly. The read is not narrow either: the declaration was reached through
+  `GET apps/{appId}/appInfos` with eight includes and a fieldset — the App Information page's
+  own request — and picked out of `included`, so a gap-only read would be a new call rather
+  than a subset of a recorded one. And nothing observed says the field is writable at all: it
+  may be a number Apple fills in from GRAC's own decision, in which case there is no
+  capability to retain, only a read.
+
+  **Three answers would settle it**, and the first two want a browser recording rather than a
+  probe against a live app, because an age rating is published data. Whether the field is
+  writable, or is output from Apple's Korean rating process. Whether
+  `PATCH ageRatingDeclarations/{id}` accepts a body carrying only
+  `gracRatingClassificationNumber`, or clears what the body omits. And whether Apple exposes
+  it anywhere else — it is absent from `AppInfo.Attributes`, which does carry
+  `koreaAgeRating`, so a later specification adding it would close this outright; re-check on
+  the next audit. Until the first two are answered, a retained narrow read is the most that
+  could honestly be built, and it would read a field nothing else here uses. The removed code
+  is recoverable from the commit before 2026-08-21.
+
+  The method to copy, if it is ever reversed, is `CiWorkflow.post_actions` above: take the
+  slice out, record the field, and decide retention on its own evidence rather than in the
+  middle of a deletion — that one came back as a read-only command over the single field. The
+  contrast is what matters here. `post_actions` had a recorded read returning the field on its
+  own; this has none.
 
   Four observations outlive the code, and the first three are about the records rather than
   about this client, so they hold for the official API too.
