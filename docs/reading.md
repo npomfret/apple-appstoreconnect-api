@@ -151,6 +151,57 @@ replaces the entire fourteen-key workflow document, so a client that does not mo
 key destroys whatever it fails to send back. Setting a post-action stays a job for the web
 UI. See [evidence.md](evidence.md).
 
+## Xcode Cloud: how much compute is left
+
+```sh
+asc usage                             # the plan, and what is left of it
+asc usage 30                          # and where the last 30 days went
+```
+
+The one question Apple's official API cannot answer at any price: how many build minutes
+this month's allowance has left. There is no compute-usage resource in 4.4.1 at all — its
+only `usage` paths are TestFlight's, about testers rather than minutes — and while
+`CiBuildRun` carries `startedDate` and `finishedDate`, wall-clock per run is not billed
+compute and there is no allowance or reset date to compare it against.
+
+```
+plan       Pro
+used       4,500 of 6,000 minutes  (75%)
+left       1,500 minutes
+resets     2026-09-01
+
+2026-07-23 to 2026-08-22, counted separately from the plan above:
+  minutes  1,204
+  builds   47
+  busiest  2026-08-14  210 minutes, 8 builds
+
+  per product, against the window before it:
+    9f2c…      820 min    31 builds   (was 610 min, 22 builds)
+```
+
+`GET ci/api/teams/{teamId}/usage/summary`, and with a day count also
+`GET …/usage/days?start=&end=`. The team id comes from the session, as it does for
+`post-actions`.
+
+**Minutes, not hours** — no field name says which, and the recording settles it three ways:
+the plan total is a published Xcode Cloud compute-hour tier times 60, used plus available
+equals the total, and the day series beside it is labelled in minutes.
+
+**The two figures cover two different windows**, which is why they are printed apart and
+never added up. The plan counts the billing period ending on its reset date; the day
+breakdown counts the dates you asked for. In the recording they disagree, as they should.
+The window is the last *n* days ending today, inclusive, computed in UTC so the same command
+asks for the same window wherever it runs.
+
+**A product in the breakdown may no longer exist.** Compute outlives the product that spent
+it — the recording listed seven products where the products call returned two — so ids are
+printed as ids and never resolved. The name is on
+[`GET /v1/ciProducts`](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
+for the ones that are still there.
+
+This is team-scoped rather than app-scoped: it describes the account, not one app. That is
+the one boundary this command crosses that the rest of the client does not.
+
 `appId` defaults to the one scraped from the captured request's `Referer`. **`versionId` has
 no default** — `asc history <versionId>` requires it, because working one out means reading
 `apps/{id}/appStoreVersions`, which is Apple's own

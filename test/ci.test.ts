@@ -15,7 +15,7 @@ import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import { ApiError, CI, request, SessionExpiredError } from '../src/http';
-import { fetchPostActions, formatPostActions, listWorkflows } from '../src/ci';
+import { fetchPlan, fetchPostActions, fetchUsage, formatPostActions, listWorkflows } from '../src/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const CI_BASE = 'https://appstoreconnect.apple.com/ci/api';
@@ -235,5 +235,95 @@ describe('reading a document nobody promised', () => {
 
     assert.equal(workflows.length, 1);
     assert.equal(workflows[0]!.workflowId, 'workflow-0000');
+  });
+});
+
+
+describe('the compute window', () => {
+  const EMPTY = { usage: [], product_usage: [], info: {} };
+
+  test('a day count becomes an inclusive window ending today, in UTC', async () => {
+    const calls = await sent(EMPTY, () => fetchUsage(SESSION, 30));
+    const query = new URL(calls[0]!.url).searchParams;
+    const start = new Date(`${query.get('start')}T00:00:00Z`);
+    const end = new Date(`${query.get('end')}T00:00:00Z`);
+
+    assert.equal((end.getTime() - start.getTime()) / 86_400_000, 29, '30 days inclusive of both ends');
+    assert.equal(query.get('end'), new Date().toISOString().slice(0, 10), 'the window ends today, UTC');
+  });
+
+  test('one day is a window of one day, not an empty one', async () => {
+    const calls = await sent(EMPTY, () => fetchUsage(SESSION, 1));
+    const query = new URL(calls[0]!.url).searchParams;
+
+    assert.equal(query.get('start'), query.get('end'));
+  });
+
+  test('a day count that is not a whole positive number never becomes a request', async () => {
+    const stub = stubFetch();
+    try {
+      for (const bad of [0, -1, 1.5, NaN, Infinity]) {
+        await assert.rejects(() => fetchUsage(SESSION, bad), /whole number of days/);
+      }
+    } finally {
+      stub.restore();
+    }
+
+    assert.deepEqual(stub.calls, []);
+  });
+
+  test('both compute reads need the team id, and say so when it is missing', async () => {
+    const stub = stubFetch();
+    try {
+      const without = { ...SESSION, teamId: undefined };
+      await assert.rejects(() => fetchPlan(without), /no team id/);
+      await assert.rejects(() => fetchUsage(without, 7), /no team id/);
+    } finally {
+      stub.restore();
+    }
+
+    assert.deepEqual(stub.calls, []);
+  });
+
+  /**
+   * The breakdown named seven products where the products call returned two, and only two
+   * of the ids matched: compute outlives the product that spent it. So a row is kept on its
+   * id alone, and nothing here tries to resolve one.
+   */
+  test('a product id that resolves to nothing is still a row', async () => {
+    const stub = stubFetch(() => ({
+      body: {
+        usage: [],
+        product_usage: [{ product_id: 'deleted-0000', usage_in_minutes: 12, number_of_builds: 1 }],
+        info: { can_view_all_products: false },
+      },
+    }));
+    try {
+      const window = await withStderr(() => fetchUsage(SESSION, 7));
+
+      assert.equal(window.products.length, 1);
+      assert.equal(window.products[0]!.productId, 'deleted-0000');
+      assert.equal(window.allProducts, false, 'and a partial view says it is partial');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a row Apple sends in an unrecognised shape is dropped, not thrown over', async () => {
+    const stub = stubFetch(() => ({
+      body: {
+        usage: [{ minutes: 5 }, { date: '2026-08-21', minutes: 5, number_of_builds: 1 }],
+        product_usage: [{ usage_in_minutes: 9 }],
+        info: {},
+      },
+    }));
+    try {
+      const window = await withStderr(() => fetchUsage(SESSION, 7));
+
+      assert.equal(window.days.length, 1, 'the day with no date is not a day');
+      assert.equal(window.products.length, 0, 'and a product row with no id names no product');
+    } finally {
+      stub.restore();
+    }
   });
 });

@@ -4,9 +4,11 @@
 
 The project is an unofficial TypeScript client for the parts of App Store Connect that
 Apple's official API does not serve — principally the private Iris Resolution Center
-surface. Everything mapped is about an app or one of its Xcode Cloud products; nothing here
-reads account-wide state, though the Xcode Cloud path is scoped by the team id the session
-already carries. Anything Apple
+surface. Almost everything mapped is about an app or one of its Xcode Cloud products. The one
+exception is Xcode Cloud compute usage, which is team-scoped and describes the account
+rather than an app — a boundary crossed deliberately on 2026-08-22, because an allowance and
+a reset date have no per-app form and no official equivalent at all. Account-wide state is
+otherwise still out: the People page went with the invitations slice and has not come back. Anything Apple
 serves officially is out of scope, however convenient the private route. It reuses a
 short-lived browser session captured locally, and is both a CLI (`asc`) and a library. The
 private service may change without notice, and write evidence varies by operation;
@@ -20,7 +22,7 @@ private service may change without notice, and write evidence varies by operatio
 | Authenticated requests and uploads | `http.ts` | All ordinary writes are audited; a path is checked as the URL it *resolves* to and refused unless that is under the base of the `Api` it was given (`IRIS` = `iris/v1`, or the read-only `CI` = `/ci/api`, both on the one host), so neither an absolute URL nor a path that climbs out of a base carries session headers anywhere else; a base marked `readOnly` refuses any method but `GET` before a request is built; media types, 403 classification and page shape belong to the `Api` rather than to a caller or a capture; upload URLs never receive session headers. |
 | JSON:API expansion | `jsonapi.ts` | Relationship joining happens here, not ad hoc in command code. |
 | Apple resources and mutations | `api.ts` | Include/query shapes follow browser evidence and resource functions remain transport-focused. |
-| Xcode Cloud `post_actions` | `ci.ts` | The only non-iris module and the only caller of the `CI` base: one read, no write, ids validated as single path segments, the team id taken from the session rather than discovered, and no lookup that would duplicate `ciProducts` or `betaGroups`. |
+| Xcode Cloud `post_actions` and compute usage | `ci.ts` | The only non-iris module and the only caller of the `CI` base: reads only, ids validated as single path segments, the team id taken from the session rather than discovered, and no lookup that would duplicate `ciProducts` or `betaGroups`. Figures Apple sends are passed through, never reconciled: the plan window and the usage window are different windows and are never summed. |
 | CLI and confirmations | `cli.ts`, `confirm.ts` | stdout is data; destructive/irreversible actions preview and refuse without TTY or `--yes`. |
 | Structured redacted logging | `log.ts` | Audit records cannot be disabled; sensitive values are scrubbed. |
 | Digests and rendering | `report.ts` | Convert denormalized resources into stable useful summaries. |

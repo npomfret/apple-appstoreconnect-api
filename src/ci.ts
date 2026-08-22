@@ -1,6 +1,6 @@
 /**
- * Xcode Cloud, for the one thing on it Apple's official API cannot answer: whether a build
- * is handed to testers automatically.
+ * Xcode Cloud, for the two things on it Apple's official API cannot answer: whether a build
+ * is handed to testers automatically, and how much compute the team has left.
  *
  * Everything else about Xcode Cloud — products, workflows, repositories, build runs,
  * actions, issues, test results, and creating or updating a workflow — Apple serves
@@ -14,7 +14,16 @@
  * `product`, `repository` and `xcodeVersion`.
  *
  * So a workflow can hand every build to a TestFlight group and the official API will not
- * say so. That is what this module reads, and it is all it reads.
+ * say so.
+ *
+ * The second is compute against the plan. Re-checked the same way on 2026-08-21:
+ * `usage_in_minutes`, `number_of_builds`, `reset_date` and `can_view_all_products` occur
+ * **zero** times in 4.4.1, and the only official `usage` paths — `betaTesterUsages`,
+ * `betaBuildUsages`, `publicLinkUsages` — are about TestFlight testers, not build minutes.
+ * `CiBuildRun` carries `startedDate` and `finishedDate`, so wall-clock per run is derivable
+ * one build at a time; billed compute, an allowance, and a reset date are not.
+ *
+ * Both are reads, and that is all this module does.
  *
  * **It reads. There is no write here, and the base it uses cannot carry one** — see `CI` in
  * `http.ts`. The `PUT` that sets `post_actions` is recorded in both directions, so the gap
@@ -274,6 +283,259 @@ export function formatPostActions(workflows: WorkflowPostActions[]): string {
       ? 'Nothing on this product hands a build on automatically.'
       : `${configured} of ${workflows.length} workflows hand a build on automatically.`
   );
+
+  return lines.join('\n');
+}
+
+/**
+ * The compute allowance, and what is left of it.
+ *
+ * `GET ci/api/teams/{teamId}/usage/summary`, recorded from the browser's Xcode Cloud Usage
+ * page on 2026-08-21. No query, and the response is `{plan, links}`; `links` is a set of
+ * web URLs for the page's own buttons and is not read.
+ */
+export interface ComputePlan {
+  /** Apple's name for the tier, passed through. */
+  name: string;
+  /**
+   * Minutes, not hours.
+   *
+   * Nothing in the field names says so, and getting it wrong would misreport the allowance
+   * by sixtyfold. What settles it: in the recording `total` is exactly one of Apple's
+   * published compute-hour tiers multiplied by 60, `used + available === total`, and the
+   * per-day series beside it is labelled `minutes` and is of the same order.
+   */
+  totalMinutes: number;
+  usedMinutes: number;
+  availableMinutes: number;
+  /**
+   * The day the allowance rolls over, `YYYY-MM-DD`.
+   *
+   * Apple sends `reset_date_time` beside it, the same day with a time on it. The day is the
+   * part that means anything to a plan that resets monthly.
+   */
+  resetDate: string;
+}
+
+/**
+ * A number Apple was expected to send, refused rather than defaulted.
+ *
+ * A missing allowance is not a zero allowance, and the difference between "you have none
+ * left" and "Apple did not say" is the whole value of the call.
+ */
+function count(value: unknown, what: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(
+      `Xcode Cloud did not send a usable ${what}. This is a private endpoint with no schema ` +
+        'behind it, so a changed response is a real possibility — re-capture the Usage page.'
+    );
+  }
+  return value;
+}
+
+/** How much Xcode Cloud compute the team has, has used, and has left. */
+export async function fetchPlan(session: Session): Promise<ComputePlan> {
+  const body = await request<unknown>(session, `teams/${teamOf(session)}/usage/summary`, { api: CI });
+  const plan = record(record(body)?.['plan']);
+
+  if (!plan) {
+    throw new Error('Xcode Cloud returned no "plan" on the usage summary, so there is nothing to report.');
+  }
+
+  return {
+    name: text(plan['name']) ?? '(unnamed)',
+    totalMinutes: count(plan['total'], 'plan total'),
+    usedMinutes: count(plan['used'], 'used total'),
+    availableMinutes: count(plan['available'], 'available total'),
+    resetDate: text(plan['reset_date']) ?? '(not stated)',
+  };
+}
+
+/** One day of the series, as Apple sends it. */
+export interface UsageDay {
+  /** `YYYY-MM-DD`. The series is contiguous and ascending in the recording. */
+  date: string;
+  minutes: number;
+  builds: number;
+}
+
+/** One product's share of the window. */
+export interface ProductUsage {
+  /**
+   * Apple's Xcode Cloud product id — which may name a product that no longer exists.
+   *
+   * In the recording the breakdown carried seven products where `products-v4` returned two,
+   * and only those two ids matched. Consumed compute outlives the product that consumed it,
+   * so this is not resolved to a name here and a lookup of one may find nothing. The lookup
+   * itself is `GET /v1/ciProducts`, which Apple serves officially.
+   */
+  productId: string;
+  /** Apple sends both. `minutes` is `floor(seconds / 60)` for every row in the recording. */
+  minutes: number;
+  seconds: number;
+  builds: number;
+  /** The same product over the window immediately before this one. */
+  previousMinutes: number;
+  previousBuilds: number;
+}
+
+/**
+ * A window of Xcode Cloud usage, and the products that filled it.
+ *
+ * **Not the plan's window.** `GET usage/days` answers for the dates asked for; the plan
+ * answers for the billing period ending at its own `resetDate`. In the recording the two
+ * disagree, as they should. Nothing here adds one to the other or reconciles them.
+ */
+export interface UsageWindow {
+  /** Inclusive, `YYYY-MM-DD`, exactly as sent. */
+  start: string;
+  end: string;
+  days: UsageDay[];
+  products: ProductUsage[];
+  /**
+   * Apple's own `can_view_all_products`: false means the signed-in user sees a partial
+   * breakdown, so the per-product rows do not have to add up to the day series.
+   */
+  allProducts: boolean;
+}
+
+/** `YYYY-MM-DD` in UTC, which is the format both query parameters and every date field use. */
+function day(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * The last `days` days ending today, inclusive at both ends.
+ *
+ * UTC, so the window a command asks for does not depend on where it runs. Apple's own page
+ * asked for 31 days; nothing observed says what it does with a longer range, and it is not
+ * capped here because a cap invented from one recording is as much a guess as no cap.
+ */
+function windowOf(days: number): { start: string; end: string } {
+  if (!Number.isInteger(days) || days < 1) {
+    throw new Error(`A usage window is a whole number of days, at least 1 — not "${days}".`);
+  }
+
+  const end = new Date();
+  const start = new Date(end.getTime() - (days - 1) * 86_400_000);
+  return { start: day(start), end: day(end) };
+}
+
+function readDay(entry: unknown): UsageDay | undefined {
+  const source = record(entry);
+  const date = text(source?.['date']);
+  if (!source || !date) return undefined;
+
+  return {
+    date,
+    minutes: typeof source['minutes'] === 'number' ? source['minutes'] : 0,
+    builds: typeof source['number_of_builds'] === 'number' ? source['number_of_builds'] : 0,
+  };
+}
+
+function readProduct(entry: unknown): ProductUsage | undefined {
+  const source = record(entry);
+  const productId = text(source?.['product_id']);
+  if (!source || !productId) return undefined;
+
+  const number = (key: string): number => (typeof source[key] === 'number' ? (source[key] as number) : 0);
+
+  return {
+    productId,
+    minutes: number('usage_in_minutes'),
+    seconds: number('usage_in_seconds'),
+    builds: number('number_of_builds'),
+    previousMinutes: number('previous_usage_in_minutes'),
+    previousBuilds: number('previous_number_of_builds'),
+  };
+}
+
+/**
+ * Compute over the last `days` days, by day and by product.
+ *
+ * Parsed leniently, unlike the plan: these are lists, and a row Apple sends in a shape this
+ * client does not recognise is one row missing from a breakdown rather than an answer that
+ * cannot be given at all.
+ */
+export async function fetchUsage(session: Session, days: number): Promise<UsageWindow> {
+  const { start, end } = windowOf(days);
+  const body = await request<unknown>(session, `teams/${teamOf(session)}/usage/days`, {
+    api: CI,
+    query: { start, end },
+  });
+
+  const source = record(body);
+  const info = record(source?.['info']);
+  const list = (key: string): unknown[] => (Array.isArray(source?.[key]) ? (source![key] as unknown[]) : []);
+
+  return {
+    start,
+    end,
+    days: list('usage')
+      .map(readDay)
+      .filter((entry): entry is UsageDay => entry !== undefined),
+    products: list('product_usage')
+      .map(readProduct)
+      .filter((entry): entry is ProductUsage => entry !== undefined),
+    allProducts: record(info)?.['can_view_all_products'] === true,
+  };
+}
+
+/** Thousands separators, so six thousand minutes does not read as sixty. */
+function amount(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
+/**
+ * The digest.
+ *
+ * The plan and the window are printed as two separate things because they are two separate
+ * things: the plan counts the billing period ending at its reset date, the window counts
+ * the dates asked for, and in the recording the totals differ. Adding them together, or
+ * showing one as a percentage of the other, would invent a relationship nothing observed
+ * supports.
+ */
+export function formatUsage(plan: ComputePlan, window?: UsageWindow): string {
+  const share = plan.totalMinutes > 0 ? Math.round((plan.usedMinutes / plan.totalMinutes) * 100) : 0;
+  const lines = [
+    `plan       ${plan.name}`,
+    `used       ${amount(plan.usedMinutes)} of ${amount(plan.totalMinutes)} minutes  (${share}%)`,
+    `left       ${amount(plan.availableMinutes)} minutes`,
+    `resets     ${plan.resetDate}`,
+  ];
+
+  if (!window) return lines.join('\n');
+
+  const minutes = window.days.reduce((total, entry) => total + entry.minutes, 0);
+  const builds = window.days.reduce((total, entry) => total + entry.builds, 0);
+  const busiest = window.days.reduce<UsageDay | undefined>(
+    (worst, entry) => (worst === undefined || entry.minutes > worst.minutes ? entry : worst),
+    undefined
+  );
+
+  lines.push('', `${window.start} to ${window.end}, counted separately from the plan above:`);
+  lines.push(`  minutes  ${amount(minutes)}`);
+  lines.push(`  builds   ${amount(builds)}`);
+  if (busiest && busiest.minutes > 0) {
+    lines.push(`  busiest  ${busiest.date}  ${amount(busiest.minutes)} minutes, ${amount(busiest.builds)} builds`);
+  }
+
+  if (window.products.length === 0) {
+    lines.push('  products none in this window');
+  } else {
+    lines.push('', '  per product, against the window before it:');
+    for (const product of window.products) {
+      lines.push(
+        `    ${product.productId}  ${amount(product.minutes).padStart(7)} min ` +
+          `${amount(product.builds).padStart(5)} builds   ` +
+          `(was ${amount(product.previousMinutes)} min, ${amount(product.previousBuilds)} builds)`
+      );
+    }
+  }
+
+  if (!window.allProducts) {
+    lines.push('', 'Apple says this account cannot see every product, so the breakdown is partial.');
+  }
 
   return lines.join('\n');
 }

@@ -538,3 +538,45 @@ describe('the Xcode Cloud read', () => {
     assert.equal(calls[0]!.headers['accept'], '*/*');
   });
 });
+
+/**
+ * The compute reads. Apple has no usage resource of any kind — the only official `usage`
+ * paths are TestFlight's, about testers rather than build minutes — so like the block
+ * above this is a fence: a test here that needs editing to add a *third* Xcode Cloud call
+ * means the slice grew past what it was allowed.
+ */
+describe('the Xcode Cloud compute reads', () => {
+  test('the plan is one GET, scoped by the session team, with no query at all', async () => {
+    const calls = await sent({ plan: { name: 'p', total: 6000, used: 1, available: 5999 } }, () =>
+      ci.fetchPlan(SESSION)
+    );
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.method, 'GET');
+    assert.equal(
+      calls[0]!.url,
+      `https://appstoreconnect.apple.com/ci/api/teams/${SESSION.teamId}/usage/summary`
+    );
+  });
+
+  test('the breakdown is one GET, with the window as the browser spells it', async () => {
+    const calls = await sent({ usage: [], product_usage: [], info: {} }, () => ci.fetchUsage(SESSION, 31));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.method, 'GET');
+
+    const url = new URL(calls[0]!.url);
+    assert.equal(url.pathname, `/ci/api/teams/${SESSION.teamId}/usage/days`);
+    assert.deepEqual([...url.searchParams.keys()], ['start', 'end']);
+    for (const key of ['start', 'end']) {
+      assert.match(url.searchParams.get(key)!, /^\d{4}-\d{2}-\d{2}$/, `${key} is a plain date`);
+    }
+  });
+
+  test('neither compute read claims to be JSON:API either', async () => {
+    const calls = await sent({ usage: [], product_usage: [], info: {} }, () => ci.fetchUsage(SESSION, 7));
+
+    assert.equal(calls[0]!.headers['content-type'], undefined);
+    assert.equal(calls[0]!.headers['accept'], '*/*');
+  });
+});

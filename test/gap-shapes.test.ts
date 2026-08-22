@@ -20,7 +20,7 @@ import { describe, test } from 'node:test';
 
 import { Document, Resource } from '../src/jsonapi';
 import { buildReport, fetchPrivacy, formatReport, SubmissionReport } from '../src/report';
-import { fetchPostActions, formatPostActions } from '../src/ci';
+import { fetchPlan, fetchPostActions, fetchUsage, formatPostActions, formatUsage } from '../src/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const APP = '123';
@@ -653,5 +653,131 @@ describe('what a workflow says it does with a build', () => {
     // Ids, not names: resolving a beta group is `/v1/betaGroups`, which Apple serves.
     assert.match(digest, /group-0000/);
     assert.match(digest, /1 of 1 workflows/);
+  });
+});
+
+
+/**
+ * What the compute reads say once they are read back.
+ *
+ * The numbers below are invented, but two properties of them are not, and both are pinned
+ * here because getting either wrong misreports an allowance rather than merely formatting
+ * it oddly: the plan is denominated in **minutes**, and the plan window and the day window
+ * are different windows that must never be added together or shown as one.
+ */
+describe('what Xcode Cloud says about compute', () => {
+  const SUMMARY = {
+    plan: { name: 'Pro', total: 6000, used: 4500, available: 1500, reset_date: '2026-09-01' },
+    links: { manage: 'https://appstoreconnect.apple.com/teams/x/ci/settings' },
+  };
+
+  test('the plan is read as minutes, and as Apple\'s own arithmetic', async () => {
+    const stub = stubFetch(() => ({ body: SUMMARY }));
+    try {
+      const plan = await withStderr(() => fetchPlan(SESSION));
+
+      assert.equal(plan.totalMinutes, 6000);
+      assert.equal(plan.usedMinutes, 4500);
+      assert.equal(plan.availableMinutes, 1500);
+      assert.equal(plan.resetDate, '2026-09-01');
+      assert.equal(
+        plan.usedMinutes + plan.availableMinutes,
+        plan.totalMinutes,
+        'used + available === total held on every recorded response'
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a plan the response does not carry is an error, not an empty allowance', async () => {
+    const stub = stubFetch(() => ({ body: { links: {} } }));
+    try {
+      await assert.rejects(() => withStderr(() => fetchPlan(SESSION)), /no "plan"/);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('a plan total Apple did not send is refused rather than read as zero', async () => {
+    const stub = stubFetch(() => ({ body: { plan: { name: 'Pro', used: 1, available: 2 } } }));
+    try {
+      await assert.rejects(() => withStderr(() => fetchPlan(SESSION)), /did not send a usable plan total/);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test('the breakdown keeps the day series and the per-product series apart', async () => {
+    const stub = stubFetch(() => ({
+      body: {
+        usage: [
+          { date: '2026-08-20', minutes: 120, number_of_builds: 4 },
+          { date: '2026-08-21', minutes: 30, number_of_builds: 1 },
+        ],
+        product_usage: [
+          {
+            product_id: 'product-0000',
+            usage_in_minutes: 100,
+            usage_in_seconds: 6042,
+            number_of_builds: 3,
+            previous_usage_in_minutes: 80,
+            previous_number_of_builds: 2,
+          },
+        ],
+        info: { can_view_all_products: true },
+      },
+    }));
+    try {
+      const window = await withStderr(() => fetchUsage(SESSION, 2));
+
+      assert.equal(window.days.length, 2);
+      assert.equal(window.products.length, 1);
+      assert.equal(window.allProducts, true);
+      assert.equal(window.products[0]!.minutes, 100);
+      assert.equal(window.products[0]!.previousMinutes, 80);
+      assert.equal(
+        window.products[0]!.minutes,
+        Math.floor(window.products[0]!.seconds / 60),
+        'minutes is floor(seconds / 60) on every recorded row'
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+
+  /**
+   * The one relationship the recording rules out. `plan.used` counts the billing period
+   * ending at `reset_date`; the day series counts the dates asked for. In the recording
+   * they do not agree, and a digest that presented one as the other would be wrong in a way
+   * nobody could see.
+   */
+  test('the digest never merges the plan window with the asked-for window', async () => {
+    const plan = { name: 'Pro', totalMinutes: 6000, usedMinutes: 4500, availableMinutes: 1500, resetDate: '2026-09-01' };
+    const window = {
+      start: '2026-08-20',
+      end: '2026-08-21',
+      days: [{ date: '2026-08-20', minutes: 120, builds: 4 }],
+      products: [],
+      allProducts: true,
+    };
+    const digest = formatUsage(plan, window);
+
+    assert.match(digest, /4,500 of 6,000 minutes/, 'the plan is reported as Apple stated it');
+    assert.match(digest, /counted separately from the plan/, 'and the window says it is a different window');
+    assert.doesNotMatch(digest, /4,620/, 'the two totals are never summed');
+  });
+
+  test('the plan alone is a complete answer, with no window asked for', () => {
+    const digest = formatUsage({
+      name: 'Pro',
+      totalMinutes: 6000,
+      usedMinutes: 4500,
+      availableMinutes: 1500,
+      resetDate: '2026-09-01',
+    });
+
+    assert.match(digest, /1,500 minutes/);
+    assert.doesNotMatch(digest, /counted separately/);
   });
 });

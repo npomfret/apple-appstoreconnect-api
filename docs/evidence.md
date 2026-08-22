@@ -173,7 +173,8 @@ What the recording settles, beyond the request:
 - **`archive_action_id` names an action in the same workflow**, true of every post-action in
   the recording, so a post-action follows a build step rather than the workflow as a whole.
   The digest resolves it against that workflow's own `actions`, which costs no request.
-- **The team id needs no discovery.** On all 22 recorded `/ci/api` requests the
+- **The team id needs no discovery.** On all 34 recorded `/ci/api` requests — 22 from the
+  workflow page, 12 from the Usage page, checked separately — the
   `teams/{id}` path segment is the same value as the `X-Connect-Team-ID` header, which the
   session already carries and otherwise decodes from the `itctx` cookie. So this needs
   neither a `--team` flag nor `olympus/v1/actors`, which would be a third base carrying
@@ -183,6 +184,61 @@ What the recording settles, beyond the request:
 
 Beta group ids are printed as ids and never resolved to names: that is `GET /v1/betaGroups`,
 which Apple serves officially with `name` and `isInternalGroup` on it.
+
+### The Xcode Cloud compute reads
+
+`fetchPlan` and `fetchUsage` — the `usage` command — are
+`GET ci/api/teams/{teamId}/usage/summary` and
+`GET ci/api/teams/{teamId}/usage/days?start=YYYY-MM-DD&end=YYYY-MM-DD`. Both were recorded
+from the browser's Xcode Cloud **Usage** page on 2026-08-21 and read on 2026-08-22 through
+the same extractor, which for these emitted key structure, date *formats* rather than dates,
+and a set of computed booleans rather than the numbers behind them.
+
+**Apple has no compute-usage resource at all.** Re-checked against **4.4.1**:
+`usage_in_minutes`, `number_of_builds`, `reset_date` and `can_view_all_products` occur zero
+times, and the only official `usage` paths — `betaTesterUsages`, `betaBuildUsages`,
+`publicLinkUsages` — are about TestFlight testers, not build minutes. `CiBuildRun` carries
+`startedDate` and `finishedDate`, so wall-clock per run is derivable one build at a time by
+walking every product's build runs; billed compute, an allowance and a reset date are not
+derivable from anything official.
+
+What the recording settles:
+
+- **The plan is denominated in minutes, not hours.** No field name says so, and getting it
+  wrong misreports the allowance sixtyfold. Three things agree: `plan.total` is exactly one
+  of Apple's published compute-hour tiers multiplied by 60, `used + available === total`,
+  and the per-day series beside it is labelled `minutes` and is of the same order.
+- **The plan window and the day window are different windows.** `plan.used` counts the
+  billing period ending at `reset_date`; `usage/days` counts the dates asked for. In the
+  recording the two totals disagree, as they should, so the digest prints them as two
+  separate things and never sums or reconciles them.
+- **`info.current` and `info.previous` are Apple's own aggregates over a window Apple
+  chose**, matching neither the day series nor the plan. They are not reported as anything,
+  because nothing observed says what window they cover.
+- **A product id in the breakdown may name a product that no longer exists.** The recording
+  carried seven `product_usage` rows where `products-v4` returned two, and only those two
+  ids matched: consumed compute outlives the product that consumed it. So rows are kept on
+  their id and no name lookup is attempted — that lookup is `GET /v1/ciProducts`, which
+  Apple serves officially and which would not find the other five anyway.
+- **`usage_in_minutes` is `floor(usage_in_seconds / 60)`** on every row. Both are kept.
+- **Neither response pages.** `usage/summary` is `{plan, links}` and `usage/days` is
+  `{usage, product_usage, info}`; no continuation key appears in either, and the day series
+  is contiguous and ascending across the whole window.
+- **`links.csv_export` and `links.manage` are web URLs for the page's own buttons.** They
+  are not read, not followed and not printed.
+
+**Activating and deactivating a workflow was captured on 2026-08-22 and deliberately not
+mapped.** The two recorded `PUT`s differ in one boolean, `disabled`, on an otherwise
+identical fourteen-key document. Apple serves that officially and better:
+`PATCH /v1/ciWorkflows/{id}` takes `isEnabled` on its own, every attribute of
+`CiWorkflowUpdateRequest` being optional, where the private route replaces the whole
+document and destroys whatever is not sent back. Checked against 4.4.1 on 2026-08-22. See
+`tasks/xcode-cloud-post-actions-gap.md`.
+
+The window is computed in UTC so that the same command asks for the same window wherever it
+runs. Apple's own page asked for 31 days; nothing observed says what a longer range does, so
+no range is capped here — a cap invented from one recording would be as much a guess as no
+cap.
 
 ## Calls that are probe-only, and so likelier to shift
 
@@ -278,7 +334,7 @@ them is an option a caller picks, and each is what the recordings actually show.
 | Base | What it sends | On what evidence |
 | --- | --- | --- |
 | `…/iris/v1` — the Resolution Center | `application/vnd.api+json` as both `Accept` and `Content-Type`, on reads and writes alike | every recorded Resolution Center call sends it. The one capture that sent plain `application/json` was the version PATCH, which is `PATCH /v1/appStoreVersions/{id}` officially. **The capture could override this until 2026-08-21** — see the header audit below |
-| `…/ci/api` — Xcode Cloud, read-only | `Accept: */*` and **no `Content-Type` at all** | the 22 `/ci/api` requests recorded from the browser send exactly this. Sending `application/vnd.api+json` instead is answered **403** — established by hand on 2026-08-21, one header varied at a time on one URL, and the reason every `ci-*` command in this repository was refused for the whole of its life |
+| `…/ci/api` — Xcode Cloud, read-only | `Accept: */*` and **no `Content-Type` at all** | all 34 `/ci/api` requests recorded from the browser, across the workflow and Usage pages, send exactly this. Sending `application/vnd.api+json` instead is answered **403** — established by hand on 2026-08-21, one header varied at a time on one URL, and the reason every `ci-*` command in this repository was refused for the whole of its life |
 
 `GET`, `POST`, `PATCH` and `DELETE`; anything else is refused. No call addressed to iris
 uses `PUT`, and the upload part that does goes to `object-storage.apple.com` through

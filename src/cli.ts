@@ -39,6 +39,11 @@ const USAGE = `App Store Connect review-centre client (unofficial, session-scrap
                               has no field for. Read-only. The product id is Apple's to
                               serve: GET /v1/ciProducts on the official API
 
+  asc usage [days]            Xcode Cloud compute: how many build minutes the plan has, how
+                              many are left, and when it resets. With a day count, also the
+                              per-day and per-product breakdown for that window. Read-only.
+                              Apple's official API has no compute-usage resource at all
+
   asc get <path> [k=v ...]    Raw GET, for a query the commands above don't send. Confined
                               to the private families this client is for; an officially
                               served path is refused rather than duplicated
@@ -59,8 +64,8 @@ This reaches Apple and cannot be undone. It shows what it is about to send and a
 
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
-  --json                      For "report", "history", "privacy" and "post-actions": emit
-                              JSON instead of the digest
+  --json                      For "report", "history", "privacy", "post-actions" and
+                              "usage": emit JSON instead of the digest
   --yes                       Skip the confirmation prompt on the commands that ask
   --attach <file>             For "save-draft": a file to attach. Repeat for several
 
@@ -463,6 +468,29 @@ async function main(argv: string[]): Promise<number> {
       const productId = requireArg(rest[0], 'productId', 'post-actions <productId>');
       const workflows = await ci.fetchPostActions(session, productId);
       console.log(json ? JSON.stringify(workflows, null, 2) : ci.formatPostActions(workflows));
+      return 0;
+    }
+
+    /**
+     * Team-scoped rather than app-scoped, which is a boundary this client did not cross
+     * before: compute minutes describe the account, not one app. That was the open question
+     * in `tasks/xcode-cloud-usage-gap.md` and it was decided deliberately, not in passing.
+     *
+     * The day count is optional because the two reads answer different questions and cost a
+     * request each. Bare, this is "how much is left", which is the whole point of the
+     * command; with a window it is also "where did it go".
+     */
+    case 'usage': {
+      const session = loadSession();
+      const plan = await ci.fetchPlan(session);
+      const given = rest[0];
+      // Parsed here so that a typo is reported as a typo. `Number("last month")` is NaN,
+      // and NaN reaches the window check as a number that simply is not a whole one.
+      if (given !== undefined && !Number.isInteger(Number(given))) {
+        throw new Error(`"${given}" is not a number of days. Example: asc usage 30`);
+      }
+      const window = given === undefined ? undefined : await ci.fetchUsage(session, Number(given));
+      console.log(json ? JSON.stringify({ plan, window }, null, 2) : ci.formatUsage(plan, window));
       return 0;
     }
 

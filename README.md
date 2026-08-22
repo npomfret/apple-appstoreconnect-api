@@ -90,6 +90,7 @@ officially and none of it is here — the pages to use instead are
 | `threads`, `thread`, `messages`, `draft`, `rejections` | Resolution Center |
 | `privacy` | App Privacy declarations, and whether they're live |
 | `post-actions <productId>` | private Xcode Cloud `post_actions`: whether a workflow hands each finished build to a TestFlight group. `ciWorkflows` has no such field officially. Read-only |
+| `usage [days]` | private Xcode Cloud compute: build minutes on the plan, minutes left, reset date, and optionally a per-day and per-product breakdown. Apple has no compute-usage resource at all. Read-only, and the only team-scoped command here |
 | `get` | a raw GET at a path you give it, confined to the private families above — an officially served path is refused rather than duplicated |
 
 **Writing** — all but one copied from a capture of the browser doing it; `delete-attachment`
@@ -182,16 +183,19 @@ By topic, for the capabilities this project deliberately does not have:
   — team access, roles, app visibility, invitations and revocation.
 - [Xcode Cloud workflows and builds](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
   — products, workflows, repositories, build runs, actions, issues and test results, and
-  creating or updating a workflow. The one thing not on it is `post_actions`, which is why
-  `asc post-actions` exists and why it reads that field and nothing else.
+  creating or updating a workflow — including enabling and disabling one, which is
+  `PATCH /v1/ciWorkflows/{id}` with `isEnabled`. The things not on it are `post_actions`
+  and compute usage, which is why `asc post-actions` and `asc usage` exist and why they
+  read those and nothing else.
 - [TestFlight](https://developer.apple.com/documentation/appstoreconnectapi/testflight) —
   beta groups, testers and beta app review, none of which this project touches.
 
 What is **not** in any of the above, and is why this project exists: Resolution Center
 threads, messages, guideline rejections, draft replies and their attachments; unread
 review-message counts; App Store version state-change *history*; the App Privacy
-`dataUsages` questionnaire; and an Xcode Cloud workflow's `post_actions`. Checked against
-4.4.1 on 2026-08-21 — see [docs/evidence.md](docs/evidence.md).
+`dataUsages` questionnaire; an Xcode Cloud workflow's `post_actions`; and Xcode Cloud
+compute usage against the plan. Checked against 4.4.1 on 2026-08-21 — see
+[docs/evidence.md](docs/evidence.md).
 
 One attribute, rather than a capability, sits on the line: iris carries
 `gracRatingClassificationNumber` on an age-rating declaration — the Korean GRAC
