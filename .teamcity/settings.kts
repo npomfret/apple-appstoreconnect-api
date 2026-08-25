@@ -1,5 +1,6 @@
 import jetbrains.buildServer.configs.kotlin.*
 import jetbrains.buildServer.configs.kotlin.buildSteps.script
+import jetbrains.buildServer.configs.kotlin.triggers.schedule
 import jetbrains.buildServer.configs.kotlin.triggers.vcs
 
 version = "2026.1"
@@ -71,6 +72,21 @@ val build = BuildType {
             branchFilter = "+:<default>"
             triggerRules = onlyWhatCanChangeABuild
             perCheckinTriggering = true
+        }
+        // Nightly, and deliberately not "only if something changed": the point of this one is to
+        // catch what no commit can be blamed for. Nothing is vendored, so `npm ci` reaches the
+        // registry on every run, and the toolchain is whatever is installed on a Mac three projects
+        // share -- a Node upgrade or a withdrawn package breaks this build on a day nobody touched it.
+        schedule {
+            schedulingPolicy = daily {
+                hour = 3
+            }
+            branchFilter = "+:<default>"
+            triggerBuild = always()
+            withPendingChangesOnly = false
+            // The one run that starts from nothing, so green means a fresh clone builds. It also
+            // clears any junit.xml an earlier incremental build left behind.
+            enforceCleanCheckout = true
         }
     }
 }
