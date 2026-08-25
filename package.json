@@ -13,6 +13,9 @@
     "build": "tsc",
     "asc": "tsc && node dist/cli.js"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.10.2",
