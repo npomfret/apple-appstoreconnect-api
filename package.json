@@ -11,6 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=out-tsc/junit.xml out-tsc/test/*.test.js",
     "build": "tsc",
+    "verify:checks": "npm run typecheck && npm run build",
+    "verify:tests": "npm test; s=$?; node scripts/junit-wrap.mjs out-tsc/junit.xml appstoreconnect-bot || exit 1; exit $s",
+    "verify": "npm run verify:checks && npm run verify:tests",
     "asc": "tsc && node dist/cli.js"
   },
   "engines": {

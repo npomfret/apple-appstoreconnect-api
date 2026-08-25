@@ -608,7 +608,7 @@ describe('the Xcode Cloud team read', () => {
     assert.equal(calls[0]!.url, `https://appstoreconnect.apple.com/ci/api/teams/${SESSION.teamId}`);
   });
 
-  test('it does not claim to be JSON:API either', async () => {
+  test('the team read does not claim to be JSON:API either', async () => {
     const calls = await sent(TEAM, () => ci.fetchTeam(SESSION));
 
     assert.equal(calls[0]!.headers['content-type'], undefined);
@@ -650,7 +650,7 @@ describe('the Xcode Cloud capabilities read', () => {
     );
   });
 
-  test('it does not claim to be JSON:API either', async () => {
+  test('the capabilities read does not claim to be JSON:API either', async () => {
     const calls = await sent(CAPS, () => ci.fetchCapabilities(SESSION));
 
     assert.equal(calls[0]!.headers['content-type'], undefined);
