@@ -40,13 +40,25 @@ val build = BuildType {
         }
         script {
             // Runs the test tsconfig itself, so it type checks `test/` as well -- not redundant
-            // with the step above, which covers `src/` only.
+            // with the step above, which covers `src/` only. Writes out-tsc/junit.xml for the
+            // feature below; still the canonical `npm test`, with no CI-only variant to drift.
             name = "test"
             scriptContent = "npm test"
         }
         script {
             name = "build"
             scriptContent = "npm run build"
+        }
+    }
+
+    features {
+        // Generic rather than the typed builder, following super-funmax-music: a wrong parameter
+        // finds no reports and says so, where a wrong symbol stops this script compiling.
+        feature {
+            type = "xml-report-plugin"
+            param("xmlReportParsing.reportType", "junit")
+            param("xmlReportParsing.reportDirs", "+:out-tsc/junit.xml")
+            param("xmlReportParsing.verboseOutput", "true")
         }
     }
 

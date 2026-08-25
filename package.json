@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsc -p tsconfig.test.json && node --test out-tsc/test/*.test.js",
+    "test": "tsc -p tsconfig.test.json && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=out-tsc/junit.xml out-tsc/test/*.test.js",
     "build": "tsc",
     "asc": "tsc && node dist/cli.js"
   },
