@@ -1,5 +1,45 @@
 # Reading
 
+## Official API: storefront availability
+
+```sh
+asc availability <appId>
+asc availability --bundle-id com.example.app
+asc availability <appId> --json
+asc availability <appId> --check
+```
+
+This is the documented side of the client. It uses `ASC_ISSUER_ID`, `ASC_KEY_ID` and
+`ASC_PRIVATE_KEY_PATH`, not the browser capture, and issues only GETs. No identifier is
+built in: name an app directly or resolve exactly one with `filter[bundleId]`.
+
+The command reads `GET /v1/apps/{id}/appAvailabilityV2`, then
+`GET /v2/appAvailabilities/{id}/territoryAvailabilities` with the documented maximum page
+of 200 and the territory relationship included.
+
+Each selected storefront lands in one of five states, taken from the 48-value
+`contentStatuses` enum in specification 4.4.1:
+
+| | |
+| --- | --- |
+| `available` | on sale now — `AVAILABLE` |
+| `pending` | a change in flight towards being on sale or on pre-order |
+| `leaving` | a change in flight the other way: `PROCESSING_TO_NOT_AVAILABLE` |
+| `blocked` | a rating, tax, trader-status, GRN, ICP or `CANNOT_SELL*` blocker |
+| `unknown` | a status not in 4.4.1, or a row carrying none at all |
+
+A row carries several statuses at once and is classified by its worst, so a blocker is
+never hidden behind a change in flight. Rows are grouped under Apple's exact status strings,
+which are kept verbatim; `--json` carries every row with its state. `--check` exits 1 unless
+every selected storefront is `available` — pending, leaving and unknown all count as not
+ready — which makes the same read useful in CI.
+
+The response is refused if Apple introduces a second page rather than being reported as a
+complete storefront list. The current API has 175 territory rows, below the documented 200
+maximum; paging needs current schema evidence before it is followed.
+
+## Private API gaps
+
 Every read here is one Apple's official API has no equivalent for: Resolution Center
 threads, messages, rejections and drafts; unread review-message counts; version state-change
 history; and the App Privacy questionnaire. Checked against Apple's OpenAPI specification

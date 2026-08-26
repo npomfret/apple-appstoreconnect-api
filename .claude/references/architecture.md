@@ -2,9 +2,10 @@
 
 ## Product boundary
 
-The project is an unofficial TypeScript client for the parts of App Store Connect that
-Apple's official API does not serve — principally the private Iris Resolution Center
-surface. Almost everything mapped is about an app or one of its Xcode Cloud products. The
+The project is a reusable TypeScript client for App Store Connect across many apps.
+Documented capabilities belong on the official API transport; undocumented gaps belong on
+the private Iris or Xcode Cloud transport. The first official operation is storefront
+availability. Almost everything on the private side is about an app or one of its Xcode Cloud products. The
 exceptions are the four Xcode Cloud team reads — compute usage, the team's Developer
 Program standing, what the session is permitted to do, and the infrastructure-validation
 opt-in — which describe the account rather than an app. That boundary was crossed
@@ -20,15 +21,18 @@ saying anything about who holds it. A read that returned any of those would be a
 decision again — the People page went with the invitations slice and has not come back, and
 `olympus/v1/actors` is still declined for exactly the personal details this one does not
 carry. The test for the next such call is the response, not the path it arrives on. Anything Apple
-serves officially is out of scope, however convenient the private route. It reuses a
-short-lived browser session captured locally, and is both a CLI (`asc`) and a library. The
-private service may change without notice, and write evidence varies by operation;
+serves officially is out of scope for the *private* transports, however convenient their
+routes. Official calls use a `.p8`-signed JWT; private calls reuse a short-lived browser
+session captured locally. The two credentials never share a transport or host. The private
+service may change without notice, and write evidence varies by operation;
 `docs/evidence.md` is the source of truth.
 
 ## Module ownership
 
 | Area | Canonical location | Invariant |
 | --- | --- | --- |
+| Official API credentials and GET transport | `official.ts` | Issuer, key and key path are runtime inputs with no account-specific defaults. JWTs go only to `api.appstoreconnect.apple.com`; the public interface exposes GET and no write method. Tokens are minted on demand and re-minted before expiry, so lifetime never bounds a run. |
+| Official storefront availability | `availability.ts` | App IDs are explicit or resolved from a bundle ID; all territory rows are parsed, a paged response is refused rather than under-reported, and storefront state comes from the enumerated 4.4.1 `contentStatuses` union — worst status wins, unrecognised values are reported as unknown rather than bucketed, and Apple's strings are kept verbatim. |
 | Session capture and expiry | `curl.ts`, `session.ts` | Capture content is a credential and is never persisted, logged, or exposed. |
 | Authenticated requests and uploads | `http.ts` | All ordinary writes are audited; a path is checked as the URL it *resolves* to and refused unless that is under the base of the `Api` it was given (`IRIS` = `iris/v1`, or the read-only `CI` = `/ci/api`, both on the one host), so neither an absolute URL nor a path that climbs out of a base carries session headers anywhere else; a base marked `readOnly` refuses any method but `GET` before a request is built; media types, 403 classification and page shape belong to the `Api` rather than to a caller or a capture; upload URLs never receive session headers. |
 | JSON:API expansion | `jsonapi.ts` | Relationship joining happens here, not ad hoc in command code. |
@@ -40,7 +44,7 @@ private service may change without notice, and write evidence varies by operatio
 
 ## Safety invariants
 
-- `tmp/curl.txt`, browser recordings, cookies, `itctx`, CSRF values, and presigned URL
+- `.p8` keys, official bearer tokens, `tmp/curl.txt`, browser recordings, cookies, `itctx`, CSRF values, and presigned URL
   queries are credentials. A recording may be read as evidence through an extractor that
   emits methods, paths, query keys, status codes and response key structure; no credential
   or personal detail may ever leave one, and a capture is never modified. Never read a live
@@ -63,10 +67,9 @@ private service may change without notice, and write evidence varies by operatio
 ## Verification reality
 
 The repository has TypeScript compilation and `npm test`: `node:test` over `test/`, with no
-dependency and no network — `fetch` is replaced and every fixture is invented, including the
-cookie-shaped strings. It asserts the pure boundaries (where a request may go, what counts
-as a write, redaction, JSON:API expansion, capture parsing, date ordering), which is all a
-local test can reach. Neither compilation nor a green suite says anything about remote
-semantics. Never test a private live write merely to prove a code change; use browser
-capture evidence, dry-run paths, a stubbed transport, and explicit human approval for live
-operations.
+dependency and no network — `fetch` is replaced and every fixture is invented. It asserts
+the pure boundaries, including official JWT shape and host isolation, private-session host
+isolation, redaction, parsing and report logic. Neither compilation nor a green suite says
+anything about remote semantics. Never test a private live write merely to prove a code
+change; use official schema or browser-capture evidence, dry-run paths, a stubbed transport,
+and explicit human approval for live operations.

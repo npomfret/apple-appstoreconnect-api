@@ -1,8 +1,69 @@
 # Evidence and limits
 
-This is an undocumented, private API, and the calls here are not all equally well
-evidenced. This page says which is which: what was recorded from App Store Connect doing
-it, what was only probed, and what has never been run from here at all.
+This project has a documented official-API side and an undocumented private-API side. This
+page says which source establishes each call: Apple's published schema, a live read, a
+browser recording, or a probe.
+
+## Official storefront availability
+
+Apple's OpenAPI specification **4.4.1** defines all three reads used by `asc availability`:
+
+- `GET /v1/apps?filter[bundleId]=…` to resolve an optional bundle ID;
+- `GET /v1/apps/{id}/appAvailabilityV2` for `availableInNewTerritories` and the
+  availability record id; and
+- `GET /v2/appAvailabilities/{id}/territoryAvailabilities`, with `limit` up to 200,
+  `include=territory`, and the `available`, `releaseDate`, `contentStatuses` and `territory`
+  field set.
+
+The last schema defines `TerritoryAvailability.contentStatuses` as a closed enum of **48**
+values, and `src/availability.ts` carries all 48 as a literal union copied from it rather
+than matching them by pattern. Re-checked against 4.4.1 on **2026-08-26**.
+
+They sort into four groups. One means on sale (`AVAILABLE`). Six mean a change in flight
+towards being on sale or on pre-order — `PROCESSING_TO_AVAILABLE`, `PROCESSING_TO_PRE_ORDER`,
+`AVAILABLE_FOR_PREORDER`, `AVAILABLE_FOR_PREORDER_ON_DATE`, `PREORDER_ON_UNRELEASED_APP`
+and `AVAILABLE_FOR_SALE_UNRELEASED_APP`. One, `PROCESSING_TO_NOT_AVAILABLE`, means a change
+in flight the *other* way: the app is being withdrawn from that storefront. The remaining
+40 are blockers — `MISSING_RATING`, the Brazil tax and gambling checks, the GRN and ICP
+number states, the three `TRADER_STATUS_*` values, and the `CANNOT_SELL*` family.
+
+Two details are worth recording because they are easy to get wrong. Apple uses **both**
+spellings of pre-order — `PROCESSING_TO_PRE_ORDER` with an underscore, and `PREORDER` in
+the other three — so neither can be normalised away. And `PROCESSING_TO_AVAILABLE` and
+`PROCESSING_TO_NOT_AVAILABLE` share a prefix while meaning opposite things, so a prefix
+match on `PROCESSING_` reports a storefront being withdrawn as a benign pending change.
+Both are why the enum is enumerated rather than matched.
+
+`contentStatuses` is an array and its entries are not alternatives, so a row is classified
+by its worst entry: `['PROCESSING_TO_AVAILABLE', 'CANNOT_SELL']` is a change in flight
+towards a storefront that still cannot sell, and is reported blocked. A status outside the
+48, or a row carrying none at all, is reported as unrecognised — never as either working or
+broken — and keeps `--check` red, because only `AVAILABLE` on every selected storefront is
+green. The strings Apple sent are kept verbatim in the output either way; the client never
+translates them into invented causes.
+
+Only `id` and `type` are required on `TerritoryAvailability` and `AppAvailabilityV2` in
+4.4.1. The client asks for `available`, `contentStatuses` and `availableInNewTerritories`
+explicitly and fails fast if they are absent, rather than treating a missing field as a
+default.
+
+An explicitly approved GET-only live read on **2026-08-26** confirmed the app-availability
+record and one complete territory page of 175 rows, first with 27 DSA-blocked rows and then
+with all 175 `AVAILABLE` after the account declaration changed. No identifier, credential
+or personal detail from that account is retained here. The response had no next page.
+
+The implementation requests the documented maximum of 200 and refuses a non-null `next`
+link. That is deliberate evidence discipline: no paging convention has been implemented,
+and a clipped territory list must not be printed as complete.
+
+The official transport follows Apple's documented ES256 JWT shape and twenty-minute
+maximum token lifetime. A token is minted on demand and reused until a minute before it
+expires, so a script that sweeps many apps re-mints mid-run instead of failing partway
+through with a 401. Offline tests generate an invented P-256 key, verify the 64-byte JOSE
+signature, assert that the bearer goes only to `api.appstoreconnect.apple.com`, drive a
+fake clock across the refresh boundary, and replace every network call.
+
+## Private API evidence
 
 Everything on it is part of the gap this client is for — Resolution Center threads,
 messages, rejections, drafts and their attachments; unread review-message counts; App Store

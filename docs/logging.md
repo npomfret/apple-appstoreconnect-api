@@ -75,7 +75,7 @@ top-level `limit` at all and are held to iris's default of 50.
 
 Credentials are scrubbed two ways, because one of them has to catch what the other missed.
 
-By field name: `cookie`, `x-csrf-itc`, `myacinfo`, `itctx` and friends, wherever they appear
+By field name: `authorization`, `cookie`, `x-csrf-itc`, `myacinfo`, `itctx` and friends, wherever they appear
 and however deeply nested — plus `demoAccountPassword`, which is a body attribute rather
 than a header. That list is `SECRET_FIELDS` in `src/log.ts`, and it is matched twice.
 

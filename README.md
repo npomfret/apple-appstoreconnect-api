@@ -1,22 +1,33 @@
-# Apple appstoreconnect API
+# App Store Connect CLI and library
 
-An unofficial client for the parts of App Store Connect that Apple does not expose through
-the official App Store Connect API: Resolution Center threads, messages, rejections, drafts
-and replies, plus unread review-message counts, version state-change history, the App
-Privacy questionnaire, and whether an Xcode Cloud workflow hands its builds to TestFlight.
+A reusable client for App Store Connect across many apps. It uses Apple's official API for
+documented capabilities and the private browser API only for gaps Apple does not expose.
+The first official capability is storefront availability; the private side covers Resolution
+Center conversations and replies, App Privacy, state-change history and Xcode Cloud gaps.
 
-Everything Apple **does** expose officially is out of scope here, however convenient the
-private endpoint or the cookie it already has. Nothing in this client duplicates an official
-call, there is no escape hatch that reaches one — `asc get` is confined to the private
-families this client is for, and there is no raw write at all — and the transport is
-narrowed to match: one host, two bases, four methods, and the second base read-only. The
-boundary was last audited on 2026-08-22 against Apple's OpenAPI specification 4.4.1, and
-[docs/evidence.md](docs/evidence.md) records what was checked and when.
+Official requests and private requests have separate transports and credentials. The
+official transport is GET-only today and sends a JWT only to
+`api.appstoreconnect.apple.com`. The private transport sends a browser cookie only to
+`appstoreconnect.apple.com`, and its raw `asc get` remains confined to gap families.
 
-It talks to the same private `https://appstoreconnect.apple.com/iris/v1` service the web UI
-uses, reusing a session you capture from your browser.
+## Official API credentials
 
-## First: you need a cookie
+Create an App Store Connect API key under **Users and Access → Integrations**, then provide
+the three account-specific values at runtime. None is built into this project:
+
+```sh
+export ASC_ISSUER_ID='your issuer UUID'
+export ASC_KEY_ID='your key ID'
+export ASC_PRIVATE_KEY_PATH='/absolute/path/to/AuthKey_….p8'
+
+npm run build
+node dist/cli.js availability --bundle-id com.example.app
+```
+
+The `.p8` is read to create a short-lived ES256 token and is never copied, printed or
+logged. Full detail is in [docs/reading.md](docs/reading.md).
+
+## Private API credentials: you need a cookie
 
 Apple's official API supports API-key authentication and should be used wherever it covers
 the job. There is no API key for the private `iris` Resolution Center endpoints used by
@@ -43,42 +54,27 @@ There is no login step and nothing derived on disk. Every command re-reads `tmp/
 and parses it on the spot, so pasting a fresh curl over that file *is* logging in again.
 `ASC_CURL_PATH` moves it, and `asc status <file>` reads one somewhere else.
 
-Any request will do, `GET` or otherwise — the team id that writes need is decoded from the
-cookie rather than read off the headers, so a session captured from a plain read can still
-write. The file can hold several curls with notes around them; the first is used, and only
-the cookie plus a handful of headers are kept — the URL it was copied from and the method
-it used are not read at all, so a command you have trimmed or added flags to is still a
-session.
+Any request will do, `GET` or otherwise, and the file can hold several curls with notes
+around them — only the cookie and a handful of headers are read. If a clean curl is awkward,
+the same file takes a pasted `Cookie:` line instead; account id, team id and expiry are all
+decoded from the cookie itself. [docs/reading.md](docs/reading.md) has the details.
 
 Treat that file as a live credential: anyone holding the cookie is you, on your developer
 account, until it expires.
 
-### Or paste the cookie on its own
-
-If getting a clean curl is awkward, the same file takes ordinary text instead — one item
-per line, any order, `#` comments and blank lines ignored:
-
-```
-# grabbed 13 Aug
-Cookie: myacinfo=...; itctx=...; dqsid=...
-https://appstoreconnect.apple.com/apps/1234567890/distribution/ios/version/inflight
-```
-
-Only the cookie is required, and the `Cookie:` prefix is optional. Account id, team id and
-expiry are all decoded from it. The URL line just supplies the default app id, which you
-can otherwise pass per command (`asc report <appId>`). Everything else is ignored, so an
-HTTP/2 header block pasted straight out of dev tools (`:authority:`, `sec-fetch-*` and
-all) works unedited.
-
 ## What it can do
 
-Every command below is something [Apple's official API](https://developer.apple.com/app-store-connect/api/)
-does not serve. That is the whole of what this project is: if you are looking for apps,
-versions, builds, screenshots, metadata, age ratings, review submissions, invitations, or
-Xcode Cloud products, workflows, build runs and test results, Apple serves all of it
-officially and none of it is here — the pages to use instead are
-[at the bottom](#apples-official-api), and what was checked against what is in
-[docs/evidence.md](docs/evidence.md).
+**Official API reads** — [docs/reading.md](docs/reading.md)
+
+| | |
+| --- | --- |
+| `availability <appId>` | Every storefront as available, pending, leaving, blocked or unknown, grouped under Apple's exact status strings. `--check` exits nonzero unless all are on sale |
+| `availability --bundle-id <id>` | The same report, resolving the app by bundle ID first |
+
+**Private API gaps**
+
+Every command below remains something Apple's official API does not serve. A private route
+is never used for a capability Apple documents officially.
 
 **Reading** — [docs/reading.md](docs/reading.md)
 
@@ -104,14 +100,11 @@ was probed rather than recorded, which [docs/evidence.md](docs/evidence.md) says
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
 | `send-reply` | send it — [docs/replying.md](docs/replying.md) |
 
-**`send-reply` can't be undone**, so it prints what it is about to do and asks first — it
-shows you the whole draft and reads it again after you answer, in case the browser autosaved
-over it in the meantime. The rest ask too, each of them taking something no second run puts
-back: `delete-draft` prints the draft it is about to throw away, and `save-draft` prints the
-text it is about to write over whenever the box already has some. `--yes` answers for you,
-and still prints what it answered for; a command whose own input is a pipe is asked on the terminal rather
-than refused, and with no terminal at all they stop rather than assume. **There is no
-unconfirmed write**, and no way to send a hand-written body at a path of your own.
+**There is no unconfirmed write.** Each of these takes something no second run puts back, so
+each prints what it is about to do and asks first — `send-reply` re-reads the draft after you
+answer, in case the browser autosaved over it. `--yes` answers for you and still prints what
+it answered for. There is no way to send a hand-written body at a path of your own.
+[docs/writing.md](docs/writing.md) has the rest.
 
 The lower-level commands print denormalized JSON, or the untouched JSON:API document with
 `--raw`; the digests (`report`, `history`, `privacy`) take `--json` instead. Ids chain
@@ -135,24 +128,21 @@ npm test
 ```
 
 `node:test`, no dependencies and no network — `fetch` is replaced and every fixture is
-invented, so the suite never needs a session and can't touch your account. It covers the
-parts that can be checked locally: where a request is allowed to go, what counts as a write
-and therefore gets audited, redaction, JSON:API expansion, capture parsing, and the date
-handling behind `history`. Nothing in it says Apple will behave as expected — that's what
-[docs/evidence.md](docs/evidence.md) is for.
+invented, so the suite never needs a session and can't touch your account. It covers what can
+be checked locally: where a request may go, what counts as a write, redaction, JSON:API
+expansion, capture parsing, and storefront classification. Nothing in it says Apple will
+behave as expected — that's what [docs/evidence.md](docs/evidence.md) is for.
 
 ## The short version of the caveats
 
-This is an undocumented, private API. It can change without warning, and automating it is
-on you with respect to Apple's terms. The calls here vary in how well evidenced they are —
-most are copied from the browser's own requests, a few were probed and never captured; see
-[docs/evidence.md](docs/evidence.md) before relying on one.
+Official calls follow Apple's published schema. Private calls are undocumented, can change
+without warning, and vary in how well evidenced they are; see [docs/evidence.md](docs/evidence.md).
 
 
-## Apple's official API
+## Further official API capabilities
 
-Everything this project does *not* do is Apple's to serve, and these are the pages worth
-having open. All of them need an API key — a JWT signed with a `.p8` from
+Documented capabilities not yet wrapped here remain available directly from Apple. They
+need an API key — a JWT signed with a `.p8` from
 **Users and Access → Integrations → App Store Connect API** — rather than the browser cookie
 this client uses.
 
@@ -167,53 +157,27 @@ this client uses.
   and [generating tokens](https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests)
   — how to authenticate against it.
 
-By topic, for the capabilities this project deliberately does not have:
+By topic: [app metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata),
+[uploading assets](https://developer.apple.com/documentation/appstoreconnectapi/uploading-assets-to-app-store-connect),
+[review submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions),
+[versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions)
+and [builds](https://developer.apple.com/documentation/appstoreconnectapi/builds),
+[age ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings),
+[users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
+[invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations),
+[Xcode Cloud](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds),
+and [TestFlight](https://developer.apple.com/documentation/appstoreconnectapi/testflight).
 
-- [App metadata](https://developer.apple.com/documentation/appstoreconnectapi/app-metadata)
-  — apps, versions, localizations, categories, age ratings, screenshots and previews.
-- [Uploading assets](https://developer.apple.com/documentation/appstoreconnectapi/uploading-assets-to-app-store-connect)
-  — the reserve → `uploadOperations` → `{"uploaded":true}` flow for screenshots, previews
-  and review attachments.
-- [Review submissions](https://developer.apple.com/documentation/appstoreconnectapi/review-submissions)
-  — creating, reading, updating and submitting submissions and their items.
-- [App Store versions](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions)
-  and [builds](https://developer.apple.com/documentation/appstoreconnectapi/builds) — version
-  records, build selection and processing state.
-- [Age ratings](https://developer.apple.com/documentation/appstoreconnectapi/age-ratings) —
-  the declaration and the per-territory ratings computed from it.
-- [Users](https://developer.apple.com/documentation/appstoreconnectapi/users) and
-  [user invitations](https://developer.apple.com/documentation/appstoreconnectapi/user-invitations)
-  — team access, roles, app visibility, invitations and revocation.
-- [Xcode Cloud workflows and builds](https://developer.apple.com/documentation/appstoreconnectapi/xcode-cloud-workflows-and-builds)
-  — products, workflows, repositories, build runs, actions, issues and test results, and
-  creating or updating a workflow — including enabling and disabling one, which is
-  `PATCH /v1/ciWorkflows/{id}` with `isEnabled`. The things not on it are `post_actions`
-  and compute usage, which is why `asc post-actions` and `asc usage` exist and why they
-  read those and nothing else. There is no team resource anywhere in the official API
-  either — the only `team` in 4.4.1 is `gameCenterMatchmakingTeams` — and nothing official
-  mentions the Program License Agreement, which is `asc team`. Nor is there any per-user
-  capability resource: `/v1/users` carries coarse `UserRole` values beside people's names,
-  where `asc capabilities` reads thirteen resolved booleans about the session and no
-  identity at all. And nothing official carries the infrastructure-validation opt-in —
-  `CiWorkflow`'s fifteen attributes and `CiProduct`'s three have no such field and
-  `infrastructure` does not appear in 4.4.1 — which is `asc infrastructure-validation`.
-- [TestFlight](https://developer.apple.com/documentation/appstoreconnectapi/testflight) —
-  beta groups, testers and beta app review, none of which this project touches.
-
-What is **not** in any of the above, and is why this project exists: Resolution Center
-threads, messages, guideline rejections, draft replies and their attachments; unread
-review-message counts; App Store version state-change *history*; the App Privacy
-`dataUsages` questionnaire; an Xcode Cloud workflow's `post_actions`; Xcode Cloud compute
-usage against the plan; the team's Developer Program standing, including whether the
-Program License Agreement needs signing; what Xcode Cloud says the session is permitted
-to do; and what is opted in to building against Apple's pre-release macOS and Xcode.
-Checked against 4.4.1 on 2026-08-22 — see
+What is in none of them, and is why the private side exists: Resolution Center threads,
+messages, guideline rejections, draft replies and their attachments; unread review-message
+counts; App Store version state-change *history*; the App Privacy `dataUsages`
+questionnaire; an Xcode Cloud workflow's `post_actions`; compute usage against the plan; the
+team's Developer Program standing, including whether the Program License Agreement needs
+signing; what Xcode Cloud says the session may do; and the pre-release macOS and Xcode
+opt-in. Checked against 4.4.1 on 2026-08-22 — the call-by-call working is in
 [docs/evidence.md](docs/evidence.md).
 
-One attribute, rather than a capability, sits on the line: iris carries
-`gracRatingClassificationNumber` on an age-rating declaration — the Korean GRAC
-classification number — and it is in none of 4.4.1's 1,393 schemas, where the other 28
-questions on that form all are. It is **not** implemented here, because writing it back
-means resending the whole questionnaire and no single-attribute PATCH has ever been
-recorded. Whether it should be is an open question, and what would settle it is recorded in
-[docs/evidence.md](docs/evidence.md).
+One attribute sits on the line: `gracRatingClassificationNumber`, the Korean GRAC number,
+is in none of 4.4.1's 1,393 schemas where the other 28 questions on that form all are. It is
+**not** implemented, because writing it back means resending the whole questionnaire and no
+single-attribute PATCH has ever been recorded — see [docs/evidence.md](docs/evidence.md).

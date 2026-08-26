@@ -1,14 +1,44 @@
 # As a library
 
-What this library exports is the gap surface and nothing else: Resolution Center threads,
+The library exports both the official GET-only surface and the private gap surface.
+`officialCredentials()` reads `ASC_ISSUER_ID`, `ASC_KEY_ID` and
+`ASC_PRIVATE_KEY_PATH`; `officialClient()` creates the host-confined bearer transport;
+`findAppId()`, `fetchAvailability()`, `formatAvailability()` and `availabilityReady()` are
+the reusable storefront flow:
+
+```ts
+import {
+  availabilityReady,
+  fetchAvailability,
+  officialClient,
+  officialCredentials,
+} from './src';
+
+const client = officialClient(officialCredentials());
+const report = await fetchAvailability(client, appId);
+if (!availabilityReady(report)) process.exitCode = 1;
+```
+
+One client can be reused for as long as the process runs: it mints a bearer token on demand
+and re-mints before Apple's twenty-minute limit, so sweeping many apps in a loop does not
+outlive its credential.
+
+Each official capability follows the same three shapes — `fetch…` for typed data, `format…`
+for a human, and `…Ready` for the boolean a CI check needs — so a new wrapper is predictable
+to both call and add.
+
+Availability also exports the pieces its report is built from: the `ContentStatus` union of
+Apple's 48 documented storefront statuses, the `TerritoryState` a row is reduced to, and
+`territoryState()`, which applies the worst-status-wins rule to any list of statuses.
+
+The private exports cover Resolution Center threads,
 messages, rejections, drafts and attachments; unread review-message counts; version
 state-change history; App Privacy; and five Xcode Cloud reads — `post_actions`, compute
 usage, the team's Developer Program standing, what the session is permitted to do, and what
 builds against Apple's pre-release macOS and Xcode.
-Everything else App Store Connect can do, Apple serves through its
-[official API](https://developer.apple.com/documentation/appstoreconnectapi/) — with an API
-key rather than the browser cookie this client reads, and there is no export here that
-wraps or forwards to it.
+Other documented capabilities remain available through Apple's
+[official API](https://developer.apple.com/documentation/appstoreconnectapi/) and can be
+added to the official transport when there is a reusable command to justify them.
 
 ```ts
 import { loadSession, buildReport, listMessages, denormalizeAll } from './src';

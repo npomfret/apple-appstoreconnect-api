@@ -13,10 +13,26 @@ import {
   ReportTarget,
 } from './report';
 import { log } from './log';
+import {
+  availabilityReady,
+  fetchAvailability,
+  findAppId,
+  formatAvailability,
+} from './availability';
+import { officialClient, officialCredentials } from './official';
 import * as api from './api';
 import * as ci from './ci';
 
-const USAGE = `App Store Connect review-centre client (unofficial, session-scraped).
+const USAGE = `App Store Connect CLI: Apple's official API plus private API gaps.
+
+Official API (uses ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY_PATH):
+  asc availability <appId>   Storefront availability, blocks and pending changes
+  asc availability --bundle-id <bundleId>
+                              Resolve the app by bundle ID, then show the same report
+                              Add --json for every territory row; --check exits nonzero
+                              while any selected storefront is blocked or pending
+
+Private API gaps (uses the browser capture described below):
 
   asc status [file]           Show the captured session and how long it has left
   asc report [appId]          Digest of every Resolution Center thread: version, guidelines,
@@ -86,7 +102,11 @@ Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
   --json                      For "report", "history", "privacy", "post-actions",
                               "usage", "team", "capabilities" and
-                              "infrastructure-validation": emit JSON instead of the digest
+                              "infrastructure-validation", plus "availability": emit JSON
+                              instead of the digest
+  --check                     For "availability": exit nonzero if a selected storefront
+                              cannot currently distribute
+  --bundle-id <id>            For "availability": find the app through the official API
   --yes                       Skip the confirmation prompt on the commands that ask
   --attach <file>             For "save-draft": a file to attach. Repeat for several
 
@@ -261,13 +281,15 @@ function takeOption(argv: string[], name: string): { values: string[]; rest: str
 }
 
 async function main(argv: string[]): Promise<number> {
-  const { values: attach, rest: afterAttach } = takeOption(argv, '--attach');
+  const { values: bundleIds, rest: afterBundle } = takeOption(argv, '--bundle-id');
+  const { values: attach, rest: afterAttach } = takeOption(afterBundle, '--attach');
   const { values: threadIds, rest: afterThread } = takeOption(afterAttach, '--thread');
   const { values: submissionIds, rest: positional } = takeOption(afterThread, '--submission');
   const raw = positional.includes('--raw');
   const json = positional.includes('--json');
+  const check = positional.includes('--check');
   const yes = positional.includes('--yes');
-  const flags = new Set(['--raw', '--json', '--yes']);
+  const flags = new Set(['--raw', '--json', '--check', '--yes']);
   const args = positional.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
 
@@ -288,6 +310,30 @@ async function main(argv: string[]): Promise<number> {
       const session = loadSession(path);
       console.log(`file:      ${path}\n${describeSession(session)}`);
       return 0;
+    }
+
+    case 'availability': {
+      const [bundleId] = bundleIds;
+      const [givenAppId] = rest;
+      if (bundleIds.length > 1) {
+        throw new Error('availability takes one --bundle-id, not several.');
+      }
+      if (rest.length > 1) {
+        throw new Error('availability takes one app ID, or one --bundle-id, not extra arguments.');
+      }
+      if (bundleId && givenAppId) {
+        throw new Error('Choose an app ID or --bundle-id for availability, not both.');
+      }
+
+      const client = officialClient(officialCredentials());
+      let appId: string;
+      if (bundleId) appId = await findAppId(client, bundleId);
+      else if (givenAppId) appId = givenAppId;
+      else throw new Error('availability needs an app ID or --bundle-id <bundleId>.');
+
+      const report = await fetchAvailability(client, appId);
+      console.log(json ? JSON.stringify(report, null, 2) : formatAvailability(report));
+      return check && !availabilityReady(report) ? 1 : 0;
     }
 
     case 'report': {
