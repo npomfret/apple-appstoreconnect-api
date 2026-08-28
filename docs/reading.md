@@ -1,5 +1,63 @@
 # Reading
 
+## Accounts: which App Store Connect account a command is about
+
+```sh
+asc accounts                       # what is configured, and which is the default
+asc --account acme availability 123
+asc --account acme report
+```
+
+With one account, nothing here is needed: set `ASC_ISSUER_ID`, `ASC_KEY_ID` and
+`ASC_PRIVATE_KEY_PATH` for the official API and `ASC_CURL_PATH` (or the built-in
+`tmp/curl.txt`) for the private one, exactly as before.
+
+With more than one, put them in an accounts file — `~/.config/asc/accounts.json`, or
+wherever `ASC_CONFIG` points:
+
+```json
+{
+  "defaultAccount": "acme",
+  "accounts": {
+    "acme": {
+      "issuerId": "…",
+      "keyId": "…",
+      "privateKeyPath": "~/keys/AuthKey_ACME.p8",
+      "capturePath": "~/.config/asc/acme.curl.txt"
+    },
+    "beta": { "capturePath": "~/.config/asc/beta.curl.txt" }
+  }
+}
+```
+
+**The file holds paths, never keys or cookies.** `accounts.ts` resolves *where* a credential
+lives and hands the path on; `official/client.ts` reads the `.p8` and `gap/session.ts` reads
+the capture. Nothing else in the file is a secret, which is why `asc accounts` can print it
+— though it still prints no `issuerId` or `keyId`, because which accounts exist and how they
+identify themselves to Apple are different questions.
+
+Every field is optional. An account with no `privateKeyPath` cannot run `asc availability`
+and says so, naming the account and the missing key; one with no `capturePath` cannot run a
+private command. Neither falls back to another account's credentials.
+
+Both credentials resolve in the same order:
+
+| | official API | private capture |
+| --- | --- | --- |
+| 1 | `--account <name>` | `--account <name>` |
+| 2 | `ASC_ISSUER_ID` + `ASC_KEY_ID` + `ASC_PRIVATE_KEY_PATH` | `ASC_CURL_PATH` |
+| 3 | `defaultAccount`, or the only account | the same account's `capturePath` |
+| 4 | — error | the built-in `tmp/curl.txt` |
+
+Explicit beats ambient beats configured. `--account` outranks the environment on purpose:
+naming an account and getting whatever the shell exported is how a command runs against the
+wrong team. The three official variables are all-or-nothing — two of them set is a
+half-finished shell, and completing it from the file would sign one account's requests with
+another account's key.
+
+`defaultAccount` may be omitted when the file holds exactly one account. With two or more it
+is required, because choosing one for you is choosing whose App Store data a write lands on.
+
 ## Official API: storefront availability
 
 ```sh

@@ -6,7 +6,36 @@
  * test that means to send a request to Apple fails to send it anywhere instead.
  */
 
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
 import { Session } from '../src/gap/session';
+
+/**
+ * The package root, found by walking up from wherever this file is executing.
+ *
+ * Three tests have now needed it and the first two each got it wrong the same way: under
+ * `npm test` the suite runs from `out-tsc/`, so `__dirname` is not where the sources are
+ * and `'..'` counted from it lands somewhere plausible and empty. A test that reads the
+ * tree has to find the tree, and `package.json` is the only landmark in it that does not
+ * move when a file does.
+ */
+export function packageRoot(): string {
+  let dir = __dirname;
+
+  while (!existsSync(join(dir, 'package.json'))) {
+    const parent = dirname(dir);
+    if (parent === dir) throw new Error('no package.json above the tests');
+    dir = parent;
+  }
+
+  return dir;
+}
+
+/** A path inside `src/`, whichever build is running. */
+export function sourcePath(...parts: string[]): string {
+  return join(packageRoot(), 'src', ...parts);
+}
 
 /** A session with the fields the transport reads, all invented. */
 export const SESSION: Session = {

@@ -25,31 +25,14 @@
  */
 
 import { strict as assert } from 'node:assert';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
-/**
- * The TypeScript, not the compiled copy of it beside this file.
- *
- * `npm test` runs out of `out-tsc/`, where `../src` is emitted JavaScript and a check for
- * `.ts` files would find none — and a graph with no edges in it passes every rule below
- * without reading a line of source. So walk up to the directory holding `package.json` and
- * read the real tree from there, whichever copy of this test is executing.
- */
-function sourceRoot(): string {
-  let dir = __dirname;
+import { packageRoot } from './helpers';
 
-  while (!existsSync(join(dir, 'package.json'))) {
-    const parent = dirname(dir);
-    assert.notEqual(parent, dir, 'no package.json above this test, so no src/ to check');
-    dir = parent;
-  }
-
-  return join(dir, 'src');
-}
-
-const SRC = sourceRoot();
+/** The TypeScript, not the compiled copy of it beside this file — see `packageRoot`. */
+const SRC = join(packageRoot(), 'src');
 
 /** Every directory under `src/`, so a new one cannot escape the rules by being new. */
 const AREAS = readdirSync(SRC, { withFileTypes: true })

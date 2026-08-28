@@ -19,20 +19,26 @@ import {
   findAppId,
   formatAvailability,
 } from './official/availability';
-import { officialClient, officialCredentials } from './official/client';
+import { officialClient } from './official/client';
+import { capturePathFor, configPath, describeAccounts, officialCredentialsFor, readAccounts, Resolution } from './accounts';
 import * as api from './gap/api';
 import * as ci from './gap/ci';
 
 const USAGE = `App Store Connect CLI: Apple's official API plus private API gaps.
 
-Official API (uses ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY_PATH):
+Accounts (which App Store Connect account a command is about):
+  asc accounts                List the configured accounts, which is the default, and what
+                              each one is equipped for. Prints no identifiers and no keys
+  --account <name>            Use that account's credentials for this command
+
+Official API (uses ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY_PATH, or an account):
   asc availability <appId>   Storefront availability, blocks and pending changes
   asc availability --bundle-id <bundleId>
                               Resolve the app by bundle ID, then show the same report
                               Add --json for every territory row; --check exits nonzero
                               while any selected storefront is blocked or pending
 
-Private API gaps (uses the browser capture described below):
+Private API gaps (uses the browser capture described below, or an account's):
 
   asc status [file]           Show the captured session and how long it has left
   asc report [appId]          Digest of every Resolution Center thread: version, guidelines,
@@ -115,7 +121,19 @@ Logging goes to stderr as one JSON object per line, so stdout stays pipeable:
 Every change to live data is logged whatever the level, marked "audit":true. To keep just
 the audit trail:  asc send-reply ... 2>&1 >/dev/null | jq -c 'select(.audit)'
 
-The session is read from ${CURL_PATH} (override with ASC_CURL_PATH), fresh on every
+Credentials are resolved in one order, for both APIs: --account first, then the
+environment (ASC_ISSUER_ID/ASC_KEY_ID/ASC_PRIVATE_KEY_PATH, ASC_CURL_PATH), then the
+default account in the accounts file, then the built-in capture path. The accounts file
+lives at ${configPath()} (override with ASC_CONFIG) and holds paths, never keys:
+
+  {"defaultAccount": "acme",
+   "accounts": {"acme": {"issuerId": "…", "keyId": "…",
+                         "privateKeyPath": "~/keys/AuthKey_….p8",
+                         "capturePath": "~/.config/asc/acme.curl.txt"}}}
+
+With no accounts file, the environment variables work exactly as they always have.
+
+The session is read from ${CURL_PATH} unless something above says otherwise, fresh on every
 command. There is no login step: log in with your passkey, open dev tools, right-click any
 /iris/v1 request, "Copy as cURL", and paste it over that file. Its Cookie header on its own
 works too — everything else is derived from it. Keep the file gitignored; it is a live
@@ -280,22 +298,79 @@ function takeOption(argv: string[], name: string): { values: string[]; rest: str
   return { values, rest };
 }
 
-async function main(argv: string[]): Promise<number> {
-  const { values: bundleIds, rest: afterBundle } = takeOption(argv, '--bundle-id');
+/**
+ * Options out, command and arguments left — separated from running them so the failure
+ * handler can name the command.
+ *
+ * It used to name `argv[0]`, which is the command only when no option comes first. Every
+ * `asc --json report` already logged `"command":"--json"`, and `--account` made that the
+ * usual case rather than the odd one, since naming an account is the first thing you type.
+ */
+interface Invocation {
+  readonly account: string | undefined;
+  readonly bundleIds: string[];
+  readonly attach: string[];
+  readonly threadIds: string[];
+  readonly submissionIds: string[];
+  readonly raw: boolean;
+  readonly json: boolean;
+  readonly check: boolean;
+  readonly yes: boolean;
+  readonly command: string | undefined;
+  readonly rest: string[];
+}
+
+function parseArgs(argv: string[]): Invocation {
+  const { values: accountNames, rest: afterAccount } = takeOption(argv, '--account');
+  if (accountNames.length > 1) {
+    throw new Error(`--account takes one name, not ${accountNames.length}. Run one command per account.`);
+  }
+  const { values: bundleIds, rest: afterBundle } = takeOption(afterAccount, '--bundle-id');
   const { values: attach, rest: afterAttach } = takeOption(afterBundle, '--attach');
   const { values: threadIds, rest: afterThread } = takeOption(afterAttach, '--thread');
   const { values: submissionIds, rest: positional } = takeOption(afterThread, '--submission');
-  const raw = positional.includes('--raw');
-  const json = positional.includes('--json');
-  const check = positional.includes('--check');
-  const yes = positional.includes('--yes');
   const flags = new Set(['--raw', '--json', '--check', '--yes']);
   const args = positional.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
 
+  return {
+    account: accountNames[0],
+    bundleIds,
+    attach,
+    threadIds,
+    submissionIds,
+    raw: positional.includes('--raw'),
+    json: positional.includes('--json'),
+    check: positional.includes('--check'),
+    yes: positional.includes('--yes'),
+    command,
+    rest,
+  };
+}
+
+async function main(invocation: Invocation): Promise<number> {
+  const { account, bundleIds, attach, threadIds, submissionIds, raw, json, check, yes, command, rest } =
+    invocation;
+
   // Arguments are ids and file paths — the one secret, a piped-in capture, arrives on
-  // stdin and never appears here.
-  log.debug('command.start', { command, args: rest });
+  // stdin and never appears here. The account is a name from the config file, not a
+  // credential: what it selects is which paths the credentials are read from.
+  log.debug('command.start', { command, args: rest, account });
+
+  const resolution: Resolution = {
+    ...(account ? { account } : {}),
+    env: process.env,
+    ...(() => {
+      const file = readAccounts();
+      return file ? { file } : {};
+    })(),
+    defaultCapturePath: CURL_PATH,
+  };
+
+  // One resolution for the whole command, read lazily: the official commands must not
+  // require a capture and the private ones must not require an API key, so neither
+  // resolution may run until something actually needs it.
+  const openSession = (): Session => loadSession(capturePathFor(resolution));
 
   switch (command) {
     case undefined:
@@ -305,8 +380,14 @@ async function main(argv: string[]): Promise<number> {
       console.log(USAGE);
       return 0;
 
+    case 'accounts': {
+      // Names and locations, never identifiers: see `describeAccounts`.
+      console.log(describeAccounts(readAccounts(), configPath()));
+      return 0;
+    }
+
     case 'status': {
-      const path = rest[0] ?? CURL_PATH;
+      const path = rest[0] ?? capturePathFor(resolution);
       const session = loadSession(path);
       console.log(`file:      ${path}\n${describeSession(session)}`);
       return 0;
@@ -325,7 +406,7 @@ async function main(argv: string[]): Promise<number> {
         throw new Error('Choose an app ID or --bundle-id for availability, not both.');
       }
 
-      const client = officialClient(officialCredentials());
+      const client = officialClient(officialCredentialsFor(resolution));
       let appId: string;
       if (bundleId) appId = await findAppId(client, bundleId);
       else if (givenAppId) appId = givenAppId;
@@ -337,20 +418,20 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case 'report': {
-      const session = loadSession();
+      const session = openSession();
       const reports = await buildReport(session, reportTarget(session, rest[0], threadIds, submissionIds));
       console.log(json ? JSON.stringify(reports, null, 2) : formatReport(reports));
       return 0;
     }
 
     case 'inbox': {
-      const session = loadSession();
+      const session = openSession();
       emit(await api.listAppMetrics(session), raw);
       return 0;
     }
 
     case 'history': {
-      const session = loadSession();
+      const session = openSession();
       const versionId = requireArg(rest[0], 'versionId', 'history <versionId>');
       const changes = await fetchHistory(session, versionId);
       console.log(json ? JSON.stringify(changes, null, 2) : formatHistory(changes));
@@ -358,14 +439,14 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case 'privacy': {
-      const session = loadSession();
+      const session = openSession();
       const privacy = await fetchPrivacy(session, requireAppId(session, rest[0]));
       console.log(json ? JSON.stringify(privacy, null, 2) : formatPrivacy(privacy));
       return 0;
     }
 
     case 'save-draft': {
-      const session = loadSession();
+      const session = openSession();
       const example = 'save-draft <threadId> "We have fixed..." --attach shot.png';
       const threadId = requireArg(rest[0], 'threadId', example);
       // "-" for stdin: a reply to App Review runs to paragraphs, and quoting all of that
@@ -408,7 +489,7 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case 'send-reply': {
-      const session = loadSession();
+      const session = openSession();
       const threadId = requireArg(rest[0], 'threadId', 'send-reply <threadId>');
 
       // Read the draft here rather than letting `sendDraftReply` do it in one call, because
@@ -446,7 +527,7 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case 'delete-draft': {
-      const session = loadSession();
+      const session = openSession();
       const threadId = requireArg(rest[0], 'threadId', 'delete-draft <threadId>');
 
       // Read here rather than letting `discardDraftReply` do it in one call, for the same
@@ -468,7 +549,7 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case 'delete-attachment': {
-      const session = loadSession();
+      const session = openSession();
       const id = requireArg(rest[0], 'attachmentId', 'delete-attachment <attachmentId>');
       // The id is the whole of the preview: nothing here reads one attachment on its own,
       // so there is no file name to show you that didn't come off the draft in the first
@@ -480,13 +561,13 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case 'threads': {
-      const session = loadSession();
+      const session = openSession();
       emit(await api.listThreads(session, requireAppId(session, rest[0])), raw);
       return 0;
     }
 
     case 'thread': {
-      const session = loadSession();
+      const session = openSession();
       const id = requireArg(rest[0], 'submissionId', 'thread <submissionId>');
       const thread = await api.findThreadForSubmission(session, id);
       if (!thread) {
@@ -498,20 +579,20 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case 'messages': {
-      const session = loadSession();
+      const session = openSession();
       emit(await api.listMessages(session, requireArg(rest[0], 'threadId', 'messages <threadId>')), raw);
       return 0;
     }
 
     case 'draft': {
-      const session = loadSession();
+      const session = openSession();
       const document = await api.getDraftMessage(session, requireArg(rest[0], 'threadId', 'draft <threadId>'));
       emit(document as Document, raw);
       return 0;
     }
 
     case 'rejections': {
-      const session = loadSession();
+      const session = openSession();
       emit(await api.listRejections(session, requireArg(rest[0], 'threadId', 'rejections <threadId>')), raw);
       return 0;
     }
@@ -531,7 +612,7 @@ async function main(argv: string[]): Promise<number> {
      * workflow's secrets on the chance that it can.
      */
     case 'post-actions': {
-      const session = loadSession();
+      const session = openSession();
       const productId = requireArg(rest[0], 'productId', 'post-actions <productId>');
       const workflows = await ci.fetchPostActions(session, productId);
       console.log(json ? JSON.stringify(workflows, null, 2) : ci.formatPostActions(workflows));
@@ -549,7 +630,7 @@ async function main(argv: string[]): Promise<number> {
      * command; with a window it is also "where did it go".
      */
     case 'usage': {
-      const session = loadSession();
+      const session = openSession();
       const plan = await ci.fetchPlan(session);
       const given = rest[0];
       // Parsed here so that a typo is reported as a typo. `Number("last month")` is NaN,
@@ -572,7 +653,7 @@ async function main(argv: string[]): Promise<number> {
      * one costs a request to Apple and reports Apple's state, not the capture's.
      */
     case 'team': {
-      const session = loadSession();
+      const session = openSession();
       const team = await ci.fetchTeam(session);
       console.log(json ? JSON.stringify(team, null, 2) : ci.formatTeam(team));
       return 0;
@@ -589,7 +670,7 @@ async function main(argv: string[]): Promise<number> {
      * write. The value is knowing what the account may do before going somewhere that can.
      */
     case 'capabilities': {
-      const session = loadSession();
+      const session = openSession();
       const capabilities = await ci.fetchCapabilities(session);
       console.log(json ? JSON.stringify(capabilities, null, 2) : ci.formatCapabilities(capabilities));
       return 0;
@@ -609,7 +690,7 @@ async function main(argv: string[]): Promise<number> {
      * without offering to sign it.
      */
     case 'infrastructure-validation': {
-      const session = loadSession();
+      const session = openSession();
       const validation = await ci.fetchInfrastructureValidation(session, rest[0]);
       console.log(
         json ? JSON.stringify(validation, null, 2) : ci.formatInfrastructureValidation(validation)
@@ -618,7 +699,7 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case 'get': {
-      const session = loadSession();
+      const session = openSession();
       const path = requireArg(rest[0], 'path', 'get resolutionCenterThreads/<id>');
       emit(await api.raw(session, path, parseQueryArgs(rest.slice(1))), raw);
       return 0;
@@ -631,9 +712,15 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
-const invoked = process.argv.slice(2);
+let invocation: Invocation | undefined;
 
-main(invoked)
+Promise.resolve()
+  .then(() => {
+    // Inside the chain so a parse failure lands in the same handler. `command` stays
+    // undefined there, which is the truth: the arguments never resolved to one.
+    invocation = parseArgs(process.argv.slice(2));
+    return main(invocation);
+  })
   .then((code) => {
     process.exitCode = code;
   })
@@ -647,7 +734,7 @@ main(invoked)
     }
 
     log.error('command.failed', {
-      command: invoked[0],
+      command: invocation?.command,
       error: error instanceof Error ? error.message : String(error),
     });
     process.exitCode = 1;

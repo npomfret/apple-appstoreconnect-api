@@ -53,13 +53,23 @@ function packageRoot(): string {
   return dir;
 }
 
-export const CURL_PATH = resolve(process.env.ASC_CURL_PATH ?? join(packageRoot(), 'tmp', 'curl.txt'));
+/**
+ * The built-in capture path, and nothing else.
+ *
+ * `ASC_CURL_PATH` used to be read here. It is now one input to `accounts.ts`, which ranks
+ * it against `--account` and the configured default and hands the winner to `loadSession`.
+ * Precedence in two places is precedence that disagrees with itself, and this is the side
+ * that has to lose: a module in `gap/` should be told which capture to read, not go looking
+ * for one in the environment.
+ */
+export const CURL_PATH = resolve(join(packageRoot(), 'tmp', 'curl.txt'));
 
 export function loadSession(path = CURL_PATH): Session {
   if (!existsSync(path)) {
     throw new Error(
       `No capture at ${path}. Copy a request from your browser's dev tools ("Copy as cURL") ` +
-        'and save it there, or point ASC_CURL_PATH somewhere else.'
+        'and save it there. Which file that is comes from --account, ASC_CURL_PATH or the ' +
+        'accounts file, in that order — "asc accounts" shows what is configured.'
     );
   }
 

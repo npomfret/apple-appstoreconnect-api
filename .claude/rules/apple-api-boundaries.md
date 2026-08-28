@@ -7,6 +7,7 @@ paths:
   - "src/shared/log.ts"
   - "src/shared/errors.ts"
   - "src/shared/confirm.ts"
+  - "src/accounts.ts"
   - "src/cli.ts"
   - "docs/**/*.md"
 ---

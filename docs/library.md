@@ -7,12 +7,40 @@ The package root exports three namespaces, one per credential:
 | `official` | an API key: issuer, key id, `.p8` | Apple's documented API and the wrappers over it |
 | `gap` | a browser session capture | only what Apple serves nowhere else |
 | `shared` | nothing | logging, redaction, refusals, query encoding, JSON:API expansion, confirmation |
+| `accounts` | nothing | which account a call is about, and where its credentials live |
 
 They are namespaces rather than one flat surface because the two credentials are separate
 security boundaries, and an import that says `official.` or `gap.` says which one the
 calling code is committing to. `official` and `gap` cannot reach each other even by
 accident: they live in directories that may not import one another, enforced by
 `test/module-boundary.test.ts`.
+
+`accounts` is the exception to the pattern and the reason the other three stay clean. It is
+the only place both credentials are named at once, so it names them and nothing more:
+`accounts.officialCredentialsFor()` returns the issuer, key id and `.p8` *path* for the
+selected account, and `accounts.capturePathFor()` returns a capture *path*. Reading either
+file is `official/client.ts`'s job and `gap/session.ts`'s job respectively, which is what
+lets a resolver sit above both without holding a secret. Both take the environment and the
+parsed file as arguments, so a caller sweeping several accounts in one process can resolve
+each one without touching `process.env`:
+
+```ts
+import { accounts, official } from './src';
+
+const file = accounts.readAccounts();
+for (const name of Object.keys(file?.accounts ?? {})) {
+  const client = official.officialClient(
+    accounts.officialCredentialsFor({ account: name, env: {}, file, defaultCapturePath: '' })
+  );
+  // …one account's reads…
+}
+```
+
+**`loadSession()` with no argument no longer reads `ASC_CURL_PATH`.** That variable is now
+one input to `accounts.capturePathFor()`, which ranks it against `--account` and the
+configured default; `gap.CURL_PATH` is the built-in `tmp/curl.txt` and nothing else. A
+library caller that relied on the old behaviour should pass the path, or resolve it through
+`accounts`.
 
 `official.officialCredentials()` reads `ASC_ISSUER_ID`, `ASC_KEY_ID` and
 `ASC_PRIVATE_KEY_PATH`; `official.officialClient()` creates the host-confined bearer

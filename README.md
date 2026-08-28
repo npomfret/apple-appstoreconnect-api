@@ -32,6 +32,28 @@ node dist/cli.js availability --bundle-id com.example.app
 The `.p8` is read to create a short-lived ES256 token and is never copied, printed or
 logged. Full detail is in [docs/reading.md](docs/reading.md).
 
+### More than one account
+
+The variables above cover one account. For several, name them in
+`~/.config/asc/accounts.json` (or wherever `ASC_CONFIG` points) and pick one per command
+with `--account`:
+
+```json
+{"defaultAccount": "acme",
+ "accounts": {"acme": {"issuerId": "…", "keyId": "…",
+                       "privateKeyPath": "~/keys/AuthKey_ACME.p8",
+                       "capturePath": "~/.config/asc/acme.curl.txt"}}}
+```
+
+```sh
+node dist/cli.js accounts                        # what is configured
+node dist/cli.js --account acme availability 123
+```
+
+The file holds **paths, not credentials** — the `.p8` and the browser capture stay where
+they are and are read only when a command needs them. `--account` outranks the environment
+variables, which outrank the file's default account. With no file, nothing changes.
+
 ## Private API credentials: you need a cookie
 
 Apple's official API supports API-key authentication and should be used wherever it covers
