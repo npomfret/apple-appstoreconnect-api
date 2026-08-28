@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from 'fs';
-import { resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 
 import { sessionFromCapture } from './curl';
 
@@ -26,7 +26,34 @@ export interface Session {
  * every command re-reads this file, so replacing it when Apple expires the cookie is the
  * whole of "logging in again".
  */
-export const CURL_PATH = resolve(process.env.ASC_CURL_PATH ?? resolve(__dirname, '..', 'tmp', 'curl.txt'));
+/**
+ * `tmp/` beside `package.json`, found by walking up rather than by counting `..`.
+ *
+ * A count is wrong the moment the file moves, and silently: this module was one level up
+ * from the package root until it moved into `gap/`, which repointed the default at
+ * `dist/tmp/curl.txt` — a path that never exists, so every command without
+ * `ASC_CURL_PATH` set would have said there was no capture. A count cannot even be right
+ * for both builds at once, since `tsc` emits this to `dist/gap/` and the test build to
+ * `out-tsc/src/gap/`. `test/session.test.ts` pins the result either way.
+ */
+function packageRoot(): string {
+  let dir = __dirname;
+
+  while (!existsSync(join(dir, 'package.json'))) {
+    const parent = dirname(dir);
+    if (parent === dir) {
+      throw new Error(
+        'Could not find the package root above this module, so there is no default capture ' +
+          'path. Set ASC_CURL_PATH to the file holding your "Copy as cURL" capture.'
+      );
+    }
+    dir = parent;
+  }
+
+  return dir;
+}
+
+export const CURL_PATH = resolve(process.env.ASC_CURL_PATH ?? join(packageRoot(), 'tmp', 'curl.txt'));
 
 export function loadSession(path = CURL_PATH): Session {
   if (!existsSync(path)) {
