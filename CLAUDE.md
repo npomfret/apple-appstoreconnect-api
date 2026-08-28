@@ -89,7 +89,8 @@ caller to.
 `npm test` runs `test/` on `node:test` — no dependency, and no network: `fetch` is replaced
 and every fixture is invented. It covers the pure boundaries only — the transport's rules
 about where a request may go and what counts as a write, redaction, JSON:API expansion,
-capture parsing, date ordering — and says nothing about remote semantics. A green suite is
+capture parsing, date ordering, and the import graph that keeps `official/` and `gap/` out
+of each other — and says nothing about remote semantics. A green suite is
 not evidence that a call Apple has never been sent works. Report the verification that
 actually ran, and never make a live write to prove a change.
 

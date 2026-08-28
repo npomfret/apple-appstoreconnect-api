@@ -71,10 +71,23 @@ interface Edge {
   specifier: string;
 }
 
-/** Relative import specifiers, whatever form the statement takes. */
-const IMPORT = /(?:^|\n)\s*(?:import|export)\s[^;]*?from\s+'(\.[^']*)'/g;
+/**
+ * Every relative module specifier, in all four forms that reach one.
+ *
+ * `from '…'` alone is not enough, and the first version of this test made exactly that
+ * mistake: a side-effect `import '…'`, a `require('…')` and a lazy `await import('…')`
+ * each crossed it undetected. The keyword has to be immediately before the literal, which
+ * is what keeps `resolve(__dirname, '..', 'tmp', 'curl.txt')` in `gap/session.ts` from
+ * reading as an import.
+ */
+const IMPORT = /(?:from|import|require)\s*\(?\s*'(\.[^']*)'/g;
 
-/** The area a resolved specifier lands in, or `''` for a module at the top of `src/`. */
+/**
+ * The area a resolved specifier lands in, or `''` for a module at the top of `src/`.
+ *
+ * A specifier that resolves to a bare area — `'../gap'`, the barrel — has to count as that
+ * area too, or importing a directory would be the way round every rule below.
+ */
 function areaOf(fromArea: string, specifier: string): string {
   const parts = (fromArea ? `${fromArea}/${specifier}` : specifier).split('/');
   const resolved: string[] = [];
@@ -85,7 +98,9 @@ function areaOf(fromArea: string, specifier: string): string {
     else resolved.push(part);
   }
 
-  return resolved.length > 1 ? resolved[0]! : '';
+  const head = resolved[0];
+
+  return head !== undefined && AREAS.includes(head) ? head : '';
 }
 
 function edges(): Edge[] {

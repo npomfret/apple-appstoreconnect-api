@@ -10,6 +10,11 @@ official transport is GET-only today and sends a JWT only to
 `api.appstoreconnect.apple.com`. The private transport sends a browser cookie only to
 `appstoreconnect.apple.com`, and its raw `asc get` remains confined to gap families.
 
+That separation is the shape of the source, not a convention: `src/official/` holds the
+documented API and the wrappers over it, `src/gap/` holds only what Apple serves nowhere
+else, and `src/shared/` holds what neither credential touches. The two sides cannot import
+each other in either direction, and a test fails if they ever do.
+
 ## Official API credentials
 
 Create an App Store Connect API key under **Users and Access → Integrations**, then provide
@@ -130,7 +135,8 @@ npm test
 `node:test`, no dependencies and no network — `fetch` is replaced and every fixture is
 invented, so the suite never needs a session and can't touch your account. It covers what can
 be checked locally: where a request may go, what counts as a write, redaction, JSON:API
-expansion, capture parsing, and storefront classification. Nothing in it says Apple will
+expansion, capture parsing, storefront classification, and that neither credential's modules
+can reach the other's. Nothing in it says Apple will
 behave as expected — that's what [docs/evidence.md](docs/evidence.md) is for.
 
 ## The short version of the caveats
