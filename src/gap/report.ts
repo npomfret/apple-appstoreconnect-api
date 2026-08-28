@@ -1,6 +1,6 @@
 import { Session } from './session';
 import * as api from './api';
-import { denormalizeAll, Denormalized } from './jsonapi';
+import { denormalizeAll, Denormalized } from '../shared/jsonapi';
 
 export interface Guideline {
   /**

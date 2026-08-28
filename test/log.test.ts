@@ -6,7 +6,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { audit, log, redact } from '../src/log';
+import { audit, log, redact } from '../src/shared/log';
 import { withStderr } from './helpers';
 
 function logged(run: () => void): Promise<Record<string, unknown>[]> {

@@ -13,7 +13,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { Document, Resource } from '../src/jsonapi';
+import { Document, Resource } from '../src/shared/jsonapi';
 import {
   fetchHistory,
   formatHistory,
@@ -23,7 +23,7 @@ import {
   PrivacyDeclaration,
   StateChange,
   SubmissionReport,
-} from '../src/report';
+} from '../src/gap/report';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 function change(id: string, state: string, date: string | undefined, initiator: string): Resource {

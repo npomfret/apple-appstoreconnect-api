@@ -1,11 +1,12 @@
 ---
 paths:
-  - "src/api.ts"
-  - "src/http.ts"
-  - "src/session.ts"
-  - "src/curl.ts"
-  - "src/log.ts"
-  - "src/confirm.ts"
+  - "src/gap/api.ts"
+  - "src/gap/http.ts"
+  - "src/gap/session.ts"
+  - "src/gap/curl.ts"
+  - "src/shared/log.ts"
+  - "src/shared/errors.ts"
+  - "src/shared/confirm.ts"
   - "src/cli.ts"
   - "docs/**/*.md"
 ---

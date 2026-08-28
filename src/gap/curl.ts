@@ -10,7 +10,7 @@ import { Session } from './session';
  * **Accept and Content-Type are not on this list**, and were until 2026-08-21. They are the
  * transport's, not the session's: iris is served from two front-end bundles that spell both
  * differently, so carrying them meant the request the user happened to right-click decided
- * the media types on every request afterwards. `headersFor` in `src/http.ts` owns them.
+ * the media types on every request afterwards. `headersFor` in `src/gap/http.ts` owns them.
  *
  * **Neither is X-Apple-App-Id**, which was on this list and carried nothing: it appears on
  * none of the 413 requests in the recordings, on any host. It was also the one header here

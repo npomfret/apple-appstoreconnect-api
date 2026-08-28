@@ -9,9 +9,9 @@ import {
   findAppId,
   formatAvailability,
   territoryState,
-} from '../src/availability';
-import { OfficialClient } from '../src/official';
-import { Query } from '../src/http';
+} from '../src/official/availability';
+import { OfficialClient } from '../src/official/client';
+import { Query } from '../src/shared/query';
 
 interface Call {
   path: string;

@@ -1,18 +1,28 @@
 # As a library
 
-The library exports both the official GET-only surface and the private gap surface.
-`officialCredentials()` reads `ASC_ISSUER_ID`, `ASC_KEY_ID` and
-`ASC_PRIVATE_KEY_PATH`; `officialClient()` creates the host-confined bearer transport;
-`findAppId()`, `fetchAvailability()`, `formatAvailability()` and `availabilityReady()` are
-the reusable storefront flow:
+The package root exports three namespaces, one per credential:
+
+| Namespace | Needs | Holds |
+| --- | --- | --- |
+| `official` | an API key: issuer, key id, `.p8` | Apple's documented API and the wrappers over it |
+| `gap` | a browser session capture | only what Apple serves nowhere else |
+| `shared` | nothing | logging, redaction, refusals, query encoding, JSON:API expansion, confirmation |
+
+They are namespaces rather than one flat surface because the two credentials are separate
+security boundaries, and an import that says `official.` or `gap.` says which one the
+calling code is committing to. `official` and `gap` cannot reach each other even by
+accident: they live in directories that may not import one another, enforced by
+`test/module-boundary.test.ts`.
+
+`official.officialCredentials()` reads `ASC_ISSUER_ID`, `ASC_KEY_ID` and
+`ASC_PRIVATE_KEY_PATH`; `official.officialClient()` creates the host-confined bearer
+transport; `findAppId()`, `fetchAvailability()`, `formatAvailability()` and
+`availabilityReady()` are the reusable storefront flow:
 
 ```ts
-import {
-  availabilityReady,
-  fetchAvailability,
-  officialClient,
-  officialCredentials,
-} from './src';
+import { official } from './src';
+
+const { availabilityReady, fetchAvailability, officialClient, officialCredentials } = official;
 
 const client = officialClient(officialCredentials());
 const report = await fetchAvailability(client, appId);
@@ -41,7 +51,10 @@ Other documented capabilities remain available through Apple's
 added to the official transport when there is a reusable command to justify them.
 
 ```ts
-import { loadSession, buildReport, listMessages, denormalizeAll } from './src';
+import { gap, shared } from './src';
+
+const { loadSession, buildReport, listMessages } = gap;
+const { denormalizeAll } = shared;
 
 const session = loadSession();
 const reports = await buildReport(session, { appId: '1234567890' });
@@ -111,11 +124,13 @@ every time you call it; nothing is cached on disk. Call it once and keep the `Se
 rather than per request. `sessionFromCapture(text)` does the same parse on a string you
 already have, if the capture reaches you some other way.
 
-`src/index.ts` re-exports everything, so any function in `src/api.ts` is importable from
-the package root. Everything there returns a JSON:API document, which is what `denormalize`
-and `denormalizeAll` are for.
+`src/index.ts` re-exports each directory whole, so any function in `src/gap/api.ts` is
+reachable as `gap.…`. Everything there returns a JSON:API document, which is what
+`shared.denormalize` and `shared.denormalizeAll` are for — they are in `shared` rather than
+`gap` because JSON:API is the format of both of Apple's APIs, not a property of the private
+one.
 
-`src/ci.ts` is the exception and the only non-iris module. `fetchPostActions(session,
+`src/gap/ci.ts` is the exception and the only non-iris module. `fetchPostActions(session,
 productId)` answers whether an Xcode Cloud workflow hands its builds to TestFlight
 automatically; `fetchPlan(session)` and `fetchUsage(session, days)` answer how much build
 compute the team has left and where it went; and `fetchTeam(session)` answers where the team
@@ -144,7 +159,7 @@ that row arriving beside a declared collection leaves it `false`, because an app
 declares a collection collects something whatever else it also says. `usages` always carries
 every row either way, marker included, so a caller can see the contradiction rather than
 being handed a summary of it. `formatPrivacy` names it and prints the rows; it does not
-throw, which is the difference between this and `ci.ts` — nothing is missing here, both
+throw, which is the difference between this and `gap/ci.ts` — nothing is missing here, both
 claims arrived, and refusing the read would withhold the evidence for the contradiction
 while the only thing actually unavailable is the one-line summary.
 
@@ -154,7 +169,7 @@ not `fetchUsage`'s window, so the two are never added together. `fetchPlan` thro
 sends no plan or a non-numeric total, because a missing allowance and an exhausted one are
 different answers. `fetchUsage` is the one lenient reader here: unrecognised rows are
 dropped, since a missing row is a gap in a breakdown rather than an unanswerable question.
-It is the only place in `ci.ts` where that is true.
+It is the only place in `gap/ci.ts` where that is true.
 
 `fetchTeam` throws on the same principle, and it is among the strictest here: a missing or
 non-boolean `wwdr_pla_needs_signing` is an error rather than a `false`, because reading an
@@ -182,7 +197,7 @@ a product's. There is no counterpart that *sets* any of it: the writes were neve
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
 `sendDraftReply()` called from code go straight to Apple, and neither can be undone.
 `saveDraftReply()` asks nothing either, and replaces whatever text the draft box held.
-`confirm()` from `src/confirm.ts` is there if you want the same guard — it asks on the
+`confirm()` from `src/shared/confirm.ts` is there if you want the same guard — it asks on the
 terminal even when stdin is carrying something else, and refuses when there is no terminal
 to ask on. `findSendableDraft()` is the read half of `sendDraftReply()`, so you can show a
 draft and ask before sending the thing you just showed; `findDeletableDraft()` is the same
@@ -198,7 +213,7 @@ words is the same question as sending them. Worth copying if you build your own.
 
 ## Conventions worth knowing before editing
 
-- The include lists in `src/api.ts` are copied verbatim from the browser, all of them, in
+- The include lists in `src/gap/api.ts` are copied verbatim from the browser, all of them, in
   one `INCLUDES` inventory. `{ include }` replaces the list for a call and `[]` drops the
   parameter, but this is the option to be careful with: **iris rejects the whole request
   with a `400` if you name a relationship it doesn't recognise**, so an override is a
@@ -254,7 +269,7 @@ words is the same question as sending them. Worth copying if you build your own.
   `uploadPart()` checks its own destination, since it is outside the one `request()`
   applies: a part goes over https to a host under `object-storage.apple.com` or it is not
   sent, and the refusal names the host without quoting the presigned URL.
-- **Two bases, each with its own media types**, declared as `Api` values in `src/http.ts`
+- **Two bases, each with its own media types**, declared as `Api` values in `src/gap/http.ts`
   rather than assembled by a caller. `IRIS` is `https://appstoreconnect.apple.com/iris/v1`
   and sends `application/vnd.api+json` as both `Accept` and `Content-Type`; `CI` is
   `https://appstoreconnect.apple.com/ci/api`, sends `Accept: */*` and **no `Content-Type` at
@@ -288,5 +303,5 @@ words is the same question as sending them. Worth copying if you build your own.
   that *are* hard-coded are Apple's own schema — resource and field names, state names,
   include lists, filter values — never one app's data.
 - A 403 from iris doesn't always mean the session died — it's also how an unsupported
-  filter is refused. `src/http.ts` tells them apart by whether the body is a JSON:API
+  filter is refused. `src/gap/http.ts` tells them apart by whether the body is a JSON:API
   error document, so a bad query no longer reads as "log in again".

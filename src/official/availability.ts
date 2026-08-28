@@ -6,7 +6,7 @@
  * approved and confirmed both routes on 2026-08-26; it made no change to App Store data.
  */
 
-import { OfficialClient } from './official';
+import { OfficialClient } from './client';
 
 /**
  * Every `TerritoryAvailability.contentStatuses` value in Apple's OpenAPI specification

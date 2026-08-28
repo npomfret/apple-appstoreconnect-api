@@ -11,7 +11,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { raw } from '../src/api';
+import { raw } from '../src/gap/api';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 /** Attempts a `raw` read and reports what reached the network, whether it threw or not. */

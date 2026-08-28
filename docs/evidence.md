@@ -16,7 +16,7 @@ Apple's OpenAPI specification **4.4.1** defines all three reads used by `asc ava
   field set.
 
 The last schema defines `TerritoryAvailability.contentStatuses` as a closed enum of **48**
-values, and `src/availability.ts` carries all 48 as a literal union copied from it rather
+values, and `src/official/availability.ts` carries all 48 as a literal union copied from it rather
 than matching them by pattern. Re-checked against 4.4.1 on **2026-08-26**.
 
 They sort into four groups. One means on sale (`AVAILABLE`). Six mean a change in flight
@@ -235,7 +235,7 @@ list is the tested one and an override is not.
   printing "Declares that it collects no data", so had both ever arrived it would have
   printed the claim and hidden the declared collections that disprove it, while `--json` on
   the same read showed them — one command, two disagreeing answers. It now names the
-  contradiction and prints every row. This is deliberately *not* the `ci.ts` posture of
+  contradiction and prints every row. This is deliberately *not* the `gap/ci.ts` posture of
   refusing: nothing is missing, both claims arrived, and the rows are the evidence for the
   contradiction, so the only thing withheld is the one-line summary that would be false
   either way round.
@@ -385,7 +385,7 @@ Having watched the browser do it authorises nothing. A scripted replace needs it
 and its own approval: read-modify-write of a document this client only partly models,
 preservation of fields it does not understand, a before/after confirmation, complete write
 auditing, non-TTY refusal, and a post-write read-back. **Do not make a live write to verify
-one.** The `CI` base in `src/http.ts` is declared `readOnly` and the transport refuses any
+one.** The `CI` base in `src/gap/http.ts` is declared `readOnly` and the transport refuses any
 method but `GET` on it, so this is a decision to take deliberately rather than a gap to fill
 in passing.
 
@@ -822,7 +822,7 @@ which is why they are not listed here.
   and this client blanked it unless asked, because everything printed goes to stdout and a
   password left in terminal scrollback is a worse problem than a flag. The account *name*
   was shown: it is the pair that is the credential, and which account Apple was given is
-  usually the point. Whatever reads this record next has the same problem. `log.ts` still
+  usually the point. Whatever reads this record next has the same problem. `shared/log.ts` still
   scrubs `demoAccountPassword`, though nothing here can reach the record that carries it any
   more: a redaction keyed on a field name is a standing rule, not a reaction to a caller, and
   it costs a string comparison.
@@ -980,7 +980,7 @@ which is why they are not listed here.
   lost from an API by deleting it — a pre-flight size check is a client convenience, and
   Apple validates server-side either way.
 
-  What survives is the transport underneath: `uploadPart` in `src/http.ts` still sends
+  What survives is the transport underneath: `uploadPart` in `src/gap/http.ts` still sends
   presigned parts to Apple's object storage with no cookie, because draft attachments
   reserve and upload through the same three steps and they are a retained gap.
 - Two Xcode Cloud sessions were recorded and mapped, and the slice went whole, taking the
@@ -1010,7 +1010,7 @@ structure — key names and presence, never a value. 162 entries in all, 149 of 
 `compliance`, `trader`, `vendor`, `program`, `enroll` and `membership` match **none** of the
 966 paths. `agreement` matches twelve, and all twelve are `betaLicenseAgreements` or
 `endUserLicenseAgreements` — the TestFlight tester agreement and the customer EULA, neither
-of them the Program License Agreement. That is the finding `ci.ts` recorded on 2026-08-22
+of them the Program License Agreement. That is the finding `gap/ci.ts` recorded on 2026-08-22
 arriving from the other direction, and it holds for the whole Business pane: the one
 adjacent official endpoint is `/v1/financeReports`, and nothing here duplicates it.
 
@@ -1025,7 +1025,7 @@ arrives on two bases this client does not have:
 Neither is JSON:API and neither is `/ci/api`'s plain JSON, so these are a third and a fourth
 envelope, each wanting its own page rule and its own error dialect. The session is not the
 obstacle: every request on all three prefixes carries `Cookie`, `X-CSRF-ITC`,
-`X-Connect-Team-ID` and `X-Connect-Team-Type` — the set `http.ts` already sends — and the
+`X-Connect-Team-ID` and `X-Connect-Team-Type` — the set `gap/http.ts` already sends — and the
 writes add `Origin`, exactly as iris's do. Mapping any of this is the owner decision
 `CLAUDE.md` reserves for a new base, not an implementation detail.
 

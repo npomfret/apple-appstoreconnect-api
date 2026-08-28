@@ -18,8 +18,8 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { Document, Resource } from '../src/jsonapi';
-import { buildReport, fetchPrivacy, formatReport, SubmissionReport } from '../src/report';
+import { Document, Resource } from '../src/shared/jsonapi';
+import { buildReport, fetchPrivacy, formatReport, SubmissionReport } from '../src/gap/report';
 import {
   fetchCapabilities,
   fetchInfrastructureValidation,
@@ -32,7 +32,7 @@ import {
   formatPostActions,
   formatTeam,
   formatUsage,
-} from '../src/ci';
+} from '../src/gap/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const APP = '123';

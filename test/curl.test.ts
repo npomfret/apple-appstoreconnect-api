@@ -9,7 +9,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { extractCurlCommand, sessionFromCapture, sessionFromCurl, sessionFromText } from '../src/curl';
+import { extractCurlCommand, sessionFromCapture, sessionFromCurl, sessionFromText } from '../src/gap/curl';
 
 /** The itctx payload as Apple writes it: base64 JSON, then a `|`-separated tail. */
 function itctx(fields: { ds?: number; cp?: string; ex?: string }): string {

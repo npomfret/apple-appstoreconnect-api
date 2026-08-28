@@ -14,7 +14,8 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { ApiError, CI, request, SessionExpiredError } from '../src/http';
+import { CI, request, SessionExpiredError } from '../src/gap/http';
+import { ApiError } from '../src/shared/errors';
 import {
   fetchCapabilities,
   fetchInfrastructureValidation,
@@ -24,7 +25,7 @@ import {
   fetchUsage,
   formatPostActions,
   listWorkflows,
-} from '../src/ci';
+} from '../src/gap/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const CI_BASE = 'https://appstoreconnect.apple.com/ci/api';

@@ -20,8 +20,8 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import * as api from '../src/api';
-import * as ci from '../src/ci';
+import * as api from '../src/gap/api';
+import * as ci from '../src/gap/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 const BASE = 'https://appstoreconnect.apple.com/iris/v1';

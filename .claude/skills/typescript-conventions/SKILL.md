@@ -9,7 +9,7 @@ Read `.claude/references/architecture.md` before non-trivial work. Apply the sco
 TypeScript rules, then:
 
 - Let types make unsafe states visible rather than widening values to make compilation easy.
-- Keep JSON:API relationship expansion in `jsonapi.ts`; avoid reimplementing joins in
+- Keep JSON:API relationship expansion in `shared/jsonapi.ts`; avoid reimplementing joins in
   callers.
 - Preserve existing module ownership and use the transport wrapper rather than raw fetch.
 - Keep API functions resource-oriented and presentation/report formatting separate.

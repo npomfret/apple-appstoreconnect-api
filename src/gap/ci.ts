@@ -92,7 +92,7 @@ function segment(value: string, what: string): string {
  *
  * Not discovered, and not a flag. On all 34 `/ci/api` requests recorded from the browser
  * the `teams/{id}` path segment is the same value as the `X-Connect-Team-ID` header, which
- * `src/curl.ts` already keeps from the capture and otherwise decodes from the `itctx`
+ * `src/gap/curl.ts` already keeps from the capture and otherwise decodes from the `itctx`
  * cookie. So this costs no request: in particular it does not need `olympus/v1/actors`,
  * which would be a third base and which carries names and email addresses this client has
  * no reason to hold.

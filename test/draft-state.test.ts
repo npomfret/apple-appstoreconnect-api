@@ -15,8 +15,8 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { draftState } from '../src/api';
-import { Denormalized } from '../src/jsonapi';
+import { draftState } from '../src/gap/api';
+import { Denormalized } from '../src/shared/jsonapi';
 
 function draft(body: string, attachments: Array<{ id: string; fileName: string }> = []): Denormalized {
   return {

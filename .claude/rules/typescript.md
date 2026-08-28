@@ -5,10 +5,10 @@ paths:
 
 # TypeScript and CLI rules
 
-- Keep modules focused: transport in `http.ts`, session parsing in `session.ts`/`curl.ts`,
-  Apple resource operations in `api.ts`, presentation in `cli.ts`/`report.ts`.
+- Keep modules focused: transport in `gap/http.ts`, session parsing in `gap/session.ts`/`gap/curl.ts`,
+  Apple resource operations in `gap/api.ts`, presentation in `cli.ts`/`gap/report.ts`.
 - A convenience wrapper over official calls is one module per capability, exporting the
-  same three shapes `availability.ts` established: `fetch<Thing>()` returning a typed
+  same three shapes `official/availability.ts` established: `fetch<Thing>()` returning a typed
   report, `format<Thing>()` rendering it for a human, and `<thing>Ready()` returning the
   boolean behind `--check`. The wrapper owns the multi-call sequence and the parsing; the
   command in `cli.ts` owns only argument validation and which of the three to print.

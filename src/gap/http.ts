@@ -1,6 +1,8 @@
 import { Session, timeToExpiry } from './session';
-import { Document } from './jsonapi';
-import { audit, log, redact } from './log';
+import { Document } from '../shared/jsonapi';
+import { audit, log } from '../shared/log';
+import { ApiError } from '../shared/errors';
+import { buildQuery, Query } from '../shared/query';
 
 /** The one host this client will send the session cookie to. */
 const HOST = 'https://appstoreconnect.apple.com';
@@ -147,44 +149,6 @@ export class SessionExpiredError extends Error {
     );
     this.name = 'SessionExpiredError';
   }
-}
-
-export class ApiError extends Error {
-  /**
-   * What the request was refused with, scrubbed.
-   *
-   * Scrubbed here rather than at each place it is written, because this body goes further
-   * than the log: it is in the message, and the CLI's top-level handler prints an error
-   * message to stderr on its own. iris quotes parts of the request back in a refusal, and
-   * by the time it is a string the field-name scrub can no longer see the fields.
-   */
-  readonly body: string;
-
-  constructor(readonly status: number, readonly url: string, body: string, hint?: string) {
-    const safe = redact(body);
-    super(`HTTP ${status} for ${url}\n${safe.slice(0, 2000)}${hint ? `\n${hint}` : ''}`);
-    this.body = safe;
-    this.name = 'ApiError';
-  }
-}
-
-export type QueryValue = string | number | boolean | string[] | undefined;
-export type Query = Record<string, QueryValue>;
-
-/**
- * Apple's endpoints use literal brackets and commas — `filter[state]=A,B` — and
- * URLSearchParams would percent-encode both. Mirror what the browser sends instead.
- */
-export function buildQuery(query: Query): string {
-  const parts: string[] = [];
-
-  for (const [name, value] of Object.entries(query)) {
-    if (value === undefined) continue;
-    const flat = Array.isArray(value) ? value.join(',') : String(value);
-    parts.push(`${name}=${encodeURIComponent(flat).replace(/%2C/g, ',')}`);
-  }
-
-  return parts.length ? `?${parts.join('&')}` : '';
 }
 
 /**

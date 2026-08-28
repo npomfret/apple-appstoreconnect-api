@@ -1,9 +1,10 @@
 import { basename } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { Session } from './session';
-import { del, get, patch, post, uploadPart, Query, UploadOperation } from './http';
-import { Denormalized, Document, Resource, ResourceIdentifier } from './jsonapi';
-import { audited, log, REVIEW_DETAIL_SECRETS } from './log';
+import { del, get, patch, post, uploadPart, UploadOperation } from './http';
+import { Query } from '../shared/query';
+import { Denormalized, Document, Resource, ResourceIdentifier } from '../shared/jsonapi';
+import { audited, log, REVIEW_DETAIL_SECRETS } from '../shared/log';
 
 /**
  * Include lists lifted verbatim from the browser's own requests — every one of them, so

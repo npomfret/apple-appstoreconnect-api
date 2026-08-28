@@ -7,7 +7,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
-import { Document, Resource, denormalize, denormalizeAll } from '../src/jsonapi';
+import { Document, Resource, denormalize, denormalizeAll } from '../src/shared/jsonapi';
 
 const DOCUMENT: Document<Resource> = {
   data: {

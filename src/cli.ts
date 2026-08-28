@@ -1,8 +1,7 @@
 import { readFileSync } from 'fs';
-import { CURL_PATH, describeSession, loadSession, Session } from './session';
-import { Cancelled, confirm } from './confirm';
-import { denormalize, denormalizeAll, Denormalized, Document } from './jsonapi';
-import { Query } from './http';
+import { CURL_PATH, describeSession, loadSession, Session } from './gap/session';
+import { Cancelled, confirm } from './shared/confirm';
+import { denormalize, denormalizeAll, Denormalized, Document } from './shared/jsonapi';
 import {
   buildReport,
   fetchHistory,
@@ -11,17 +10,18 @@ import {
   formatPrivacy,
   formatReport,
   ReportTarget,
-} from './report';
-import { log } from './log';
+} from './gap/report';
+import { Query } from './shared/query';
+import { log } from './shared/log';
 import {
   availabilityReady,
   fetchAvailability,
   findAppId,
   formatAvailability,
-} from './availability';
-import { officialClient, officialCredentials } from './official';
-import * as api from './api';
-import * as ci from './ci';
+} from './official/availability';
+import { officialClient, officialCredentials } from './official/client';
+import * as api from './gap/api';
+import * as ci from './gap/ci';
 
 const USAGE = `App Store Connect CLI: Apple's official API plus private API gaps.
 

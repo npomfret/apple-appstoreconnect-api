@@ -12,7 +12,7 @@ import {
   officialClient,
   officialCredentials,
   officialToken,
-} from '../src/official';
+} from '../src/official/client';
 import { stubFetch, withStderr } from './helpers';
 
 /**

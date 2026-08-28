@@ -6,7 +6,7 @@
  * test that means to send a request to Apple fails to send it anywhere instead.
  */
 
-import { Session } from '../src/session';
+import { Session } from '../src/gap/session';
 
 /** A session with the fields the transport reads, all invented. */
 export const SESSION: Session = {

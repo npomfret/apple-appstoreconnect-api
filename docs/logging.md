@@ -33,7 +33,7 @@ node dist/cli.js save-draft <threadId> "..." --attach shot.png 2>&1 >/dev/null |
 Records nest: the semantic action (`draft.attach`, `message.send`,
 `draft.attachment.delete`) brackets the transport-level `http.write` entries. The transport one
 is what makes coverage complete — every mutation in the client funnels through the single
-`request` in `src/http.ts`, so nothing can write without being recorded. The semantic ones
+`request` in `src/gap/http.ts`, so nothing can write without being recorded. The semantic ones
 add the intent. What counts as a mutation is worked out once there, from the method with its
 case normalised, and the same answer decides both the headers and the record: a `patch` that
 arrived in lower case is a write, not a read that quietly slipped past the trail.
@@ -77,7 +77,7 @@ Credentials are scrubbed two ways, because one of them has to catch what the oth
 
 By field name: `authorization`, `cookie`, `x-csrf-itc`, `myacinfo`, `itctx` and friends, wherever they appear
 and however deeply nested — plus `demoAccountPassword`, which is a body attribute rather
-than a header. That list is `SECRET_FIELDS` in `src/log.ts`, and it is matched twice.
+than a header. That list is `SECRET_FIELDS` in `src/shared/log.ts`, and it is matched twice.
 
 Once against the keys of a record built here, which is the obvious pass. Then again against
 those same names quoted inside a *string*, which is the pass that matters for anything that

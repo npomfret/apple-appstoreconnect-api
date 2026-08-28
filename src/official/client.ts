@@ -1,17 +1,20 @@
 /**
  * Apple's official App Store Connect API: API-key authentication and GET-only transport.
  *
- * This is deliberately separate from `http.ts`. That transport carries a browser session
- * cookie to undocumented Iris and Xcode Cloud routes; this one carries a short-lived JWT
- * to Apple's documented API. Sharing a transport would make it possible to send the wrong
- * credential to the wrong host, which is a boundary rather than a reuse opportunity.
+ * This is deliberately separate from `gap/http.ts`. That transport carries a browser
+ * session cookie to undocumented Iris and Xcode Cloud routes; this one carries a
+ * short-lived JWT to Apple's documented API. Sharing a transport would make it possible to
+ * send the wrong credential to the wrong host, which is a boundary rather than a reuse
+ * opportunity — so the two live in directories that may not import each other, and
+ * `test/module-boundary.test.ts` fails if one ever does.
  */
 
 import { createPrivateKey, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-import { ApiError, Query, buildQuery } from './http';
-import { log } from './log';
+import { ApiError } from '../shared/errors';
+import { buildQuery, Query } from '../shared/query';
+import { log } from '../shared/log';
 
 const OFFICIAL_BASE_URL = 'https://api.appstoreconnect.apple.com';
 const TOKEN_AUDIENCE = 'appstoreconnect-v1';

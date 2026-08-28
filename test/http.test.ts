@@ -8,16 +8,15 @@ import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import {
-  ApiError,
   BASE_URL,
   RequestOptions,
   SessionExpiredError,
   UploadOperation,
-  buildQuery,
   get,
   request,
   uploadPart,
-} from '../src/http';
+} from '../src/gap/http';
+import { ApiError } from '../src/shared/errors';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
 describe('where a request goes', () => {
@@ -286,27 +285,6 @@ describe('what counts as a write', () => {
       assert.deepEqual(stub.calls, []);
     });
   }
-});
-
-describe('query strings', () => {
-  test('brackets and commas are sent as the browser sends them', () => {
-    assert.equal(
-      buildQuery({ 'filter[state]': ['A', 'B'], 'fields[apps]': 'name' }),
-      '?filter[state]=A,B&fields[apps]=name'
-    );
-  });
-
-  test('an undefined value is left out entirely', () => {
-    assert.equal(buildQuery({ limit: undefined, include: 'app' }), '?include=app');
-  });
-
-  test('nothing to send is no question mark', () => {
-    assert.equal(buildQuery({}), '');
-  });
-
-  test('a value that would change the url is encoded', () => {
-    assert.equal(buildQuery({ 'filter[name]': 'a&b=c' }), '?filter[name]=a%26b%3Dc');
-  });
 });
 
 describe('answers that are not what they look like', () => {
