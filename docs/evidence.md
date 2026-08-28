@@ -998,6 +998,102 @@ which is why they are not listed here.
   — routed and answered rather than refused — which is why the cookie looked like what
   authenticates. That is one request's worth of evidence, not a guarantee.
 
+## Business agreements, payments and tax
+
+Recorded from the browser on **2026-08-26** and read on **2026-08-28** through an extractor
+emitting the method, the redacted path, the query keys, the status and the response *key*
+structure — key names and presence, never a value. 162 entries in all, 149 of them to
+`appstoreconnect.apple.com` in 19 distinct request shapes: sixteen reads and three writes.
+
+**All of it is a gap.** Checked against specification 4.4.1 the same day, the words
+`contract`, `invoice`, `tax`, `bank`, `transfer`, `legal`, `seller`, `payout`, `payment`,
+`compliance`, `trader`, `vendor`, `program`, `enroll` and `membership` match **none** of the
+966 paths. `agreement` matches twelve, and all twelve are `betaLicenseAgreements` or
+`endUserLicenseAgreements` — the TestFlight tester agreement and the customer EULA, neither
+of them the Program License Agreement. That is the finding `ci.ts` recorded on 2026-08-22
+arriving from the other direction, and it holds for the whole Business pane: the one
+adjacent official endpoint is `/v1/financeReports`, and nothing here duplicates it.
+
+**None of it is reachable, and the reason is the base rather than the credential.** It
+arrives on two bases this client does not have:
+
+| Base | Requests | Envelope |
+| --- | --- | --- |
+| `ppm/v1`, with `ppm/complianceform/v1` beside it | 118 | `{data` or `accountId, …, constraints}` — Apple ships the form's own validation rules back alongside the data |
+| `WebObjects/iTunesConnect.woa/ra/v1` | 31 | `{data: {data: […]}, messages: {fieldMessages, warn, error, info}, statusCode}` |
+
+Neither is JSON:API and neither is `/ci/api`'s plain JSON, so these are a third and a fourth
+envelope, each wanting its own page rule and its own error dialect. The session is not the
+obstacle: every request on all three prefixes carries `Cookie`, `X-CSRF-ITC`,
+`X-Connect-Team-ID` and `X-Connect-Team-Type` — the set `http.ts` already sends — and the
+writes add `Origin`, exactly as iris's do. Mapping any of this is the owner decision
+`CLAUDE.md` reserves for a new base, not an implementation detail.
+
+### What the sixteen reads offer
+
+- `GET …/ra/v1/contentProviders/{team}/agreements` is the substantial one, and the only read
+  here that answers a question this client already answers badly. `/ci/api` gives a single
+  boolean, `wwdr_pla_needs_signing`. This gives, per contract: `status`, `effectiveDate`,
+  `expirationDate`, `expireSoon`, `isInEffect`, `isFreeContract`, `isPreGracePeriod` and
+  `isPostGracePeriod`; an `availableNewContractConfigId` naming a newer version waiting to be
+  accepted; and an `applicableActions` object of `view`, `edit` and `setup`. Two contracts
+  came back, one `ITC.ATB.Agmnt.Status.Active` and one
+  `ITC.ATB.Agmnt.Status.PendingUserInfo` — a namespaced localisation key rather than a bare
+  enum, so that spelling is Apple's UI string table and not a stable state name.
+- `GET /ppm/v1/accounts/{id}/accountMessages` is the banner list, one call, each row a `type`
+  and a `messageKey` with typed params. The two recorded are the bank account not being set
+  up and US tax information missing.
+- `GET /ppm/v1/accounts/{id}/sellerInfo` carries the DSA trader declaration and its
+  `verificationStatus`, `PENDING_VERIFY` here — the check that can get an app delisted in the
+  EU. It also carries a name, an email address, a phone number and a postal address, so
+  anything reading it needs the redaction rule applied to its *output*, not only its logs.
+- `GET …/vendors/{n}/taxRequirements` and `…/vendorScopes/{id}/taxForms` say which forms are
+  required and which are filed: `USA_W8BEN`, `USA_1042S` and
+  `USA_FOREIGN_ENTITY_QUESTIONNAIRE`, with `taxStatus` `ACTIVE` or `COMPLETE`.
+  `…/vendors/{n}/taxCountries` is the country picker behind them.
+- `GET /ppm/complianceform/v1/accounts/{id}/requirements` lists per-app compliance asks; the
+  one recorded is `MEDICAL_DEVICE` at `PENDING_COLLECTION`.
+- `GET /ppm/v1/accounts/{id}/accountState` and `…/legalEntities` are the state behind the
+  page — `canCreateBank`, `canCreateVendorTax`, `readyForSignAgreement`, `state`, a
+  `vendorScope` per content type, and OFAC screening results.
+- `GET /ppm/v1/accountLookup/teamTypes/ITC/teamIds/{team}` maps a team to a `ppm` account and
+  is the prerequisite for every other `ppm/v1` call. In this recording the two identifiers
+  are the same UUID. That is one account's worth of evidence, and treating them as
+  interchangeable on the strength of it would be a guess.
+
+### What the recording does not establish
+
+Six of the sixteen came back empty, because the account has no bank and no paid history:
+
+- `banks` and `pendingBankAccounts`, both taking a `legalEntityId` query, and
+  `legalEntities/{id}/complianceInfo` each returned `{}` — two bytes. The route is proven,
+  the shape is not.
+- `appTransfers`, `invoicesByCurrency` (query `year`) and `taxWHStatements` returned the
+  legacy envelope with `data.data: []` and `statusCode: "SUCCESS"`. The envelope is proven,
+  the row is not.
+
+So a client for those six would start from a probe rather than from this recording — the
+`delete-attachment` situation over again, and the same rule applies: an uncaptured shape is
+not a proven one.
+
+### The three writes, and why they should stay unmapped
+
+All three are `POST`s on `ppm/v1`, and they are one flow rather than three capabilities.
+`POST …/legalEntities/{id}/sellerInfo` files the **legal trader declaration**: its body
+carries the contact details, an `isAppTraderOverride` flag, base64 **identity documents**
+under `files[].file.data`, and an `authenticationDetail.jwtToken` minted by
+`POST …/legalEntities/{id}/authenticationDetail`, which returns a token, a nonce, a service
+key and an account id that the page then spends against `id.apple.com` — generating and
+validating an email or SMS code before the filing is accepted.
+`POST …/sellerInfo/metadata` shares that payload but only echoes `constraints` back, so it
+validates a form rather than saving one.
+
+A legal filing, behind a two-factor identity check, carrying scans of somebody's
+identification, is not a thing to put behind `--yes`. Every `ppm/v1` record also carries an
+`optimisticLock`, so any write there is a read-modify-write and a stale read is a conflict
+rather than a silent overwrite. Both are recorded for whoever weighs this next, and both are
+further reason the read side is the only part worth wanting.
+
 ## Seen but deliberately not mapped
 
 From the Xcode Cloud tab: the pickers behind the workflow editor —
@@ -1028,8 +1124,8 @@ out, and they are recorded here so the comparison does not have to be made twice
   recording — `{"items":[]}` and `{}` — so nothing can be claimed about either.
 
 The `olympus` calls in the same recordings — `actors`, `people`, `sites`, `contractMessages`,
-`providerNews` and a `providerSwitchRequests` POST — are session and account plumbing on a
-third base this client does not have. `people` and `actors` carry personal data, which is the
+`providerNews` and a `providerSwitchRequests` POST — are session and account plumbing on yet
+another base this client does not have. `people` and `actors` carry personal data, which is the
 line `user-capabilities` was checked against and found not to cross.
 
 Recordings of the Monetization, Growth & Marketing and Trust & Safety tabs turn up about 40
