@@ -223,11 +223,13 @@ describe('prune plan', () => {
     assert.match(formatPrunePlan(plan), /paged the list at 200/);
   });
 
-  test('a group that receives every build automatically is pruned like any other, and says so', async () => {
-    const { client } = clientFor([groupsReply(group('group-invented', 'Internal', true)), buildsReply(THREE)]);
-    const plan = await fetchPrunePlan(client, { appId: 'app-invented', group: 'Internal', keep: 1 });
-    assert.equal(plan.remove.length, 2);
-    assert.match(formatPrunePlan(plan), /group {6}Internal {2}\(internal, receives every new build automatically, group-invented\)/);
+  test('refuses a group that receives every build automatically, before any build is listed', async () => {
+    const { client, calls } = clientFor([groupsReply(group('group-invented', 'Internal', true))]);
+    await assert.rejects(
+      () => fetchPrunePlan(client, { appId: 'app-invented', group: 'Internal', keep: 1 }),
+      /hasAccessToAllBuilds[^\n]*changes nothing/
+    );
+    assert.equal(calls.length, 1, 'the builds were never listed');
   });
 
   test('refuses a keep count that is not a whole number', async () => {
@@ -289,7 +291,7 @@ describe('prune write', () => {
     assert.deepEqual(result.removed, ['build-mid', 'build-old']);
     assert.deepEqual(result.remaining.map((row) => row.id), ['build-new']);
     assert.deepEqual(result.stillInGroup, []);
-    assert.match(formatPruneResult(result), /Removed 2 of 3 builds from group "Internal"; 1 remain\./);
+    assert.match(formatPruneResult(result), /2 of 2 builds asked to leave group "Internal" are gone; 1 of 3 remain\./);
   });
 
   test('brackets the write with a semantic audit record that names the group and the builds', async () => {
@@ -309,7 +311,7 @@ describe('prune write', () => {
     const { client, plan } = await planFor(1, undefined, buildsReply([THREE[1], THREE[0]]));
     const result = await withStderr(() => pruneBuilds(client, plan));
     assert.deepEqual(result.stillInGroup, ['build-old']);
-    assert.match(formatPruneResult(result), /still lists 1 of them[^\n]*\n {2}build-old/);
+    assert.match(formatPruneResult(result), /^1 of 2 builds asked to leave[^\n]*\n\nApple answered the removal with success and still lists 1 of them:\n {2}build-old/);
   });
 
   test('sends nothing for a plan with nothing to remove', async () => {
@@ -384,15 +386,13 @@ describe('add plan', () => {
     assert.deepEqual(plan.add.map((row) => row.id), ['build-old']);
   });
 
-  test('a group that receives every build automatically still takes a named build', async () => {
-    const { client } = clientFor([
-      groupsReply(group('group-invented', 'Beta', true)),
-      buildsReply([THREE[0]]),
-      buildsReply([]),
-    ]);
-    const plan = await fetchAddPlan(client, { appId: 'app-invented', group: 'Beta', builds: ['43'] });
-    assert.deepEqual(plan.add.map((row) => row.id), ['build-old']);
-    assert.match(formatAddPlan(plan), /receives every new build automatically/);
+  test('refuses a group that receives every build automatically, before any build is looked up', async () => {
+    const { client, calls } = clientFor([groupsReply(group('group-invented', 'Beta', true))]);
+    await assert.rejects(
+      () => fetchAddPlan(client, { appId: 'app-invented', group: 'Beta', builds: ['43'] }),
+      /hasAccessToAllBuilds[^\n]*changes nothing/
+    );
+    assert.equal(calls.length, 1);
   });
 });
 
@@ -425,7 +425,7 @@ describe('add write', () => {
     assert.deepEqual(result.added, ['build-old', 'build-mid']);
     assert.equal(result.remaining.length, 3);
     assert.deepEqual(result.notInGroup, []);
-    assert.match(formatAddResult(result), /Added 2 builds to group "Beta"; it now holds 3\./);
+    assert.match(formatAddResult(result), /2 of 2 builds asked to join group "Beta" are in it; it now holds 3\./);
   });
 
   test('brackets the write with an audit record, and reports a build Apple did not list afterwards', async () => {
@@ -439,7 +439,7 @@ describe('add write', () => {
     assert.equal(add[0].audit, true);
     assert.deepEqual(add[0].builds, ['build-old', 'build-mid']);
     assert.deepEqual(result.notInGroup, ['build-mid']);
-    assert.match(formatAddResult(result), /does not list 1 of them[^\n]*\n {2}build-mid/);
+    assert.match(formatAddResult(result), /^1 of 2 builds asked to join[^\n]*\n\nApple answered the addition with success and does not list 1 of them:\n {2}build-mid/);
   });
 
   test('sends nothing when every build named is already in the group', async () => {

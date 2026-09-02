@@ -89,27 +89,36 @@ Apple's OpenAPI specification **4.4.1** defines every call `asc prune-builds` an
 `Build.version` is the build number, not the marketing version; the marketing version is
 `PreReleaseVersion.version` on the sideload, which is why the include is there. `filter[name]`
 on beta groups is documented as existing and not as how it compares, so the rows that come
-back are compared against the name exactly here. `hasAccessToAllBuilds` is on the group
-schema and is printed, not acted on. Both commands refused a group carrying it until the
-first live read: an explicitly approved GET-only dry run on **2026-09-02** resolved a real
-internal group by id, and Apple reported it with the flag set — the same group id the
-browser recording removes a build from. So a group that takes every new build automatically
-still has its existing builds removed one at a time, by TestFlight itself, and the refusal
-was a guess contradicted by the evidence already on file. That dry run also confirmed the
-`filter[id]` lookup on `/v1/betaGroups` and read one page of the group's builds; it changed
-nothing.
+back are compared against the name exactly here. **`hasAccessToAllBuilds` makes the write a no-op, and Apple does not say so.** The one live
+`DELETE` this client has sent, explicitly approved on **2026-09-02**, went to a real internal
+group with the flag set, named twelve builds, and was answered `204 No Content`; the
+read-back a second later listed all twelve still in the group, and TestFlight showed the
+same. So on such a group the documented request is accepted and ignored — automatic
+distribution *is* the membership — and both commands refuse the flag before any build is
+listed. The flag is not among `BetaGroupUpdateRequest`'s attributes in 4.4.1 (`name`, the
+four public-link fields, `feedbackEnabled` and the two Apple-silicon and visionOS
+availability switches), so it is cleared in TestFlight, not through the API.
 
-**Neither write has been run by this client.** The bodies are the documented ones, and the
-offline tests pin them: one `DELETE` or one `POST`, at that path, naming exactly the ids the
-plan printed. Two things beyond the schema bear on the removal. First, **the browser sends the
-same body**: a TestFlight page removing a build from a group, recorded from the browser on
-2026-09-02 and read through an extractor emitting host, path shape and body key structure,
-sends `{"data": [{"type": "builds", "id"}]}` to `iris/v1/betaGroups/{id}/relationships/builds`
-— the private spelling of the officially served route. That recording confirmed what
-"remove a build" means to the TestFlight page, and is not used: Apple serves the route, so the
-capture is not the credential this goes out on. Second, the read-back after each write is the
-evidence the *command* produces — the group listed again, and a nonzero exit if Apple's
-answer disagrees with the write — so the first live run reports on itself.
+The refusal had been removed the same day, on the strength of the browser recording below
+sending the same request to the same group id. That was the wrong reading: the recording
+is a copied curl, so it shows the request and not its effect, and whether the group had the
+flag then is unrecorded. A recording of a request is evidence of the request only.
+
+The approved GET-only dry runs that day also confirmed the `filter[id]` and `filter[name]`
+lookups on `/v1/betaGroups`, `filter[name]` on `/v1/apps`, and one page of a group's builds
+with the pre-release version sideloaded — 20 rows, iOS and macOS together, no next page.
+
+**Against a group without the flag, neither write has been seen to take effect.** The bodies
+are the documented ones, and the offline tests pin them: one `DELETE` or one `POST`, at that
+path, naming exactly the ids the plan printed. **The browser sends the same body**: a
+TestFlight page removing a build from a group, recorded from the browser on 2026-09-02 and
+read through an extractor emitting host, path shape and body key structure, sends
+`{"data": [{"type": "builds", "id"}]}` to `iris/v1/betaGroups/{id}/relationships/builds` —
+the private spelling of the officially served route. That recording confirmed what "remove a
+build" means to the TestFlight page, and is not used: Apple serves the route, so the capture
+is not the credential this goes out on. The read-back after each write is the evidence the
+*command* produces — the group listed again, and a nonzero exit if Apple's answer disagrees
+with the write — and it is what caught the no-op above.
 
 Expiring a build — `PATCH /v1/builds/{id}` with `expired: true`, also in 4.4.1 — is a
 different operation with no documented undo, and is not implemented. The two writes here were

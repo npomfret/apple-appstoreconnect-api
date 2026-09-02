@@ -114,6 +114,28 @@ export async function findBetaGroup(
   return matching[0]!;
 }
 
+/**
+ * A group that receives every build automatically has no membership to edit, and Apple
+ * does not say so: the first live write, on 2026-09-02, sent a documented `DELETE` naming
+ * twelve builds in such a group, was answered `204`, and the read-back listed all twelve
+ * still there. So the write is accepted and ignored, and it is refused here before any
+ * build is listed. The flag cannot be cleared through the official API — it is not among
+ * `BetaGroupUpdateRequest`'s attributes in 4.4.1 — so the way through is TestFlight itself.
+ *
+ * This refusal was here, was removed on the strength of a browser recording that sends
+ * the same request to such a group, and is back: a recording of a request is not a
+ * recording of its effect, and that one was a curl with no response in it.
+ */
+function refuseAutomatic(group: BetaGroupRef, doing: string): void {
+  if (!group.hasAccessToAllBuilds) return;
+  throw new Error(
+    `Group "${group.name}" receives every build automatically (hasAccessToAllBuilds), so ` +
+      `${doing} changes nothing: Apple accepts the request and leaves the group as it was — ` +
+      'observed live on 2026-09-02. Turn off automatic distribution for the group in ' +
+      'TestFlight first; the official API cannot.'
+  );
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
 }
@@ -287,12 +309,8 @@ export async function fetchPrunePlan(client: OfficialClient, options: PruneOptio
     throw new Error(`keep must be a whole number of builds, not ${String(keep)}.`);
   }
 
-  // `hasAccessToAllBuilds` is carried and printed, not acted on. It reads as "not a group
-  // builds leave one at a time", and a refusal on it was here until 2026-09-02, when the
-  // first live read met a real internal group with the flag set — the same group a
-  // recording shows the browser removing a build from. New builds keep arriving in such a
-  // group; the ones already there still go one at a time.
   const group = await findBetaGroup(client, appId, options.group);
+  refuseAutomatic(group, 'removing builds');
   const { builds, more } = await fetchGroupBuilds(client, group.id);
 
   const seen = new Map<string, number>();
@@ -399,6 +417,7 @@ export interface AddResult {
 export async function fetchAddPlan(client: OfficialClient, options: AddOptions): Promise<AddPlan> {
   const { appId } = options;
   const group = await findBetaGroup(client, appId, options.group);
+  refuseAutomatic(group, 'adding builds');
   const builds = await findBuilds(client, appId, options.builds);
   const { builds: members } = await fetchGroupBuilds(client, group.id);
   const present = new Set(members.map((build) => build.id));
@@ -491,16 +510,23 @@ export function formatPrunePlan(plan: PrunePlan): string {
   return lines.join('\n');
 }
 
+/**
+ * The read-back is the verdict, not the status code. "Removed 12; 20 remain" is what this
+ * printed on 2026-09-02 over a `204` that removed nothing, and it read as success with a
+ * footnote. The first line now counts what actually left.
+ */
 export function formatPruneResult(result: PruneResult): string {
   const { plan } = result;
+  const total = plan.kept.length + plan.remove.length;
+  const left = result.removed.length - result.stillInGroup.length;
   const lines = [
-    `Removed ${result.removed.length} of ${plan.kept.length + plan.remove.length} builds from group ` +
-      `"${plan.group.name}"; ${result.remaining.length} remain.`,
+    `${left} of ${result.removed.length} builds asked to leave group "${plan.group.name}" are gone; ` +
+      `${result.remaining.length} of ${total} remain.`,
   ];
   if (result.stillInGroup.length) {
     lines.push(
       '',
-      `Apple accepted the removal but still lists ${result.stillInGroup.length} of them in the group:`,
+      `Apple answered the removal with success and still lists ${result.stillInGroup.length} of them:`,
       ...result.stillInGroup.map((id) => `  ${id}`)
     );
   }
@@ -520,14 +546,15 @@ export function formatAddPlan(plan: AddPlan): string {
 
 export function formatAddResult(result: AddResult): string {
   const { plan } = result;
+  const joined = result.added.length - result.notInGroup.length;
   const lines = [
-    `Added ${result.added.length} build${result.added.length === 1 ? '' : 's'} to group ` +
-      `"${plan.group.name}"; it now holds ${result.remaining.length}.`,
+    `${joined} of ${result.added.length} builds asked to join group "${plan.group.name}" are in it; ` +
+      `it now holds ${result.remaining.length}.`,
   ];
   if (result.notInGroup.length) {
     lines.push(
       '',
-      `Apple accepted the addition but does not list ${result.notInGroup.length} of them in the group:`,
+      `Apple answered the addition with success and does not list ${result.notInGroup.length} of them:`,
       ...result.notInGroup.map((id) => `  ${id}`)
     );
   }

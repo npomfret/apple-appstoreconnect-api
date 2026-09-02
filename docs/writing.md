@@ -59,11 +59,15 @@ group is no group at all, and none or several is an error. Newest is by the inst
 Apple stamped, not the text, since Apple stamps with an offset. Builds already expired are
 still members of the group and are pruned like any other; keeping one would keep nothing
 testers can install. A group Apple marks as receiving every new build automatically
-(`hasAccessToAllBuilds`) is pruned like any other too, and the plan says so on the group
-line: the next upload will join it on its own, but the builds already in it leave one at a
-time, which is what the TestFlight page does — the one recording of a removal is from
-exactly such a group. Both commands refused that flag until the first live read, on
-2026-09-02, met a real internal group carrying it.
+(`hasAccessToAllBuilds`) is refused by both commands before any build is listed, because
+the write does nothing there and Apple does not say so: the first live run, on 2026-09-02,
+sent the documented `DELETE` naming twelve builds in such a group, was answered `204`, and
+the read-back listed all twelve still in it. Automatic distribution *is* the membership, so
+there is nothing to edit. The flag is not among the attributes the official update request
+accepts, so the way through is TestFlight: turn automatic distribution off for the group,
+then prune; from then on new builds join it through `add-builds` or an Xcode Cloud
+post-action rather than on their own. Expiring builds is the other way to shorten what such
+a group's testers see, and it is not implemented here — it has no undo.
 
 `add-builds` names a build the way TestFlight shows it: the build number in brackets, or
 Apple's own id, told apart by shape. A number that matches two builds — the same
@@ -78,10 +82,13 @@ and the write because there is nothing for one to catch. The read that matters c
 a build asked to leave is still there, or one asked to join is not. That read-back is the
 only evidence this client has that a `204` did what it says.
 
-**Neither write has been run by this client.** The request is the one Apple's specification
-4.4.1 documents, byte for byte, and the removal is also what the TestFlight page sends when
-you click it — recorded from the browser on the private spelling of the same route — but
-the first live run is the first live run. `--dry-run` costs nothing and shows the plan.
+**The removal has been run once, and the addition never.** The one live `DELETE`, on
+2026-09-02, went to a group with automatic distribution on and is the evidence for the
+refusal above: `204`, nothing removed, caught by the read-back. Against a group without
+that flag the request is the one Apple's specification 4.4.1 documents, byte for byte, and
+is also what the TestFlight page sends when you click it — recorded from the browser on the
+private spelling of the same route — but it has not been seen to take effect yet.
+`--dry-run` costs nothing and shows the plan.
 
 Adding to an *external* group is the outward-facing one: it hands the build to people
 outside the team, and Apple may put it through Beta App Review first. The confirmation says

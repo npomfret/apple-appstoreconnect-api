@@ -547,7 +547,9 @@ async function main(invocation: Invocation): Promise<number> {
       const result = await pruneBuilds(client, plan);
       console.log(json ? JSON.stringify(result, null, 2) : formatPruneResult(result));
       console.error(
-        `Removed ${result.removed.length} from group "${plan.group.name}"; ${result.remaining.length} remain.`
+        result.stillInGroup.length
+          ? `${result.stillInGroup.length} of ${result.removed.length} did not leave group "${plan.group.name}".`
+          : `Removed ${result.removed.length} from group "${plan.group.name}"; ${result.remaining.length} remain.`
       );
       return result.stillInGroup.length ? 1 : 0;
     }
@@ -584,7 +586,11 @@ async function main(invocation: Invocation): Promise<number> {
 
       const result = await addBuilds(client, plan);
       console.log(json ? JSON.stringify(result, null, 2) : formatAddResult(result));
-      console.error(`Added ${result.added.length} to group "${plan.group.name}"; it now holds ${result.remaining.length}.`);
+      console.error(
+        result.notInGroup.length
+          ? `${result.notInGroup.length} of ${result.added.length} did not join group "${plan.group.name}".`
+          : `Added ${result.added.length} to group "${plan.group.name}"; it now holds ${result.remaining.length}.`
+      );
       return result.notInGroup.length ? 1 : 0;
     }
 
