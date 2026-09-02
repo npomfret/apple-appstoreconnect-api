@@ -149,6 +149,34 @@ describe('prune plan', () => {
     assert.equal(builds.query?.include, 'preReleaseVersion');
   });
 
+  test('keep counts per platform, so the newest Mac build survives beside a newer iOS one', async () => {
+    const mac = {
+      type: 'preReleaseVersions',
+      id: 'prv-mac',
+      attributes: { version: '1.2.3', platform: 'MAC_OS' },
+    };
+    const macBuild = (id: string, buildNumber: string, uploadedDate: string): object => ({
+      ...build(id, buildNumber, uploadedDate),
+      relationships: { preReleaseVersion: { data: { type: 'preReleaseVersions', id: 'prv-mac' } } },
+    });
+    const { client } = clientFor([
+      groupsReply(group('group-invented', 'Internal')),
+      {
+        data: [
+          ...THREE,
+          macBuild('mac-old', '40', '2026-07-30T00:00:00Z'),
+          macBuild('mac-new', '42', '2026-08-02T00:00:00Z'),
+        ],
+        included: [PRE_RELEASE, mac],
+        links: {},
+      },
+    ]);
+    const plan = await fetchPrunePlan(client, { appId: 'app-invented', group: 'Internal', keep: 1 });
+    assert.deepEqual(plan.kept.map((row) => row.id), ['build-new', 'mac-new']);
+    assert.deepEqual(plan.remove.map((row) => row.id), ['build-mid', 'build-old', 'mac-old']);
+    assert.match(formatPrunePlan(plan), /keep {7}1 newest per platform/);
+  });
+
   test('joins the marketing version off the sideload and keeps Apple\'s flags', async () => {
     const { client } = clientFor([groupsReply(group('group-invented', 'Internal')), buildsReply(THREE)]);
     const plan = await fetchPrunePlan(client, { appId: 'app-invented', group: 'Internal', keep: 1 });
@@ -195,13 +223,11 @@ describe('prune plan', () => {
     assert.match(formatPrunePlan(plan), /paged the list at 200/);
   });
 
-  test('refuses a group that receives every build automatically', async () => {
-    const { client, calls } = clientFor([groupsReply(group('group-invented', 'Internal', true))]);
-    await assert.rejects(
-      () => fetchPrunePlan(client, { appId: 'app-invented', group: 'Internal', keep: 1 }),
-      /hasAccessToAllBuilds/
-    );
-    assert.equal(calls.length, 1, 'the builds were never listed');
+  test('a group that receives every build automatically is pruned like any other, and says so', async () => {
+    const { client } = clientFor([groupsReply(group('group-invented', 'Internal', true)), buildsReply(THREE)]);
+    const plan = await fetchPrunePlan(client, { appId: 'app-invented', group: 'Internal', keep: 1 });
+    assert.equal(plan.remove.length, 2);
+    assert.match(formatPrunePlan(plan), /group {6}Internal {2}\(internal, receives every new build automatically, group-invented\)/);
   });
 
   test('refuses a keep count that is not a whole number', async () => {
@@ -358,13 +384,15 @@ describe('add plan', () => {
     assert.deepEqual(plan.add.map((row) => row.id), ['build-old']);
   });
 
-  test('refuses a group that receives every build automatically, before any build is looked up', async () => {
-    const { client, calls } = clientFor([groupsReply(group('group-invented', 'Beta', true))]);
-    await assert.rejects(
-      () => fetchAddPlan(client, { appId: 'app-invented', group: 'Beta', builds: ['43'] }),
-      /hasAccessToAllBuilds/
-    );
-    assert.equal(calls.length, 1);
+  test('a group that receives every build automatically still takes a named build', async () => {
+    const { client } = clientFor([
+      groupsReply(group('group-invented', 'Beta', true)),
+      buildsReply([THREE[0]]),
+      buildsReply([]),
+    ]);
+    const plan = await fetchAddPlan(client, { appId: 'app-invented', group: 'Beta', builds: ['43'] });
+    assert.deepEqual(plan.add.map((row) => row.id), ['build-old']);
+    assert.match(formatAddPlan(plan), /receives every new build automatically/);
   });
 });
 

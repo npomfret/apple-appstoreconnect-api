@@ -51,8 +51,8 @@ Official API (uses ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY_PATH, or an acc
                               while any selected storefront is blocked or pending
 
   asc prune-builds <appId> --group <name|id> [--keep <n>]
-                              Remove every build but the newest <n> (default 1) from the
-                              named TestFlight group. The builds stay in App Store Connect
+                              Remove every build but the newest <n> per platform (default
+                              1) from the TestFlight group. The builds stay in App Store Connect
                               and can be added back; nothing is expired or deleted. Shows
                               the plan and asks first. --dry-run prints the plan and stops;
                               --check does the same and exits nonzero while there is
@@ -146,7 +146,8 @@ Options:
                               official API
   --group <name|id>           For "prune-builds" and "add-builds": the TestFlight group,
                               by its exact name or its id
-  --keep <n>                  For "prune-builds": how many of the newest builds stay (1)
+  --keep <n>                  For "prune-builds": how many of the newest builds of each
+                              platform stay (1)
   --build <ref>               For "add-builds": a build number or build id. Repeatable
   --dry-run                   For "prune-builds" and "add-builds": print the plan and
                               change nothing

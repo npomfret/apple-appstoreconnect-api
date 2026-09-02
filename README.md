@@ -106,8 +106,8 @@ resolve one.
 | | |
 | --- | --- |
 | `availability <appId>` | Every storefront as available, pending, leaving, blocked or unknown, grouped under Apple's exact status strings. `--check` exits nonzero unless all are on sale |
-| `prune-builds <appId> --group <name> [--keep <n>]` | Remove every build but the newest *n* (default 1) from a TestFlight group. The builds stay in App Store Connect and can be added back; nothing is expired. Prints the plan and asks; `--dry-run` prints it and stops, `--check` exits nonzero while there is anything to remove |
-| `add-builds <appId> --group <name> --build <ref> …` | Add builds to a TestFlight group, named by the build number TestFlight shows in brackets or by Apple's build id. Prints the plan and asks; `--dry-run` and `--check` as above |
+| `prune-builds <appId> --group <name\|id> [--keep <n>]` | Remove every build but the newest *n* per platform (default 1) from a TestFlight group. The builds stay in App Store Connect and can be added back; nothing is expired. Prints the plan and asks; `--dry-run` prints it and stops, `--check` exits nonzero while there is anything to remove |
+| `add-builds <appId> --group <name\|id> --build <ref> …` | Add builds to a TestFlight group, named by the build number TestFlight shows in brackets or by Apple's build id. Prints the plan and asks; `--dry-run` and `--check` as above |
 
 **Private API gaps**
 

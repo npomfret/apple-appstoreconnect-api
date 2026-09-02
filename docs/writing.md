@@ -15,8 +15,8 @@ schema for the official ones — and confirmed before it goes.
 ## Official API: a TestFlight group's builds
 
 ```sh
-asc prune-builds <appId> --group "Internal"                 # keep the newest, remove the rest
-asc prune-builds <appId> --group "Internal" --keep 3
+asc prune-builds <appId> --group "Internal"                 # keep the newest of each platform, remove the rest
+asc prune-builds <appId> --group "Internal" --keep 3        # the newest three of each platform
 asc prune-builds <appId> --group "Internal" --dry-run       # the plan, and nothing else
 asc prune-builds <appId> --group "Internal" --check         # exit 1 while there is anything to remove
 asc add-builds <appId> --group "Beta" --build 45 --build 46 # by build number
@@ -33,26 +33,34 @@ Which build is which is the point of the plan, so it is printed whole before the
 
 ```
 app        1234567890
-group      Internal  (internal, 0e1f…)
-keep       1 newest
+group      Internal  (internal, receives every new build automatically, 0e1f…)
+keep       1 newest per platform
 
-keep (1):
+keep (2):
   2026-09-01T18:02:11-07:00  1.4.0 (312)  IOS, valid  7c0e…
+  2026-08-28T11:30:40-07:00  1.4.0 (309)  MAC_OS, valid  d81b…
 
 remove from group (2):
   2026-08-30T09:41:56-07:00  1.4.0 (311)  IOS, valid  91aa…
   2026-08-29T22:10:03-07:00  1.3.9 (310)  IOS, valid, expired  4d27…
 ```
 
+`--keep` counts **per platform**. A group often holds iOS and macOS builds side by side,
+and a tester on a Mac installs only the Mac ones, so "the newest" is the newest of each.
+The first live dry run on 2026-09-02 is what settled this: counted across platforms, it
+kept one iOS build and would have taken the only current Mac build out of the group.
+
 The group is given by its name or its id, told apart by uuid shape, and either is matched
 exactly within the app: "Beta" does not resolve to "Beta (old)", an id from another app's
 group is no group at all, and none or several is an error. Newest is by the instant
 Apple stamped, not the text, since Apple stamps with an offset. Builds already expired are
 still members of the group and are pruned like any other; keeping one would keep nothing
-testers can install. A group Apple marks as receiving every build automatically
-(`hasAccessToAllBuilds`) is refused by both commands before any build is listed — nothing
-observed says what a linkage write does to one, and it is not a group builds go in and out
-of one at a time.
+testers can install. A group Apple marks as receiving every new build automatically
+(`hasAccessToAllBuilds`) is pruned like any other too, and the plan says so on the group
+line: the next upload will join it on its own, but the builds already in it leave one at a
+time, which is what the TestFlight page does — the one recording of a removal is from
+exactly such a group. Both commands refused that flag until the first live read, on
+2026-09-02, met a real internal group carrying it.
 
 `add-builds` names a build the way TestFlight shows it: the build number in brackets, or
 Apple's own id, told apart by shape. A number that matches two builds — the same

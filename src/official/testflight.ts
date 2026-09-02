@@ -114,20 +114,6 @@ export async function findBetaGroup(
   return matching[0]!;
 }
 
-/**
- * A group that takes every build automatically is not one builds are added to or removed
- * from one at a time, and nothing observed says what Apple does with a linkage write to
- * one. Refused up front, before any build is listed.
- */
-function refuseAutomatic(group: BetaGroupRef, doing: string): void {
-  if (!group.hasAccessToAllBuilds) return;
-  throw new Error(
-    `Group "${group.name}" is set to receive every build automatically (hasAccessToAllBuilds), ` +
-      `so ${doing} is not something it takes one build at a time. Turn that off in TestFlight ` +
-      'first if this is what you mean.'
-  );
-}
-
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
 }
@@ -262,10 +248,11 @@ export interface PruneOptions {
 export interface PrunePlan {
   readonly appId: string;
   readonly group: BetaGroupRef;
+  /** How many of the newest builds stay, **per platform**. */
   readonly keep: number;
-  /** Newest first. */
+  /** Newest first: the newest `keep` builds of each platform in the group. */
   readonly kept: readonly GroupBuild[];
-  /** Newest first: everything on the page after the kept ones. */
+  /** Newest first: everything else on the page. */
   readonly remove: readonly GroupBuild[];
   /**
    * Apple paged the list: the group holds more than one page of 200, and the older builds
@@ -284,25 +271,41 @@ export interface PruneResult {
   readonly stillInGroup: readonly string[];
 }
 
-/** Which builds stay and which go. A read: nothing here changes anything. */
+/**
+ * Which builds stay and which go. A read: nothing here changes anything.
+ *
+ * `keep` counts **per platform**. The first live dry run, on 2026-09-02, met a group holding
+ * iOS and macOS builds together, and "keep the newest one" counted across both: it kept the
+ * iOS build and would have taken the only current Mac build out of the group. A tester on
+ * one platform installs only that platform's builds, so the newest of each is what "the
+ * newest" means. A build with no platform — the sideload did not arrive — is its own bucket
+ * rather than a member of every one.
+ */
 export async function fetchPrunePlan(client: OfficialClient, options: PruneOptions): Promise<PrunePlan> {
   const { appId, keep } = options;
   if (!Number.isInteger(keep) || keep < 0) {
     throw new Error(`keep must be a whole number of builds, not ${String(keep)}.`);
   }
 
+  // `hasAccessToAllBuilds` is carried and printed, not acted on. It reads as "not a group
+  // builds leave one at a time", and a refusal on it was here until 2026-09-02, when the
+  // first live read met a real internal group with the flag set — the same group a
+  // recording shows the browser removing a build from. New builds keep arriving in such a
+  // group; the ones already there still go one at a time.
   const group = await findBetaGroup(client, appId, options.group);
-  refuseAutomatic(group, 'removing builds');
-
   const { builds, more } = await fetchGroupBuilds(client, group.id);
-  return {
-    appId: appId.trim(),
-    group,
-    keep,
-    kept: builds.slice(0, keep),
-    remove: builds.slice(keep),
-    more,
-  };
+
+  const seen = new Map<string, number>();
+  const kept: GroupBuild[] = [];
+  const remove: GroupBuild[] = [];
+  for (const build of builds) {
+    const platform = build.platform ?? '';
+    const already = seen.get(platform) ?? 0;
+    seen.set(platform, already + 1);
+    (already < keep ? kept : remove).push(build);
+  }
+
+  return { appId: appId.trim(), group, keep, kept, remove, more };
 }
 
 /**
@@ -396,8 +399,6 @@ export interface AddResult {
 export async function fetchAddPlan(client: OfficialClient, options: AddOptions): Promise<AddPlan> {
   const { appId } = options;
   const group = await findBetaGroup(client, appId, options.group);
-  refuseAutomatic(group, 'adding builds');
-
   const builds = await findBuilds(client, appId, options.builds);
   const { builds: members } = await fetchGroupBuilds(client, group.id);
   const present = new Set(members.map((build) => build.id));
@@ -460,7 +461,9 @@ function describe(build: GroupBuild): string {
 }
 
 function groupLine(group: BetaGroupRef): string {
-  return `group      ${group.name}  (${group.isInternalGroup ? 'internal' : 'external'}, ${group.id})`;
+  const kind = group.isInternalGroup ? 'internal' : 'external';
+  const automatic = group.hasAccessToAllBuilds ? ', receives every new build automatically' : '';
+  return `group      ${group.name}  (${kind}${automatic}, ${group.id})`;
 }
 
 function section(heading: string, builds: readonly GroupBuild[]): string[] {
@@ -472,7 +475,7 @@ export function formatPrunePlan(plan: PrunePlan): string {
   const lines = [
     `app        ${plan.appId}`,
     groupLine(plan.group),
-    `keep       ${plan.keep} newest`,
+    `keep       ${plan.keep} newest per platform`,
     '',
     ...section('keep', plan.kept),
     '',

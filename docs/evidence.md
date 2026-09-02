@@ -85,8 +85,14 @@ Apple's OpenAPI specification **4.4.1** defines every call `asc prune-builds` an
 `PreReleaseVersion.version` on the sideload, which is why the include is there. `filter[name]`
 on beta groups is documented as existing and not as how it compares, so the rows that come
 back are compared against the name exactly here. `hasAccessToAllBuilds` is on the group
-schema; that a group with it set is *refused* by both commands is a decision, not evidence —
-nothing observed says what a linkage write does to such a group.
+schema and is printed, not acted on. Both commands refused a group carrying it until the
+first live read: an explicitly approved GET-only dry run on **2026-09-02** resolved a real
+internal group by id, and Apple reported it with the flag set — the same group id the
+browser recording removes a build from. So a group that takes every new build automatically
+still has its existing builds removed one at a time, by TestFlight itself, and the refusal
+was a guess contradicted by the evidence already on file. That dry run also confirmed the
+`filter[id]` lookup on `/v1/betaGroups` and read one page of the group's builds; it changed
+nothing.
 
 **Neither write has been run by this client.** The bodies are the documented ones, and the
 offline tests pin them: one `DELETE` or one `POST`, at that path, naming exactly the ids the

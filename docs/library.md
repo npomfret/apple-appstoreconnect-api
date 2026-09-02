@@ -80,7 +80,7 @@ import { official } from './src';
 
 const { fetchPrunePlan, pruneBuilds, fetchAddPlan, addBuilds } = official;
 
-const plan = await fetchPrunePlan(client, { appId, group: 'Internal', keep: 2 });
+const plan = await fetchPrunePlan(client, { appId, group: 'Internal', keep: 2 }); // per platform
 if (plan.remove.length) {
   const result = await pruneBuilds(client, plan);   // one DELETE, then the group read back
   if (result.stillInGroup.length) process.exitCode = 1;
