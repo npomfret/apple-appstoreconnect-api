@@ -6,7 +6,6 @@ import { describe, test } from 'node:test';
 import {
   availabilityReady,
   fetchAvailability,
-  findAppId,
   formatAvailability,
   territoryState,
 } from '../src/official/availability';
@@ -43,26 +42,6 @@ function clientFor(replies: unknown[]): { client: OfficialClient; calls: Call[] 
     },
   };
 }
-
-describe('app lookup', () => {
-  test('resolves a bundle ID with the documented official filter', async () => {
-    const { client, calls } = clientFor([
-      { data: [{ type: 'apps', id: 'app-invented' }] },
-    ]);
-    assert.equal(await findAppId(client, 'com.example.app'), 'app-invented');
-    assert.deepEqual(calls, [
-      {
-        path: '/v1/apps',
-        query: { 'filter[bundleId]': 'com.example.app', limit: 2 },
-      },
-    ]);
-  });
-
-  test('does not guess when no app matches', async () => {
-    const { client } = clientFor([{ data: [] }]);
-    await assert.rejects(() => findAppId(client, 'com.example.missing'), /No app/);
-  });
-});
 
 describe('availability report', () => {
   test('counts and groups available, blocked, pending and unselected storefronts', async () => {

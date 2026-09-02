@@ -8,6 +8,7 @@
  * `test/module-boundary.test.ts` enforces it.
  */
 
+export * from './apps';
 export * from './availability';
 export * from './client';
 export * from './testflight';

@@ -100,14 +100,15 @@ account, until it expires.
 ## What it can do
 
 **Official API** — reads in [docs/reading.md](docs/reading.md), writes in
-[docs/writing.md](docs/writing.md). Every command takes an app id, or `--bundle-id` to
-resolve one.
+[docs/writing.md](docs/writing.md). Every command takes the app as an id, or as
+`--bundle-id <bundleId>`, or as `--app <name>` — the name App Store Connect shows, matched
+exactly — and resolves the ids itself.
 
 | | |
 | --- | --- |
 | `availability <appId>` | Every storefront as available, pending, leaving, blocked or unknown, grouped under Apple's exact status strings. `--check` exits nonzero unless all are on sale |
-| `prune-builds <appId> --group <name\|id> [--keep <n>]` | Remove every build but the newest *n* per platform (default 1) from a TestFlight group. The builds stay in App Store Connect and can be added back; nothing is expired. Prints the plan and asks; `--dry-run` prints it and stops, `--check` exits nonzero while there is anything to remove |
-| `add-builds <appId> --group <name\|id> --build <ref> …` | Add builds to a TestFlight group, named by the build number TestFlight shows in brackets or by Apple's build id. Prints the plan and asks; `--dry-run` and `--check` as above |
+| `prune-builds --app <name> --group <name> [--keep <n>]` | Remove every build but the newest *n* per platform (default 1) from a TestFlight group. The builds stay in App Store Connect and can be added back; nothing is expired. Prints the plan and asks; `--dry-run` prints it and stops, `--check` exits nonzero while there is anything to remove |
+| `add-builds --app <name> --group <name> --build <ref> …` | Add builds to a TestFlight group, named by the build number TestFlight shows in brackets or by Apple's build id. Prints the plan and asks; `--dry-run` and `--check` as above |
 
 **Private API gaps**
 

@@ -15,13 +15,16 @@ schema for the official ones — and confirmed before it goes.
 ## Official API: a TestFlight group's builds
 
 ```sh
-asc prune-builds <appId> --group "Internal"                 # keep the newest of each platform, remove the rest
-asc prune-builds <appId> --group "Internal" --keep 3        # the newest three of each platform
-asc prune-builds <appId> --group "Internal" --dry-run       # the plan, and nothing else
-asc prune-builds <appId> --group "Internal" --check         # exit 1 while there is anything to remove
-asc add-builds <appId> --group "Beta" --build 45 --build 46 # by build number
-asc add-builds <appId> --group "Beta" --build 0a1b2c3d-…    # or by Apple's build id
+asc prune-builds --app "My App" --group "Internal"            # keep the newest of each platform, remove the rest
+asc prune-builds --app "My App" --group "Internal" --keep 3   # the newest three of each platform
+asc prune-builds --app "My App" --group "Internal" --dry-run  # the plan, and nothing else
+asc prune-builds --app "My App" --group "Internal" --check    # exit 1 while there is anything to remove
+asc add-builds --app "My App" --group "Beta" --build 45 --build 46   # by build number
+asc add-builds <appId> --group e4840ac3-… --build 0a1b2c3d-…        # or everything by id
 ```
+
+The app is the name App Store Connect shows, a bundle ID, or an app id, as for every
+official command — see [reading](reading.md#official-api-storefront-availability).
 
 Both are the same documented route, `/v1/betaGroups/{id}/relationships/builds`, with
 `DELETE` to remove and `POST` to add, and the same body: a list of `{type: "builds", id}`.

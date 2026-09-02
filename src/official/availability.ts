@@ -155,23 +155,6 @@ export interface AvailabilityReport {
   readonly territories: readonly TerritoryAvailability[];
 }
 
-function appIdFrom(document: unknown, bundleId: string): string {
-  const rows = asRows(document, 'apps response');
-  if (rows.length === 0) throw new Error(`No app has bundle ID ${bundleId}.`);
-  if (rows.length > 1) throw new Error(`More than one app has bundle ID ${bundleId}; use its app ID.`);
-  return asString(asObject(rows[0], 'apps response.data[0]').id, 'apps response.data[0].id');
-}
-
-/** Resolve one app without putting an account- or app-specific identifier in configuration. */
-export async function findAppId(client: OfficialClient, bundleId: string): Promise<string> {
-  if (!bundleId.trim()) throw new Error('A non-empty bundle ID is required.');
-  const document = await client.get('/v1/apps', {
-    'filter[bundleId]': bundleId.trim(),
-    limit: 2,
-  });
-  return appIdFrom(document, bundleId);
-}
-
 function availabilityId(document: unknown): { id: string; newTerritories: boolean } {
   const row = asData(document, 'app availability response');
   const attributes = asObject(row.attributes, 'app availability attributes');

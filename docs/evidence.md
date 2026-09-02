@@ -8,7 +8,12 @@ browser recording, or a probe.
 
 Apple's OpenAPI specification **4.4.1** defines all three reads used by `asc availability`:
 
-- `GET /v1/apps?filter[bundleId]=…` to resolve an optional bundle ID;
+- `GET /v1/apps` with `filter[bundleId]` or `filter[name]` and `fields[apps]` naming `name`
+  and `bundleId`, to resolve the app from a bundle ID or from the name App Store Connect
+  shows — the same lookup every official command uses, in `official/apps.ts`. The
+  specification says each filter exists and not how it compares, so the rows are matched
+  exactly on the way back. The name lookup was confirmed by the approved dry run of
+  2026-09-02;
 - `GET /v1/apps/{id}/appAvailabilityV2` for `availableInNewTerritories` and the
   availability record id; and
 - `GET /v2/appAvailabilities/{id}/territoryAvailabilities`, with `limit` up to 200,

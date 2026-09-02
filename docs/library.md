@@ -46,8 +46,9 @@ library caller that relied on the old behaviour should pass the path, or resolve
 `ASC_PRIVATE_KEY_PATH`; `official.officialClient()` creates the host-confined bearer
 transport, with `get()` for documented reads and `write()` for documented mutations — the
 one place an official write leaves from, and where its `official.http.write` audit record is
-made whatever the log level; `findAppId()`, `fetchAvailability()`, `formatAvailability()` and
-`availabilityReady()` are the reusable storefront flow:
+made whatever the log level; `findAppId()` and `findAppIdByName()` in `official/apps.ts`
+resolve an app from a bundle ID or its exact name; `fetchAvailability()`,
+`formatAvailability()` and `availabilityReady()` are the reusable storefront flow:
 
 ```ts
 import { official } from './src';

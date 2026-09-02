@@ -63,13 +63,18 @@ is required, because choosing one for you is choosing whose App Store data a wri
 ```sh
 asc availability <appId>
 asc availability --bundle-id com.example.app
+asc availability --app "My App"
 asc availability <appId> --json
 asc availability <appId> --check
 ```
 
 This is the documented side of the client. It uses `ASC_ISSUER_ID`, `ASC_KEY_ID` and
 `ASC_PRIVATE_KEY_PATH`, not the browser capture, and this command issues only GETs. No
-identifier is built in: name an app directly or resolve exactly one with `filter[bundleId]`.
+identifier is built in: name an app directly, or resolve exactly one with `filter[bundleId]`
+or, by the name App Store Connect shows, `filter[name]`. Either is matched exactly on the
+rows that come back, so "My App" does not resolve to "My App Lite", and none or several is
+an error listing what Apple offered. Every official command takes the app the same three
+ways.
 The same side's two writes, to a TestFlight group's build list, are in
 [writing](writing.md#official-api-a-testflight-groups-builds); their `--dry-run` is a read.
 
