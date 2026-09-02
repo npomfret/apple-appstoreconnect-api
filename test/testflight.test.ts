@@ -258,7 +258,7 @@ describe('prune plan', () => {
     const { client } = clientFor([groupsReply(group('group-invented', 'Internal')), buildsReply(THREE)]);
     const plan = await fetchPrunePlan(client, { appId: 'app-invented', group: 'Internal', keep: 1 });
     const text = formatPrunePlan(plan);
-    assert.match(text, /group {6}Internal {2}\(internal, group-invented\)/);
+    assert.match(text, /group {6}Internal {2}\(internal, automatic distribution off, group-invented\)/);
     assert.match(text, /keep \(1\):\n {2}2026-08-03T09:00:00\+01:00 {2}1\.2\.3 \(45\) {2}IOS, valid {2}build-new/);
     assert.match(text, /remove from group \(2\):\n[^\n]*build-mid\n[^\n]*build-old/);
     assert.match(text, /1\.2\.3 \(44\) {2}IOS, valid, expired {2}build-mid/);

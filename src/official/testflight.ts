@@ -479,10 +479,15 @@ function describe(build: GroupBuild): string {
   return `  ${build.uploadedDate}  ${label(build)}  ${flags}  ${build.id}`;
 }
 
+/**
+ * The flag is stated in both directions, since it decides whether a write can do anything:
+ * a plan is only ever printed for a group with it off, and saying so is what tells a reader
+ * that the refusal did not apply rather than leaving them to infer it.
+ */
 function groupLine(group: BetaGroupRef): string {
   const kind = group.isInternalGroup ? 'internal' : 'external';
-  const automatic = group.hasAccessToAllBuilds ? ', receives every new build automatically' : '';
-  return `group      ${group.name}  (${kind}${automatic}, ${group.id})`;
+  const automatic = `automatic distribution ${group.hasAccessToAllBuilds ? 'on' : 'off'}`;
+  return `group      ${group.name}  (${kind}, ${automatic}, ${group.id})`;
 }
 
 function section(heading: string, builds: readonly GroupBuild[]): string[] {

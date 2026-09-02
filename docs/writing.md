@@ -36,7 +36,7 @@ Which build is which is the point of the plan, so it is printed whole before the
 
 ```
 app        1234567890
-group      Internal  (internal, receives every new build automatically, 0e1f…)
+group      Internal  (internal, automatic distribution off, 0e1f…)
 keep       1 newest per platform
 
 keep (2):
