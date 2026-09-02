@@ -44,8 +44,8 @@ describe('a copied curl command', () => {
     assert.equal(session.expiresAt, '2026-08-13T16:17:27.000Z');
   });
 
-  test('the app id is scraped from the Referer', () => {
-    assert.equal(session.appId, '123');
+  test('no app id is read from the capture — the app is always an argument', () => {
+    assert.equal('appId' in session, false);
   });
 
   // Forwarding the browser's Accept-Encoding advertises zstd, which undici then can't
@@ -94,7 +94,7 @@ describe('a copied curl command', () => {
         `-H 'Referer: https://appstoreconnect.apple.com/apps/123/distribution' -H 'Cookie: ${COOKIE}'`
     );
 
-    assert.equal(session.appId, '123');
+    assert.equal('appId' in session, false);
     assert.equal(session.dsId, '1234');
   });
 
@@ -136,9 +136,9 @@ describe('a pasted header block', () => {
     assert.equal(session.headers['x-csrf-itc'], 'itc');
   });
 
-  test('the page URL stands in for a Referer, and gives the app id', () => {
+  test('the page URL stands in for a Referer, and nothing is read out of it', () => {
     assert.equal(session.headers['referer'], TEXT.split('\n').pop());
-    assert.equal(session.appId, '456');
+    assert.equal('appId' in session, false);
   });
 
   test('the request line and pseudo-headers are dropped', () => {
@@ -147,7 +147,7 @@ describe('a pasted header block', () => {
   });
 
   test('either form is accepted without being told which it is', () => {
-    assert.equal(sessionFromCapture(TEXT).appId, '456');
+    assert.equal(sessionFromCapture(TEXT).headers['referer'], TEXT.split('\n').pop());
   });
 
   test('text with no cookie in it says so', () => {

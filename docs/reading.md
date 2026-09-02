@@ -130,8 +130,8 @@ thread     74533c00-b29e-3041-826a-1a221f522ecc
     ...
 ```
 
-Every route in is a private one. An app id — the default, taken from the captured request —
-lists the app's Resolution Center threads; `--submission` filters that same list by
+Every route in is a private one. An app id — always given, never inferred from the
+capture — lists the app's Resolution Center threads; `--submission` filters that same list by
 `filter[reviewSubmission]`; `--thread` skips discovery entirely. None of them reads a
 resource Apple's official API serves.
 
@@ -205,7 +205,7 @@ document):
 | Command | Endpoint |
 | --- | --- |
 | `inbox` | `apps?fields[apps]=appStoreVersionMetrics,betaReviewMetrics&fields[appStoreVersionMetrics]=messageCount` |
-| `threads [appId]` | `apps/{appId}/resolutionCenterThreads` |
+| `threads <appId>` | `apps/{appId}/resolutionCenterThreads` |
 | `thread <submissionId>` | `resolutionCenterThreads?filter[reviewSubmission]={id}` |
 | `messages <threadId>` | `resolutionCenterThreads/{id}/resolutionCenterMessages` |
 | `draft <threadId>` | `resolutionCenterThreads/{id}/resolutionCenterDraftMessage` |
@@ -455,8 +455,8 @@ carries no cursor, so a full page is reported as possibly clipped rather than fo
 
 ## Ids, and the two halves of a metadata rejection
 
-`appId` defaults to the one scraped from the captured request's `Referer`. **`versionId` has
-no default** — `asc history <versionId>` requires it, because working one out means reading
+`appId` has no default: it is an argument, and the capture says nothing about it — see the
+README's note on what the curl is for. **`versionId` has no default either** — `asc history <versionId>` requires it, because working one out means reading
 `apps/{id}/appStoreVersions`, which is Apple's own
 [`GET /v1/apps/{id}/appStoreVersions`](https://developer.apple.com/documentation/appstoreconnectapi/app-store-versions).
 That is one place to get the id; `asc report --json` is the other, and needs no API key.

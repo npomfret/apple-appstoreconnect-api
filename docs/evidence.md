@@ -693,7 +693,7 @@ values of the four structural headers were read.
 | `X-Connect-Team-ID` | 214/214 | 10/10 | sent on both, since **2026-08-21**. It was a write header here until then |
 | `X-Connect-Team-Type` | 214/214, all `PURPLESOFTWARE` | 10/10, all `PURPLESOFTWARE` | the same, with `PURPLESOFTWARE` as the fallback when the capture has none |
 | `X-CSRF-ITC` | 211/214 | 8/10 | always sent, from the capture or as `[asc-ui]` |
-| `Referer` | 214/214 | 10/10 | carried from the capture; also where the default app id is scraped from |
+| `Referer` | 214/214 | 10/10 | carried from the capture, and nothing is read out of it — the app id was scraped from it until 2026-09-02 |
 | `Content-Type` | 133 `application/vnd.api+json`, 78 `application/json`, 3 absent | 9 `application/vnd.api+json`, 1 `application/json` | one constant, `application/vnd.api+json`, written **over** the capture's since 2026-08-21 |
 | `Accept` | 133 `application/vnd.api+json`, 78 the three-value list, 3 `*/*` | the same split | one constant, the three-value list, likewise written over the capture's |
 | `X-Apple-App-Id` | 0/214 | 0/10 | **not sent, and no longer carried.** It is on none of the 413 requests, on any host |

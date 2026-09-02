@@ -41,7 +41,7 @@ Official API (uses ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY_PATH, or an acc
 Private API gaps (uses the browser capture described below, or an account's):
 
   asc status [file]           Show the captured session and how long it has left
-  asc report [appId]          Digest of every Resolution Center thread: version, guidelines,
+  asc report <appId>          Digest of every Resolution Center thread: version, guidelines,
                               Apple's latest message
   asc report --thread <id>    The same digest for one thread
   asc report --submission <id>
@@ -49,8 +49,8 @@ Private API gaps (uses the browser capture described below, or an account's):
   asc inbox                   Unread message counts per app — where to look first
   asc history <versionId>     The version's submission history: every state it passed through,
                               who moved it, and how long each one lasted
-  asc privacy [appId]         App Privacy declarations and whether they are published
-  asc threads [appId]         List Resolution Center threads on an app
+  asc privacy <appId>         App Privacy declarations and whether they are published
+  asc threads <appId>         List Resolution Center threads on an app
   asc thread <submissionId>   Find the thread behind a review submission
   asc messages <threadId>     List Resolution Center messages in a thread
   asc draft <threadId>        Show the thread's unsent draft reply, with its attachments
@@ -182,7 +182,11 @@ function emit(document: Document, raw: boolean): void {
  *
  * All three are private routes: an app id lists the app's Resolution Center threads, and a
  * thread or submission id skips even that. None of them reads a resource Apple's official
- * API serves, which is why the app id can stay the default.
+ * API serves.
+ *
+ * **The app id is never defaulted.** It used to come from the capture's Referer, and a
+ * curl copied from another app's page silently reported on that app instead; see
+ * `buildSession` in `gap/curl.ts`.
  *
  * Naming more than one is refused rather than ranked: they are three different questions,
  * and picking one for you would report on something other than what was asked about.
@@ -208,15 +212,18 @@ function reportTarget(
   }
   if (named.length) return named[0]!.target;
 
-  return { appId: requireAppId(session, appIdArg) };
+  return { appId: requireAppId(appIdArg, 'report') };
 }
 
-function requireAppId(session: Session, given: string | undefined): string {
-  const appId = given ?? session.appId;
-  if (!appId) {
-    throw new Error('No app id given and none recorded in the session — pass one: asc threads <appId>');
+/**
+ * The app is always an argument. The capture is a way of getting a cookie into a file,
+ * not a statement about which app the next command is about.
+ */
+function requireAppId(given: string | undefined, command: string): string {
+  if (!given) {
+    throw new Error(`No app id given — pass one: asc ${command} <appId>`);
   }
-  return appId;
+  return given;
 }
 
 /**
@@ -440,7 +447,7 @@ async function main(invocation: Invocation): Promise<number> {
 
     case 'privacy': {
       const session = openSession();
-      const privacy = await fetchPrivacy(session, requireAppId(session, rest[0]));
+      const privacy = await fetchPrivacy(session, requireAppId(rest[0], 'privacy'));
       console.log(json ? JSON.stringify(privacy, null, 2) : formatPrivacy(privacy));
       return 0;
     }
@@ -562,7 +569,7 @@ async function main(invocation: Invocation): Promise<number> {
 
     case 'threads': {
       const session = openSession();
-      emit(await api.listThreads(session, requireAppId(session, rest[0])), raw);
+      emit(await api.listThreads(session, requireAppId(rest[0], 'threads')), raw);
       return 0;
     }
 

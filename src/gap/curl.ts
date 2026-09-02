@@ -205,16 +205,17 @@ function normaliseExpiry(raw: string): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
-/** Pulls the app id out of a Referer like /apps/{appId}/distribution/... */
-function readAppId(referer: string | undefined): string | undefined {
-  if (!referer) return undefined;
-  return /\/apps\/(\d+)\b/.exec(referer)?.[1];
-}
-
 /**
  * Everything a session needs comes from the cookie jar plus a few headers, however they
  * were captured. The account id, team id and expiry are decoded from the cookie itself,
  * so the headers are close to optional.
+ *
+ * **Nothing about an app is read from the capture.** Until 2026-09-02 the app id was
+ * scraped from the Referer's `/apps/{id}/` and used as the default for every app-scoped
+ * command, and a curl copied from the wrong app's page made `report` and `threads`
+ * answer about that app — printing "No Resolution Center conversations" for one with an
+ * open thread. The capture is a convenience for getting the cookie into a file and no
+ * more; which app a command is about is always an argument.
  */
 function buildSession(cookie: string, rawHeaders: Record<string, string>, url?: string): Session {
   if (!/(?:^|;\s*)myacinfo=/.test(cookie)) {
@@ -236,7 +237,6 @@ function buildSession(cookie: string, rawHeaders: Record<string, string>, url?: 
     dsId,
     teamId: headers['x-connect-team-id'] ?? teamId,
     expiresAt,
-    appId: readAppId(headers['referer']),
     capturedAt: new Date().toISOString(),
   };
 }

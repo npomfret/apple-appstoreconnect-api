@@ -45,7 +45,6 @@ export const SESSION: Session = {
     referer: 'https://appstoreconnect.apple.com/apps/123/distribution/ios/version/inflight',
   },
   teamId: 'team-0000',
-  appId: '123',
   capturedAt: '2026-08-15T00:00:00.000Z',
 };
 

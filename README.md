@@ -64,8 +64,8 @@ browser.
 
 Sessions last a few hours. When one lapses you do this again.
 
-1. Log in to <https://appstoreconnect.apple.com> as normal, and open any page of the app
-   you care about (a review submission or the version page).
+1. Log in to <https://appstoreconnect.apple.com> as normal, and open any App Store
+   Connect page.
 2. Dev tools → **Network**, filter to Fetch/XHR, click any request to `/iris/v1/...`.
 3. Right-click it → **Copy** → **Copy as cURL**.
 4. Paste it into **`tmp/curl.txt`** — which is gitignored, and stays there.
@@ -74,8 +74,14 @@ Sessions last a few hours. When one lapses you do this again.
    ```sh
    npm install && npm run build
    node dist/cli.js status                  # confirms it, and how long it has left
-   node dist/cli.js report                  # the useful one — every review conversation, digested
+   node dist/cli.js report <appId>          # the useful one — every review conversation, digested
    ```
+
+**The curl is a convenience for getting the cookie into a file, and that is all it is.**
+Only the cookie and a handful of account-level headers are read from it. Which app a
+command is about is always an argument — nothing infers it from the page the curl was
+copied on. (It did, until 2026-09-02, and a curl copied from the wrong app's page made
+`report` say there were no conversations for an app with an open thread.)
 
 There is no login step and nothing derived on disk. Every command re-reads `tmp/curl.txt`
 and parses it on the spot, so pasting a fresh curl over that file *is* logging in again.
