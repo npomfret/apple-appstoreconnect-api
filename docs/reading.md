@@ -68,8 +68,10 @@ asc availability <appId> --check
 ```
 
 This is the documented side of the client. It uses `ASC_ISSUER_ID`, `ASC_KEY_ID` and
-`ASC_PRIVATE_KEY_PATH`, not the browser capture, and issues only GETs. No identifier is
-built in: name an app directly or resolve exactly one with `filter[bundleId]`.
+`ASC_PRIVATE_KEY_PATH`, not the browser capture, and this command issues only GETs. No
+identifier is built in: name an app directly or resolve exactly one with `filter[bundleId]`.
+The same side's two writes, to a TestFlight group's build list, are in
+[writing](writing.md#official-api-a-testflight-groups-builds); their `--dry-run` is a read.
 
 The command reads `GET /v1/apps/{id}/appAvailabilityV2`, then
 `GET /v2/appAvailabilities/{id}/territoryAvailabilities` with the documented maximum page

@@ -1,14 +1,84 @@
 # Writing
 
-Every write this client makes is a Resolution Center one: the draft reply to App Review, its
-attachments, and sending it. That is the whole write surface, and it is documented in
-[replying](replying.md). Apple has no official Resolution Center API — checked against
-OpenAPI 4.4.1 on 2026-08-21, see [evidence and limits](evidence.md) — which is why these are
-here rather than at Apple's own
-[API reference](https://developer.apple.com/documentation/appstoreconnectapi/), where any
-other write to your App Store data belongs.
+Two kinds of write, on two credentials. On the official API, with an API key: a TestFlight
+group's build list, in both directions — below. On the private API, with the browser cookie:
+the Resolution Center — the draft reply to App Review, its attachments, and sending it —
+documented in [replying](replying.md). Apple has no official Resolution Center API — checked
+against OpenAPI 4.4.1 on 2026-08-21, see [evidence and limits](evidence.md) — which is why
+those are on the cookie rather than at Apple's own
+[API reference](https://developer.apple.com/documentation/appstoreconnectapi/), where every
+other write to your App Store data belongs, and where the two below are.
 
-Each one is named, recorded from the browser doing it, and confirmed before it goes.
+Each one is named, evidenced — a browser recording for the private ones, Apple's published
+schema for the official ones — and confirmed before it goes.
+
+## Official API: a TestFlight group's builds
+
+```sh
+asc prune-builds <appId> --group "Internal"                 # keep the newest, remove the rest
+asc prune-builds <appId> --group "Internal" --keep 3
+asc prune-builds <appId> --group "Internal" --dry-run       # the plan, and nothing else
+asc prune-builds <appId> --group "Internal" --check         # exit 1 while there is anything to remove
+asc add-builds <appId> --group "Beta" --build 45 --build 46 # by build number
+asc add-builds <appId> --group "Beta" --build 0a1b2c3d-…    # or by Apple's build id
+```
+
+Both are the same documented route, `/v1/betaGroups/{id}/relationships/builds`, with
+`DELETE` to remove and `POST` to add, and the same body: a list of `{type: "builds", id}`.
+They are each other's undo. A build removed from a group is still in App Store Connect with
+its expiry untouched, and adding it back is the other command; **nothing here expires or
+deletes a build**, which is a different operation with no documented way back.
+
+Which build is which is the point of the plan, so it is printed whole before the question:
+
+```
+app        1234567890
+group      Internal  (internal, 0e1f…)
+keep       1 newest
+
+keep (1):
+  2026-09-01T18:02:11-07:00  1.4.0 (312)  IOS, valid  7c0e…
+
+remove from group (2):
+  2026-08-30T09:41:56-07:00  1.4.0 (311)  IOS, valid  91aa…
+  2026-08-29T22:10:03-07:00  1.3.9 (310)  IOS, valid, expired  4d27…
+```
+
+The group is named, not numbered, and the name is matched exactly within the app: "Beta"
+does not resolve to "Beta (old)", and none or several is an error. Newest is by the instant
+Apple stamped, not the text, since Apple stamps with an offset. Builds already expired are
+still members of the group and are pruned like any other; keeping one would keep nothing
+testers can install. A group Apple marks as receiving every build automatically
+(`hasAccessToAllBuilds`) is refused by both commands before any build is listed — nothing
+observed says what a linkage write does to one, and it is not a group builds go in and out
+of one at a time.
+
+`add-builds` names a build the way TestFlight shows it: the build number in brackets, or
+Apple's own id, told apart by shape. A number that matches two builds — the same
+`CFBundleVersion` under two marketing versions — is refused with both ids, so the id form
+is always a way through. Builds already in the group are listed under "already in group"
+and are not sent again.
+
+The ids in the request are the plan's own, so what leaves or joins the group is exactly what
+was on screen, whatever was uploaded meanwhile; there is no second read between the answer
+and the write because there is nothing for one to catch. The read that matters comes
+*after*: each command lists the group again and prints what Apple now says, and exits 1 if
+a build asked to leave is still there, or one asked to join is not. That read-back is the
+only evidence this client has that a `204` did what it says.
+
+**Neither write has been run by this client.** The request is the one Apple's specification
+4.4.1 documents, byte for byte, and the removal is also what the TestFlight page sends when
+you click it — recorded from the browser on the private spelling of the same route — but
+the first live run is the first live run. `--dry-run` costs nothing and shows the plan.
+
+Adding to an *external* group is the outward-facing one: it hands the build to people
+outside the team, and Apple may put it through Beta App Review first. The confirmation says
+which kind of group it is.
+
+Both reads are one page of Apple's documented maximum, 200. A group holding more is reported
+in the plan — the older builds beyond the page are in neither list — and a second run after
+the first reaches them. That is honest rather than complete, and `--check` stays red while a
+further page exists.
 
 **There is no raw PATCH**, and nothing here takes a write path off the command line. A
 hand-written body at an arbitrary `iris/v1` path has no captured evidence behind it by
@@ -21,9 +91,11 @@ escape hatch, restricted to the private families — see
 ## Confirmations
 
 Every write here prints what it is about to act on and asks. One of them reaches Apple in a
-way this client cannot walk back — `send-reply`. The others destroy or write over data
-instead of publishing it, which is the same question in a smaller way: nothing keeps a copy
-of what they take.
+way this client cannot walk back — `send-reply`. The private others destroy or write over
+data instead of publishing it, which is the same question in a smaller way: nothing keeps a
+copy of what they take. The two official ones are reversible and ask anyway: one takes a
+build away from testers and the other hands one to them, and both print every build on
+both sides of the plan, with its id, before asking.
 
 How much each of them can show you differs, and it is worth knowing which you are getting.
 `send-reply` and `delete-draft` print the draft in full, attachments and all: the id you
@@ -61,7 +133,8 @@ script notices.
 
 The guard is in the CLI, not the library: `sendDraftMessage()`, `sendDraftReply()` and
 `saveDraftReply()` called from code go straight through, the last of them writing over
-whatever the box held. What is *not* only in the CLI is the check that a
+whatever the box held, and so do `pruneBuilds()` and `addBuilds()` with the plan they are
+handed. What is *not* only in the CLI is the check that a
 draft is worth sending — an absent or empty one is refused in `findSendableDraft()`, which
 both routes go through.
 

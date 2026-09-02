@@ -7,6 +7,7 @@
  */
 
 import { OfficialClient } from './client';
+import { asBoolean, asData, asObject, asRows, asString, asStrings, hasNextPage } from './parse';
 
 /**
  * Every `TerritoryAvailability.contentStatuses` value in Apple's OpenAPI specification
@@ -154,42 +155,11 @@ export interface AvailabilityReport {
   readonly territories: readonly TerritoryAvailability[];
 }
 
-type ObjectValue = Record<string, unknown>;
-
-function object(value: unknown, where: string): ObjectValue {
-  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-    return value as ObjectValue;
-  }
-  throw new Error(`Apple omitted or changed ${where}; expected an object.`);
-}
-
-function string(value: unknown, where: string): string {
-  if (typeof value === 'string' && value) return value;
-  throw new Error(`Apple omitted or changed ${where}; expected a non-empty string.`);
-}
-
-function boolean(value: unknown, where: string): boolean {
-  if (typeof value === 'boolean') return value;
-  throw new Error(`Apple omitted or changed ${where}; expected a boolean.`);
-}
-
-function strings(value: unknown, where: string): string[] {
-  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
-    return value;
-  }
-  throw new Error(`Apple omitted or changed ${where}; expected a list of strings.`);
-}
-
-function data(document: unknown, where: string): ObjectValue {
-  return object(object(document, where).data, `${where}.data`);
-}
-
 function appIdFrom(document: unknown, bundleId: string): string {
-  const rows = object(document, 'apps response').data;
-  if (!Array.isArray(rows)) throw new Error('Apple omitted or changed apps response.data.');
+  const rows = asRows(document, 'apps response');
   if (rows.length === 0) throw new Error(`No app has bundle ID ${bundleId}.`);
   if (rows.length > 1) throw new Error(`More than one app has bundle ID ${bundleId}; use its app ID.`);
-  return string(object(rows[0], 'apps response.data[0]').id, 'apps response.data[0].id');
+  return asString(asObject(rows[0], 'apps response.data[0]').id, 'apps response.data[0].id');
 }
 
 /** Resolve one app without putting an account- or app-specific identifier in configuration. */
@@ -203,11 +173,11 @@ export async function findAppId(client: OfficialClient, bundleId: string): Promi
 }
 
 function availabilityId(document: unknown): { id: string; newTerritories: boolean } {
-  const row = data(document, 'app availability response');
-  const attributes = object(row.attributes, 'app availability attributes');
+  const row = asData(document, 'app availability response');
+  const attributes = asObject(row.attributes, 'app availability attributes');
   return {
-    id: string(row.id, 'app availability id'),
-    newTerritories: boolean(
+    id: asString(row.id, 'app availability id'),
+    newTerritories: asBoolean(
       attributes.availableInNewTerritories,
       'app availability availableInNewTerritories'
     ),
@@ -215,14 +185,14 @@ function availabilityId(document: unknown): { id: string; newTerritories: boolea
 }
 
 function territoryRow(value: unknown, index: number): TerritoryAvailability {
-  const row = object(value, `territory availability row ${index}`);
-  const attributes = object(row.attributes, `territory availability row ${index}.attributes`);
-  const relationships = object(
+  const row = asObject(value, `territory availability row ${index}`);
+  const attributes = asObject(row.attributes, `territory availability row ${index}.attributes`);
+  const relationships = asObject(
     row.relationships,
     `territory availability row ${index}.relationships`
   );
-  const territory = data(
-    object(relationships.territory, `territory availability row ${index}.territory`),
+  const territory = asData(
+    asObject(relationships.territory, `territory availability row ${index}.territory`),
     `territory availability row ${index}.territory`
   );
   const releaseDate = attributes.releaseDate;
@@ -230,14 +200,14 @@ function territoryRow(value: unknown, index: number): TerritoryAvailability {
     throw new Error(`Apple changed territory availability row ${index}.releaseDate.`);
   }
 
-  const contentStatuses = strings(
+  const contentStatuses = asStrings(
     attributes.contentStatuses,
     `territory availability row ${index}.contentStatuses`
   );
 
   return {
-    territory: string(territory.id, `territory availability row ${index}.territory.id`),
-    selected: boolean(attributes.available, `territory availability row ${index}.available`),
+    territory: asString(territory.id, `territory availability row ${index}.territory.id`),
+    selected: asBoolean(attributes.available, `territory availability row ${index}.available`),
     contentStatuses,
     state: territoryState(contentStatuses),
     ...(typeof releaseDate === 'string' ? { releaseDate } : {}),
@@ -254,7 +224,7 @@ export async function fetchAvailability(
   const availability = availabilityId(
     await client.get(`/v1/apps/${app}/appAvailabilityV2`)
   );
-  const document = object(
+  const document = asObject(
     await client.get(`/v2/appAvailabilities/${encodeURIComponent(availability.id)}/territoryAvailabilities`, {
       limit: 200,
       include: 'territory',
@@ -267,12 +237,8 @@ export async function fetchAvailability(
     }),
     'territory availabilities response'
   );
-  const rows = document.data;
-  if (!Array.isArray(rows)) {
-    throw new Error('Apple omitted or changed territory availabilities response.data.');
-  }
-  const next = object(document.links ?? {}, 'territory availabilities response.links').next;
-  if (next !== undefined && next !== null) {
+  const rows = asRows(document, 'territory availabilities response');
+  if (hasNextPage(document, 'territory availabilities response')) {
     throw new Error(
       'Apple paged territory availability beyond 200 rows. Refusing to under-report; ' +
         'the official API paging path needs to be implemented from current schema evidence.'

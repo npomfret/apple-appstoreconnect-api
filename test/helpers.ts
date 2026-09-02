@@ -96,7 +96,8 @@ export function stubFetch(reply: (call: Call) => Reply = () => ({})): Stub {
     calls.push(call);
 
     const { status = 200, body = { data: [] }, text } = reply(call);
-    return new Response(text ?? JSON.stringify(body), {
+    // A 204 has no body by definition, and `Response` refuses one — even an empty string.
+    return new Response(status === 204 ? null : text ?? JSON.stringify(body), {
       status,
       headers: { 'content-type': 'application/json' },
     });

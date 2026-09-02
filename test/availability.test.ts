@@ -37,6 +37,9 @@ function clientFor(replies: unknown[]): { client: OfficialClient; calls: Call[] 
         if (!replies.length) throw new Error(`No invented reply for ${path}`);
         return replies.shift();
       },
+      async write(): Promise<unknown> {
+        throw new Error('availability is a read, and never writes');
+      },
     },
   };
 }

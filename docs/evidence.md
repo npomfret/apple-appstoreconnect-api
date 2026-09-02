@@ -63,6 +63,52 @@ through with a 401. Offline tests generate an invented P-256 key, verify the 64-
 signature, assert that the bearer goes only to `api.appstoreconnect.apple.com`, drive a
 fake clock across the refresh boundary, and replace every network call.
 
+## Official TestFlight group builds
+
+Apple's OpenAPI specification **4.4.1** defines every call `asc prune-builds` and
+`asc add-builds` make, checked on **2026-09-02** against a copy fetched that day with
+`npm run spec:fetch`:
+
+- `GET /v1/betaGroups` with `filter[app]`, `filter[name]`, `fields[betaGroups]` naming
+  `name`, `isInternalGroup` and `hasAccessToAllBuilds`, and `limit` up to 200;
+- `GET /v1/builds` with `filter[betaGroups]` (the group's members), `filter[app]` with
+  `filter[id]` or `filter[version]` (a build named by id or by build number), the documented
+  `-uploadedDate` sort, `include=preReleaseVersion`, `fields[builds]` naming `version`,
+  `uploadedDate`, `expired`, `processingState` and `preReleaseVersion`, and
+  `fields[preReleaseVersions]` naming `version` and `platform`; and
+- `DELETE` and `POST /v1/betaGroups/{id}/relationships/builds`, both taking
+  `BetaGroupBuildsLinkagesRequest` — `{"data": [{"type": "builds", "id": "…"}]}` — and both
+  answering `204`.
+
+`Build.version` is the build number, not the marketing version; the marketing version is
+`PreReleaseVersion.version` on the sideload, which is why the include is there. `filter[name]`
+on beta groups is documented as existing and not as how it compares, so the rows that come
+back are compared against the name exactly here. `hasAccessToAllBuilds` is on the group
+schema; that a group with it set is *refused* by both commands is a decision, not evidence —
+nothing observed says what a linkage write does to such a group.
+
+**Neither write has been run by this client.** The bodies are the documented ones, and the
+offline tests pin them: one `DELETE` or one `POST`, at that path, naming exactly the ids the
+plan printed. Two things beyond the schema bear on the removal. First, **the browser sends the
+same body**: a TestFlight page removing a build from a group, recorded from the browser on
+2026-09-02 and read through an extractor emitting host, path shape and body key structure,
+sends `{"data": [{"type": "builds", "id"}]}` to `iris/v1/betaGroups/{id}/relationships/builds`
+— the private spelling of the officially served route. That recording confirmed what
+"remove a build" means to the TestFlight page, and is not used: Apple serves the route, so the
+capture is not the credential this goes out on. Second, the read-back after each write is the
+evidence the *command* produces — the group listed again, and a nonzero exit if Apple's
+answer disagrees with the write — so the first live run reports on itself.
+
+Expiring a build — `PATCH /v1/builds/{id}` with `expired: true`, also in 4.4.1 — is a
+different operation with no documented undo, and is not implemented. The two writes here were
+chosen for being reversible: each is the other's undo.
+
+Both reads are one page at the documented maximum of 200, and a non-null `links.next` is
+reported rather than followed. For the group's members that is the plan saying older builds
+lie beyond the page; for a build named by number it means the app has more than 200 builds
+with that number, which the exact match then refuses as ambiguous. No paging convention has
+been implemented on the official side, as with availability.
+
 ## Private API evidence
 
 Everything on it is part of the gap this client is for — Resolution Center threads,
@@ -79,7 +125,9 @@ and the documentation index at
 Audited 2026-08-20 and re-checked 2026-08-21. Every "Apple has no official API for this"
 claim in these docs carries that date and version, so it ages visibly; **repeat the
 comparison against the current specification before acting on one**, because both this
-project and Apple's API move.
+project and Apple's API move. `npm run spec:fetch` downloads both sources into the
+gitignored `tmp/openapi/` — `openapi.json` and `index.json` — and prints the version and
+the path and schema counts, so the comparison is a `jq` away.
 
 The rule the audit applies is that **duplication is a property of a call, not of a
 resource**: a private read of an officially-available resource is retained only when it
@@ -94,10 +142,12 @@ of this page.
 
 ## What isn't captured yet
 
-One write on the retained surface was never recorded: `delete-attachment`, which was probed
-rather than captured, and which destroys live data. Everything else here — the draft behind
-`save-draft` and `delete-draft`, and the send behind `send-reply` — was copied from the
-browser doing it.
+One private write on the retained surface was never recorded: `delete-attachment`, which was
+probed rather than captured, and which destroys live data. Everything else on that side —
+the draft behind `save-draft` and `delete-draft`, and the send behind `send-reply` — was
+copied from the browser doing it. The two official writes, `prune-builds` and `add-builds`,
+rest on Apple's published schema rather than a recording and have never been run by this
+client; see [above](#official-testflight-group-builds).
 
 ## Calls confirmed against the browser
 

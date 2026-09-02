@@ -19,7 +19,19 @@ import {
   findAppId,
   formatAvailability,
 } from './official/availability';
-import { officialClient } from './official/client';
+import { OfficialClient, officialClient } from './official/client';
+import {
+  addBuilds,
+  addReady,
+  fetchAddPlan,
+  fetchPrunePlan,
+  formatAddPlan,
+  formatAddResult,
+  formatPrunePlan,
+  formatPruneResult,
+  pruneBuilds,
+  pruneReady,
+} from './official/testflight';
 import { capturePathFor, configPath, describeAccounts, officialCredentialsFor, readAccounts, Resolution } from './accounts';
 import * as api from './gap/api';
 import * as ci from './gap/ci';
@@ -37,6 +49,22 @@ Official API (uses ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY_PATH, or an acc
                               Resolve the app by bundle ID, then show the same report
                               Add --json for every territory row; --check exits nonzero
                               while any selected storefront is blocked or pending
+
+  asc prune-builds <appId> --group <name> [--keep <n>]
+                              Remove every build but the newest <n> (default 1) from the
+                              named TestFlight group. The builds stay in App Store Connect
+                              and can be added back; nothing is expired or deleted. Shows
+                              the plan and asks first. --dry-run prints the plan and stops;
+                              --check does the same and exits nonzero while there is
+                              anything to remove; --bundle-id works as for availability
+
+  asc add-builds <appId> --group <name> --build <ref> [--build <ref> ...]
+                              Add builds to the named TestFlight group. A <ref> is the
+                              build number TestFlight shows in brackets, or an Apple build
+                              id; a number matching two builds is refused with both ids.
+                              Adding to an external group hands the build to those
+                              testers, which may put it through Beta App Review. Shows
+                              the plan and asks first; --dry-run and --check as above
 
 Private API gaps (uses the browser capture described below, or an account's):
 
@@ -111,8 +139,17 @@ Options:
                               "infrastructure-validation", plus "availability": emit JSON
                               instead of the digest
   --check                     For "availability": exit nonzero if a selected storefront
-                              cannot currently distribute
-  --bundle-id <id>            For "availability": find the app through the official API
+                              cannot currently distribute. For "prune-builds" and
+                              "add-builds": exit nonzero if there is anything to change,
+                              without changing it
+  --bundle-id <id>            For the official commands: find the app through the
+                              official API
+  --group <name>              For "prune-builds" and "add-builds": the TestFlight group,
+                              by its exact name
+  --keep <n>                  For "prune-builds": how many of the newest builds stay (1)
+  --build <ref>               For "add-builds": a build number or build id. Repeatable
+  --dry-run                   For "prune-builds" and "add-builds": print the plan and
+                              change nothing
   --yes                       Skip the confirmation prompt on the commands that ask
   --attach <file>             For "save-draft": a file to attach. Repeat for several
 
@@ -261,6 +298,49 @@ function describeDraft(threadId: string, draft: Denormalized): string[] {
   ];
 }
 
+/**
+ * The app an official command is about: one app id as an argument, or one `--bundle-id`
+ * resolved through the official API. Never both, never neither, and never more than one
+ * of either — the same rule for every official command, so it is decided once.
+ */
+async function officialAppId(
+  client: OfficialClient,
+  command: string,
+  bundleIds: string[],
+  positional: string[]
+): Promise<string> {
+  const [bundleId] = bundleIds;
+  const [givenAppId] = positional;
+  if (bundleIds.length > 1) throw new Error(`${command} takes one --bundle-id, not several.`);
+  if (positional.length > 1) {
+    throw new Error(`${command} takes one app ID, or one --bundle-id, not extra arguments.`);
+  }
+  if (bundleId && givenAppId) throw new Error(`Choose an app ID or --bundle-id for ${command}, not both.`);
+  if (bundleId) return findAppId(client, bundleId);
+  if (givenAppId) return givenAppId;
+  throw new Error(`${command} needs an app ID or --bundle-id <bundleId>.`);
+}
+
+/** Exactly one `--group`: the name is the whole of what says which group's builds change. */
+function requireGroup(groups: string[], example: string): string {
+  if (groups.length !== 1) {
+    throw new Error(`${example.split(' ')[0]} takes exactly one --group <name>. Example: asc ${example}`);
+  }
+  return groups[0]!;
+}
+
+/** `--keep` as a count: a whole number of builds, zero included, and a typo reported as one. */
+function keepCount(keeps: string[]): number {
+  if (keeps.length > 1) throw new Error(`--keep takes one number, not ${keeps.length}.`);
+  const [given] = keeps;
+  if (given === undefined) return 1;
+  const keep = Number(given);
+  if (!Number.isInteger(keep) || keep < 0) {
+    throw new Error(`"${given}" is not a number of builds to keep. Example: --keep 3`);
+  }
+  return keep;
+}
+
 function requireArg(value: string | undefined, name: string, example: string): string {
   if (!value) throw new Error(`Missing <${name}>. Example: asc ${example}`);
   return value;
@@ -319,9 +399,13 @@ interface Invocation {
   readonly attach: string[];
   readonly threadIds: string[];
   readonly submissionIds: string[];
+  readonly groups: string[];
+  readonly keeps: string[];
+  readonly builds: string[];
   readonly raw: boolean;
   readonly json: boolean;
   readonly check: boolean;
+  readonly dryRun: boolean;
   readonly yes: boolean;
   readonly command: string | undefined;
   readonly rest: string[];
@@ -335,8 +419,11 @@ function parseArgs(argv: string[]): Invocation {
   const { values: bundleIds, rest: afterBundle } = takeOption(afterAccount, '--bundle-id');
   const { values: attach, rest: afterAttach } = takeOption(afterBundle, '--attach');
   const { values: threadIds, rest: afterThread } = takeOption(afterAttach, '--thread');
-  const { values: submissionIds, rest: positional } = takeOption(afterThread, '--submission');
-  const flags = new Set(['--raw', '--json', '--check', '--yes']);
+  const { values: submissionIds, rest: afterSubmission } = takeOption(afterThread, '--submission');
+  const { values: groups, rest: afterGroup } = takeOption(afterSubmission, '--group');
+  const { values: keeps, rest: afterKeep } = takeOption(afterGroup, '--keep');
+  const { values: builds, rest: positional } = takeOption(afterKeep, '--build');
+  const flags = new Set(['--raw', '--json', '--check', '--dry-run', '--yes']);
   const args = positional.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
 
@@ -346,9 +433,13 @@ function parseArgs(argv: string[]): Invocation {
     attach,
     threadIds,
     submissionIds,
+    groups,
+    keeps,
+    builds,
     raw: positional.includes('--raw'),
     json: positional.includes('--json'),
     check: positional.includes('--check'),
+    dryRun: positional.includes('--dry-run'),
     yes: positional.includes('--yes'),
     command,
     rest,
@@ -356,8 +447,10 @@ function parseArgs(argv: string[]): Invocation {
 }
 
 async function main(invocation: Invocation): Promise<number> {
-  const { account, bundleIds, attach, threadIds, submissionIds, raw, json, check, yes, command, rest } =
-    invocation;
+  const {
+    account, bundleIds, attach, threadIds, submissionIds, groups, keeps, builds,
+    raw, json, check, dryRun, yes, command, rest,
+  } = invocation;
 
   // Arguments are ids and file paths — the one secret, a piped-in capture, arrives on
   // stdin and never appears here. The account is a name from the config file, not a
@@ -401,27 +494,89 @@ async function main(invocation: Invocation): Promise<number> {
     }
 
     case 'availability': {
-      const [bundleId] = bundleIds;
-      const [givenAppId] = rest;
-      if (bundleIds.length > 1) {
-        throw new Error('availability takes one --bundle-id, not several.');
-      }
-      if (rest.length > 1) {
-        throw new Error('availability takes one app ID, or one --bundle-id, not extra arguments.');
-      }
-      if (bundleId && givenAppId) {
-        throw new Error('Choose an app ID or --bundle-id for availability, not both.');
-      }
-
       const client = officialClient(officialCredentialsFor(resolution));
-      let appId: string;
-      if (bundleId) appId = await findAppId(client, bundleId);
-      else if (givenAppId) appId = givenAppId;
-      else throw new Error('availability needs an app ID or --bundle-id <bundleId>.');
-
+      const appId = await officialAppId(client, 'availability', bundleIds, rest);
       const report = await fetchAvailability(client, appId);
       console.log(json ? JSON.stringify(report, null, 2) : formatAvailability(report));
       return check && !availabilityReady(report) ? 1 : 0;
+    }
+
+    /**
+     * The first write on the official transport, and the reversible kind: a build removed
+     * from a group is still in App Store Connect, and TestFlight can add it back. Nothing
+     * here expires or deletes a build.
+     *
+     * The plan is printed before the question, whole — every build kept and every build
+     * removed, with its id — because the ids in the `DELETE` are the plan's own. So what
+     * leaves the group is exactly what was on screen, whatever was uploaded meanwhile, and
+     * there is no second read between the answer and the write to re-check. The read that
+     * matters comes after: the group is listed again, and an id still there exits nonzero.
+     */
+    case 'prune-builds': {
+      const group = requireGroup(groups, 'prune-builds <appId> --group "Internal" --keep 3');
+      const keep = keepCount(keeps);
+      const client = officialClient(officialCredentialsFor(resolution));
+      const appId = await officialAppId(client, 'prune-builds', bundleIds, rest);
+      const plan = await fetchPrunePlan(client, { appId, group, keep });
+
+      // --check never writes, --dry-run never writes, and an empty plan has nothing to
+      // write; all three print the plan to stdout, where a script can read it.
+      if (dryRun || check || plan.remove.length === 0) {
+        console.log(json ? JSON.stringify(plan, null, 2) : formatPrunePlan(plan));
+        if (plan.remove.length === 0) console.error(`Nothing to remove from group "${plan.group.name}".`);
+        return check && !pruneReady(plan) ? 1 : 0;
+      }
+
+      await confirm({
+        question:
+          `Remove ${plan.remove.length} build${plan.remove.length === 1 ? '' : 's'} from group ` +
+          `"${plan.group.name}"? They stay in App Store Connect and can be added back.`,
+        detail: ['', ...formatPrunePlan(plan).split('\n'), ''],
+        yes,
+      });
+
+      const result = await pruneBuilds(client, plan);
+      console.log(json ? JSON.stringify(result, null, 2) : formatPruneResult(result));
+      console.error(
+        `Removed ${result.removed.length} from group "${plan.group.name}"; ${result.remaining.length} remain.`
+      );
+      return result.stillInGroup.length ? 1 : 0;
+    }
+
+    /**
+     * `prune-builds` the other way round, on the same documented route with `POST` for
+     * `DELETE`. Confirmed for a different reason: removing a build takes it away from
+     * testers, and adding one hands it to them — on an external group, to people outside
+     * the team, and possibly through Beta App Review first. That is outward-facing.
+     */
+    case 'add-builds': {
+      const example = 'add-builds <appId> --group "Beta" --build 45';
+      const group = requireGroup(groups, example);
+      if (builds.length === 0) {
+        throw new Error(`add-builds needs at least one --build <ref>. Example: asc ${example}`);
+      }
+      const client = officialClient(officialCredentialsFor(resolution));
+      const appId = await officialAppId(client, 'add-builds', bundleIds, rest);
+      const plan = await fetchAddPlan(client, { appId, group, builds });
+
+      if (dryRun || check || plan.add.length === 0) {
+        console.log(json ? JSON.stringify(plan, null, 2) : formatAddPlan(plan));
+        if (plan.add.length === 0) console.error(`Nothing to add to group "${plan.group.name}".`);
+        return check && !addReady(plan) ? 1 : 0;
+      }
+
+      await confirm({
+        question:
+          `Add ${plan.add.length} build${plan.add.length === 1 ? '' : 's'} to group "${plan.group.name}"? ` +
+          `${plan.group.isInternalGroup ? 'Its testers get them' : 'External testers get them, and Apple may review them first'}.`,
+        detail: ['', ...formatAddPlan(plan).split('\n'), ''],
+        yes,
+      });
+
+      const result = await addBuilds(client, plan);
+      console.log(json ? JSON.stringify(result, null, 2) : formatAddResult(result));
+      console.error(`Added ${result.added.length} to group "${plan.group.name}"; it now holds ${result.remaining.length}.`);
+      return result.notInGroup.length ? 1 : 0;
     }
 
     case 'report': {

@@ -14,6 +14,7 @@
     "verify:checks": "npm run typecheck && npm run build",
     "verify:tests": "npm test; s=$?; node scripts/junit-wrap.mjs out-tsc/junit.xml appstoreconnect-bot || exit 1; exit $s",
     "verify": "npm run verify:checks && npm run verify:tests",
+    "spec:fetch": "node scripts/fetch-openapi.mjs",
     "asc": "tsc && node dist/cli.js"
   },
   "engines": {

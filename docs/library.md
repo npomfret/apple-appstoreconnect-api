@@ -44,7 +44,9 @@ library caller that relied on the old behaviour should pass the path, or resolve
 
 `official.officialCredentials()` reads `ASC_ISSUER_ID`, `ASC_KEY_ID` and
 `ASC_PRIVATE_KEY_PATH`; `official.officialClient()` creates the host-confined bearer
-transport; `findAppId()`, `fetchAvailability()`, `formatAvailability()` and
+transport, with `get()` for documented reads and `write()` for documented mutations — the
+one place an official write leaves from, and where its `official.http.write` audit record is
+made whatever the log level; `findAppId()`, `fetchAvailability()`, `formatAvailability()` and
 `availabilityReady()` are the reusable storefront flow:
 
 ```ts
@@ -68,6 +70,36 @@ to both call and add.
 Availability also exports the pieces its report is built from: the `ContentStatus` union of
 Apple's 48 documented storefront statuses, the `TerritoryState` a row is reduced to, and
 `territoryState()`, which applies the worst-status-wins rule to any list of statuses.
+
+`official/testflight.ts` is the second wrapper and the first with a write, in both
+directions on one documented route. The plan is a read and the write takes the plan, so a
+caller can show one before sending it — which is all the CLI does:
+
+```ts
+import { official } from './src';
+
+const { fetchPrunePlan, pruneBuilds, fetchAddPlan, addBuilds } = official;
+
+const plan = await fetchPrunePlan(client, { appId, group: 'Internal', keep: 2 });
+if (plan.remove.length) {
+  const result = await pruneBuilds(client, plan);   // one DELETE, then the group read back
+  if (result.stillInGroup.length) process.exitCode = 1;
+}
+
+const adding = await fetchAddPlan(client, { appId, group: 'Beta', builds: ['312', '313'] });
+const added = await addBuilds(client, adding);       // one POST, then the group read back
+```
+
+`findBetaGroup()` resolves a group by exact name within an app; `findBuilds()` resolves
+build numbers or Apple build ids, each to exactly one build or an error naming the
+candidates; `fetchGroupBuilds()` is one page of a group's members, newest first by instant.
+`pruneReady()` and `addReady()` are the booleans behind `--check`, and `formatPrunePlan()`,
+`formatPruneResult()`, `formatAddPlan()` and `formatAddResult()` render what the CLI prints.
+A `GroupBuild` carries the id, `buildNumber` (Apple's `version`), the marketing `version` and
+`platform` where the sideload arrived, `uploadedDate` verbatim, `expired` and
+`processingState`. The results carry the read-back: `remaining` is what Apple lists after
+the write, `stillInGroup` and `notInGroup` are the ids the write did not account for, and an
+empty list is the only good answer. Neither write is sent for an empty plan.
 
 The private exports cover Resolution Center threads,
 messages, rejections, drafts and attachments; unread review-message counts; version
@@ -225,6 +257,7 @@ a product's. There is no counterpart that *sets* any of it: the writes were neve
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
 `sendDraftReply()` called from code go straight to Apple, and neither can be undone.
 `saveDraftReply()` asks nothing either, and replaces whatever text the draft box held.
+`pruneBuilds()` and `addBuilds()` send the plan they are given without asking.
 `confirm()` from `src/shared/confirm.ts` is there if you want the same guard — it asks on the
 terminal even when stdin is carrying something else, and refuses when there is no terminal
 to ask on. `findSendableDraft()` is the read half of `sendDraftReply()`, so you can show a

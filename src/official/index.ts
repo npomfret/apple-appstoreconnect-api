@@ -10,3 +10,4 @@
 
 export * from './availability';
 export * from './client';
+export * from './testflight';

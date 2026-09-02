@@ -17,7 +17,8 @@ paths:
 - Do not change an endpoint, include list, filter, fieldset, headers, content type, or
   JSON:API envelope without a browser capture or explicitly approved probe. Record the
   evidence level in `docs/evidence.md` and in nearby code comments.
-- All normal mutations go through `request()` so `http.write` auditing stays complete.
+- All private mutations go through `request()` so `http.write` auditing stays complete, and
+  all official mutations through `OfficialClient.write()` for `official.http.write`.
   Presigned upload parts may use `uploadPart()` only; never send cookies to storage hosts.
 - Emit audit `start` before a mutation and preserve audit `ok`/`error` outcomes. Scrub
   cookies, CSRF values, signed query strings, credentials, and response secrets from logs.

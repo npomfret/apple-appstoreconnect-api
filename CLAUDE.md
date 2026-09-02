@@ -73,8 +73,9 @@ caller to.
   bearer token, presigned upload URL, or anyone's personal details out of one, and never
   modify a capture. Read one through an extractor that emits methods, paths, query keys,
   status codes and response *key structure*, not raw entries.
-- Keep all mutating HTTP calls routed through `request()` and preserve semantic plus
-  transport audit records. Never weaken a confirmation or make `--yes` the default.
+- Keep all mutating HTTP calls routed through `request()` on the private side and
+  `OfficialClient.write()` on the official side, and preserve semantic plus transport audit
+  records. Never weaken a confirmation or make `--yes` the default.
 - Preserve stdout as data and stderr for logs/prompts. Logs are structured events with
   fields, and must not contain credentials or signed query strings.
 - Prefer precise TypeScript types and fail-fast errors. Do not use `any`, silent catches,
@@ -88,6 +89,8 @@ caller to.
 - Test: `npm test`
 - Build: `npm run build`
 - Live CLI: `npm run asc -- <command>` (requires the credentials documented for that command)
+- Apple's current OpenAPI specification and documentation index, for the "does Apple serve
+  this officially?" check: `npm run spec:fetch` → `tmp/openapi/openapi.json` and `index.json`
 
 `npm test` runs `test/` on `node:test` — no dependency, and no network: `fetch` is replaced
 and every fixture is invented. It covers the pure boundaries only — the transport's rules

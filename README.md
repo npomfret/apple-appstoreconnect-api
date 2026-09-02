@@ -2,13 +2,15 @@
 
 A reusable client for App Store Connect across many apps. It uses Apple's official API for
 documented capabilities and the private browser API only for gaps Apple does not expose.
-The first official capability is storefront availability; the private side covers Resolution
-Center conversations and replies, App Privacy, state-change history and Xcode Cloud gaps.
+The official side covers storefront availability and a TestFlight group's builds; the
+private side covers Resolution Center conversations and replies, App Privacy, state-change
+history and Xcode Cloud gaps.
 
 Official requests and private requests have separate transports and credentials. The
-official transport is GET-only today and sends a JWT only to
-`api.appstoreconnect.apple.com`. The private transport sends a browser cookie only to
-`appstoreconnect.apple.com`, and its raw `asc get` remains confined to gap families.
+official transport sends a JWT only to `api.appstoreconnect.apple.com`; its two writes, both
+to a TestFlight group's build list, are audited and confirmed the way the private ones are.
+The private transport sends a browser cookie only to `appstoreconnect.apple.com`, and its
+raw `asc get` remains confined to gap families.
 
 That separation is the shape of the source, not a convention: `src/official/` holds the
 documented API and the wrappers over it, `src/gap/` holds only what Apple serves nowhere
@@ -97,12 +99,15 @@ account, until it expires.
 
 ## What it can do
 
-**Official API reads** — [docs/reading.md](docs/reading.md)
+**Official API** — reads in [docs/reading.md](docs/reading.md), writes in
+[docs/writing.md](docs/writing.md). Every command takes an app id, or `--bundle-id` to
+resolve one.
 
 | | |
 | --- | --- |
 | `availability <appId>` | Every storefront as available, pending, leaving, blocked or unknown, grouped under Apple's exact status strings. `--check` exits nonzero unless all are on sale |
-| `availability --bundle-id <id>` | The same report, resolving the app by bundle ID first |
+| `prune-builds <appId> --group <name> [--keep <n>]` | Remove every build but the newest *n* (default 1) from a TestFlight group. The builds stay in App Store Connect and can be added back; nothing is expired. Prints the plan and asks; `--dry-run` prints it and stops, `--check` exits nonzero while there is anything to remove |
+| `add-builds <appId> --group <name> --build <ref> …` | Add builds to a TestFlight group, named by the build number TestFlight shows in brackets or by Apple's build id. Prints the plan and asks; `--dry-run` and `--check` as above |
 
 **Private API gaps**
 
@@ -133,10 +138,13 @@ was probed rather than recorded, which [docs/evidence.md](docs/evidence.md) says
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
 | `send-reply` | send it — [docs/replying.md](docs/replying.md) |
 
-**There is no unconfirmed write.** Each of these takes something no second run puts back, so
-each prints what it is about to do and asks first — `send-reply` re-reads the draft after you
-answer, in case the browser autosaved over it. `--yes` answers for you and still prints what
-it answered for. There is no way to send a hand-written body at a path of your own.
+**There is no unconfirmed write**, on either side. Each of these takes something no second
+run puts back, so each prints what it is about to do and asks first — `send-reply` re-reads
+the draft after you answer, in case the browser autosaved over it. The two official writes,
+`prune-builds` and `add-builds`, are reversible and still ask, with every build on both sides
+of the plan printed first, and each reads the group back afterwards and exits nonzero if
+Apple's answer disagrees with the write. `--yes` answers for you and still prints what it
+answered for. There is no way to send a hand-written body at a path of your own.
 [docs/writing.md](docs/writing.md) has the rest.
 
 The lower-level commands print denormalized JSON, or the untouched JSON:API document with
@@ -163,9 +171,10 @@ npm test
 `node:test`, no dependencies and no network — `fetch` is replaced and every fixture is
 invented, so the suite never needs a session and can't touch your account. It covers what can
 be checked locally: where a request may go, what counts as a write, redaction, JSON:API
-expansion, capture parsing, storefront classification, and that neither credential's modules
-can reach the other's. Nothing in it says Apple will
-behave as expected — that's what [docs/evidence.md](docs/evidence.md) is for.
+expansion, capture parsing, storefront classification, which builds a TestFlight plan keeps
+and the body it sends, and that neither credential's modules can reach the other's. Nothing
+in it says Apple will behave as expected — that's what [docs/evidence.md](docs/evidence.md)
+is for.
 
 ## The short version of the caveats
 
@@ -186,7 +195,9 @@ this client uses.
   resource and operation, and the authority the boundary in this repository is checked against.
 - [OpenAPI specification](https://developer.apple.com/sample-code/app-store-connect/app-store-connect-openapi-specification.zip)
   — the machine-readable version. Last audited here: **4.4.1**, generated 2026-07-15
-  (966 paths, 1,393 schemas).
+  (966 paths, 1,393 schemas). `npm run spec:fetch` downloads it and the documentation
+  index into the gitignored `tmp/openapi/`, so "does Apple serve this?" can be answered
+  with `jq` before anything is built.
 - [Creating API keys](https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api)
   and [generating tokens](https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests)
   — how to authenticate against it.

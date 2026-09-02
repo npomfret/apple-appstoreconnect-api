@@ -31,12 +31,17 @@ node dist/cli.js save-draft <threadId> "..." --attach shot.png 2>&1 >/dev/null |
 ```
 
 Records nest: the semantic action (`draft.attach`, `message.send`,
-`draft.attachment.delete`) brackets the transport-level `http.write` entries. The transport one
-is what makes coverage complete — every mutation in the client funnels through the single
-`request` in `src/gap/http.ts`, so nothing can write without being recorded. The semantic ones
-add the intent. What counts as a mutation is worked out once there, from the method with its
-case normalised, and the same answer decides both the headers and the record: a `patch` that
-arrived in lower case is a write, not a read that quietly slipped past the trail.
+`draft.attachment.delete`, `testflight.prune`, `testflight.add`) brackets the transport-level
+entries — `http.write` on the private transport, `official.http.write` on the official one.
+The transport ones are what make coverage complete: every private mutation funnels through
+the single `request` in `src/gap/http.ts`, and every official one through `write()` on the
+client in `src/official/client.ts`, so nothing can write without being recorded. The two
+transports cannot share the record for the reason they cannot share the request — they hold
+different credentials — so there are two events, distinguished by name. The semantic ones
+add the intent. What counts as a mutation is worked out once, from the method: on the private
+side from the string with its case normalised, so a `patch` that arrived in lower case is a
+write, not a read that quietly slipped past the trail; on the official side the write method
+is a separate call with a separate type, so a read cannot be sent through it at all.
 
 **A field cannot rewrite what the record says it is.** `ts`, `level`, `event`, `audit` and
 `phase` are the client's own statement about what it did, and a field passed by a caller
