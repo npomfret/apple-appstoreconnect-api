@@ -44,8 +44,9 @@ remove from group (2):
   2026-08-29T22:10:03-07:00  1.3.9 (310)  IOS, valid, expired  4d27…
 ```
 
-The group is named, not numbered, and the name is matched exactly within the app: "Beta"
-does not resolve to "Beta (old)", and none or several is an error. Newest is by the instant
+The group is given by its name or its id, told apart by uuid shape, and either is matched
+exactly within the app: "Beta" does not resolve to "Beta (old)", an id from another app's
+group is no group at all, and none or several is an error. Newest is by the instant
 Apple stamped, not the text, since Apple stamps with an offset. Builds already expired are
 still members of the group and are pruned like any other; keeping one would keep nothing
 testers can install. A group Apple marks as receiving every build automatically

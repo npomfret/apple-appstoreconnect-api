@@ -107,6 +107,24 @@ describe('group lookup', () => {
     );
   });
 
+  test('a uuid is looked up as an id, still within the app', async () => {
+    const id = 'e4840ac3-284b-4b6c-a41f-b400d6d0fac1';
+    const { client, calls } = clientFor([groupsReply(group(id, 'Internal'))]);
+    const found = await findBetaGroup(client, 'app-invented', id.toUpperCase());
+    assert.equal(found.name, 'Internal');
+    assert.equal(calls[0].query?.['filter[app]'], 'app-invented');
+    assert.equal(calls[0].query?.['filter[id]'], id.toUpperCase());
+    assert.equal(calls[0].query?.['filter[name]'], undefined);
+  });
+
+  test('an id Apple did not return for this app is no group, not another app\'s', async () => {
+    const { client } = clientFor([groupsReply()]);
+    await assert.rejects(
+      () => findBetaGroup(client, 'app-invented', 'e4840ac3-284b-4b6c-a41f-b400d6d0fac1'),
+      /No TestFlight group on app app-invented has id e4840ac3/
+    );
+  });
+
   test('refuses to choose between two groups of one name', async () => {
     const { client } = clientFor([groupsReply(group('group-a', 'Internal'), group('group-b', 'Internal'))]);
     await assert.rejects(() => findBetaGroup(client, 'app-invented', 'Internal'), /More than one/);

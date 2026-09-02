@@ -90,7 +90,7 @@ const adding = await fetchAddPlan(client, { appId, group: 'Beta', builds: ['312'
 const added = await addBuilds(client, adding);       // one POST, then the group read back
 ```
 
-`findBetaGroup()` resolves a group by exact name within an app; `findBuilds()` resolves
+`findBetaGroup()` resolves a group by exact name or by id within an app; `findBuilds()` resolves
 build numbers or Apple build ids, each to exactly one build or an error naming the
 candidates; `fetchGroupBuilds()` is one page of a group's members, newest first by instant.
 `pruneReady()` and `addReady()` are the booleans behind `--check`, and `formatPrunePlan()`,

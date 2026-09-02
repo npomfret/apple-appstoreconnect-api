@@ -63,41 +63,52 @@ function groupRow(value: unknown, index: number): BetaGroupRef {
   };
 }
 
+/** The shape of an Apple id for a build or a group, as opposed to a name a person would type. */
+const APPLE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * Resolve one group by name, within one app.
+ * Resolve one group by name or by id, within one app.
  *
- * The rows that come back are compared against the name exactly, whatever `filter[name]`
- * matched on: the specification says the filter exists and not how it compares, and a
- * group called "Beta" must not resolve to "Beta (old)". None or several is an error rather
- * than a choice — the name is the whole of what says which group's builds change.
+ * A uuid is an id and anything else is a name, since a group name is any string a person
+ * chooses and nobody chooses a uuid. The rows that come back are compared against the
+ * reference exactly, whatever `filter[name]` matched on: the specification says the filter
+ * exists and not how it compares, and a group called "Beta" must not resolve to
+ * "Beta (old)". None or several is an error rather than a choice — the reference is the
+ * whole of what says which group's builds change. `filter[app]` goes on both lookups, so
+ * an id from another app's group is "no such group" rather than that group.
  */
 export async function findBetaGroup(
   client: OfficialClient,
   appId: string,
-  name: string
+  reference: string
 ): Promise<BetaGroupRef> {
   if (!appId.trim()) throw new Error('A non-empty app ID is required.');
-  if (!name.trim()) throw new Error('A non-empty group name is required.');
+  const wanted = reference.trim();
+  if (!wanted) throw new Error('A non-empty group name or group id is required.');
+  const byId = APPLE_ID.test(wanted);
 
   const document = await client.get('/v1/betaGroups', {
     'filter[app]': appId.trim(),
-    'filter[name]': name.trim(),
+    ...(byId ? { 'filter[id]': wanted } : { 'filter[name]': wanted }),
     'fields[betaGroups]': ['name', 'isInternalGroup', 'hasAccessToAllBuilds'],
     limit: PAGE,
   });
   const groups = asRows(document, 'beta groups response').map(groupRow);
-  const matching = groups.filter((group) => group.name === name.trim());
+  const matching = groups.filter((group) =>
+    byId ? group.id.toLowerCase() === wanted.toLowerCase() : group.name === wanted
+  );
+  const described = byId ? `has id ${wanted}` : `is named "${wanted}"`;
 
   if (matching.length === 0) {
     throw new Error(
-      `No TestFlight group on app ${appId.trim()} is named "${name.trim()}"` +
+      `No TestFlight group on app ${appId.trim()} ${described}` +
         (groups.length ? `; Apple offered ${groups.map((group) => `"${group.name}"`).join(', ')}.` : '.')
     );
   }
   if (matching.length > 1) {
     throw new Error(
-      `More than one TestFlight group on app ${appId.trim()} is named "${name.trim()}" ` +
-        `(${matching.map((group) => group.id).join(', ')}); rename one first.`
+      `More than one TestFlight group on app ${appId.trim()} ${described} ` +
+        `(${matching.map((group) => group.id).join(', ')}); name the one you mean by id.`
     );
   }
   return matching[0]!;
@@ -185,9 +196,6 @@ export function fetchGroupBuilds(
   return fetchBuilds(client, { 'filter[betaGroups]': groupId });
 }
 
-/** The shape of an Apple build id, as opposed to a build number a person would type. */
-const BUILD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Resolve builds named the way a person names them.
  *
@@ -209,8 +217,8 @@ export async function findBuilds(
     throw new Error('At least one non-empty build number or build id is required.');
   }
 
-  const ids = wanted.filter((reference) => BUILD_ID.test(reference));
-  const numbers = wanted.filter((reference) => !BUILD_ID.test(reference));
+  const ids = wanted.filter((reference) => APPLE_ID.test(reference));
+  const numbers = wanted.filter((reference) => !APPLE_ID.test(reference));
   const found: GroupBuild[] = [];
   if (ids.length) {
     found.push(...(await fetchBuilds(client, { 'filter[app]': appId.trim(), 'filter[id]': ids })).builds);
@@ -220,7 +228,7 @@ export async function findBuilds(
   }
 
   return wanted.map((reference) => {
-    const matches = BUILD_ID.test(reference)
+    const matches = APPLE_ID.test(reference)
       ? found.filter((build) => build.id.toLowerCase() === reference.toLowerCase())
       : found.filter((build) => build.buildNumber === reference);
     if (matches.length === 0) {
@@ -237,7 +245,7 @@ export async function findBuilds(
 }
 
 function describeReference(reference: string): string {
-  return BUILD_ID.test(reference) ? `build id ${reference}` : `build number ${reference}`;
+  return APPLE_ID.test(reference) ? `build id ${reference}` : `build number ${reference}`;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -245,7 +253,7 @@ function describeReference(reference: string): string {
 
 export interface PruneOptions {
   readonly appId: string;
-  /** The group's name, as shown in TestFlight. Matched exactly, within the app. */
+  /** The group's name as shown in TestFlight, or its id. Matched exactly, within the app. */
   readonly group: string;
   /** How many of the newest builds stay. Defaults to one at the CLI. */
   readonly keep: number;
@@ -351,7 +359,7 @@ export async function pruneBuilds(client: OfficialClient, plan: PrunePlan): Prom
 
 export interface AddOptions {
   readonly appId: string;
-  /** The group's name, as shown in TestFlight. Matched exactly, within the app. */
+  /** The group's name as shown in TestFlight, or its id. Matched exactly, within the app. */
   readonly group: string;
   /** Build numbers or Apple build ids, in any mix. */
   readonly builds: readonly string[];

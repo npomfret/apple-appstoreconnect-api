@@ -69,8 +69,9 @@ Apple's OpenAPI specification **4.4.1** defines every call `asc prune-builds` an
 `asc add-builds` make, checked on **2026-09-02** against a copy fetched that day with
 `npm run spec:fetch`:
 
-- `GET /v1/betaGroups` with `filter[app]`, `filter[name]`, `fields[betaGroups]` naming
-  `name`, `isInternalGroup` and `hasAccessToAllBuilds`, and `limit` up to 200;
+- `GET /v1/betaGroups` with `filter[app]` and either `filter[name]` or `filter[id]`,
+  `fields[betaGroups]` naming `name`, `isInternalGroup` and `hasAccessToAllBuilds`, and
+  `limit` up to 200;
 - `GET /v1/builds` with `filter[betaGroups]` (the group's members), `filter[app]` with
   `filter[id]` or `filter[version]` (a build named by id or by build number), the documented
   `-uploadedDate` sort, `include=preReleaseVersion`, `fields[builds]` naming `version`,

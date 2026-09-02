@@ -50,7 +50,7 @@ Official API (uses ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY_PATH, or an acc
                               Add --json for every territory row; --check exits nonzero
                               while any selected storefront is blocked or pending
 
-  asc prune-builds <appId> --group <name> [--keep <n>]
+  asc prune-builds <appId> --group <name|id> [--keep <n>]
                               Remove every build but the newest <n> (default 1) from the
                               named TestFlight group. The builds stay in App Store Connect
                               and can be added back; nothing is expired or deleted. Shows
@@ -58,7 +58,7 @@ Official API (uses ASC_ISSUER_ID, ASC_KEY_ID and ASC_PRIVATE_KEY_PATH, or an acc
                               --check does the same and exits nonzero while there is
                               anything to remove; --bundle-id works as for availability
 
-  asc add-builds <appId> --group <name> --build <ref> [--build <ref> ...]
+  asc add-builds <appId> --group <name|id> --build <ref> [--build <ref> ...]
                               Add builds to the named TestFlight group. A <ref> is the
                               build number TestFlight shows in brackets, or an Apple build
                               id; a number matching two builds is refused with both ids.
@@ -144,8 +144,8 @@ Options:
                               without changing it
   --bundle-id <id>            For the official commands: find the app through the
                               official API
-  --group <name>              For "prune-builds" and "add-builds": the TestFlight group,
-                              by its exact name
+  --group <name|id>           For "prune-builds" and "add-builds": the TestFlight group,
+                              by its exact name or its id
   --keep <n>                  For "prune-builds": how many of the newest builds stay (1)
   --build <ref>               For "add-builds": a build number or build id. Repeatable
   --dry-run                   For "prune-builds" and "add-builds": print the plan and
@@ -324,7 +324,7 @@ async function officialAppId(
 /** Exactly one `--group`: the name is the whole of what says which group's builds change. */
 function requireGroup(groups: string[], example: string): string {
   if (groups.length !== 1) {
-    throw new Error(`${example.split(' ')[0]} takes exactly one --group <name>. Example: asc ${example}`);
+    throw new Error(`${example.split(' ')[0]} takes exactly one --group <name|id>. Example: asc ${example}`);
   }
   return groups[0]!;
 }
