@@ -29,5 +29,10 @@
       "Read(.env.*)",
       "Edit(dist/**)"
     ]
+  },
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
   }
 }
