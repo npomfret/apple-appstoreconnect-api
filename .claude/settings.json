@@ -25,5 +25,8 @@
     "commit": "",
     "pr": "",
     "sessionUrl": false
+  },
+  "enabledPlugins": {
+    "teamcity@npomfret": true
   }
 }

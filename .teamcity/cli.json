@@ -1,0 +1,13 @@
+{
+  "project": "AppStoreConnectBot",
+  "composite": "Verify",
+  "buildTypes": [
+    "Checks",
+    "Tests",
+    "Verify"
+  ],
+  "testLegs": [
+    "Tests"
+  ],
+  "logDir": "tmp/teamcity"
+}
