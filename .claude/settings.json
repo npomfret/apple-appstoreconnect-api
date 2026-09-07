@@ -3,10 +3,9 @@
   "permissions": {
     "defaultMode": "acceptEdits",
     "allow": [
-      "Bash(git *)",
-      "Bash(npm run *)",
-      "Bash(python3 scripts/teamcity.py *)",
-      "Bash(./scripts/teamcity.py *)"
+      "Bash(*)",
+      "WebSearch",
+      "WebFetch"
     ],
     "deny": [
       "Bash(git push *)",
@@ -29,6 +28,7 @@
     "sessionUrl": false
   },
   "enabledPlugins": {
-    "teamcity@npomfret": true
+    "teamcity@npomfret": true,
+    "task-files@npomfret": true
   }
 }
