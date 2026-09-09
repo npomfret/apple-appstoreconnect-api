@@ -29,7 +29,8 @@
     "network": {
       "allowedDomains": [
         "*"
-      ]
+      ],
+      "allowLocalBinding": true
     },
     "filesystem": {
       "allowWrite": [
