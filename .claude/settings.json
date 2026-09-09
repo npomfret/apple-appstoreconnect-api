@@ -18,8 +18,7 @@
       "Read(tmp/curl.txt)",
       "Edit(tmp/curl.txt)",
       "Read(.env)",
-      "Read(.env.*)",
-      "Edit(dist/**)"
+      "Read(.env.*)"
     ]
   },
   "sandbox": {
