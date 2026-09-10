@@ -14,3 +14,4 @@ session.json
 *.session.json
 /dist
 .DS_Store
+.gitnexus/
