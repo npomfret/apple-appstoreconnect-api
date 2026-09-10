@@ -2,12 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "defaultMode": "acceptEdits",
-    "allow": [
-      "Bash(*)",
-      "WebSearch",
-      "WebFetch",
-      "mcp__gitnexus"
-    ],
+    "allow": ["Bash(*)", "WebSearch", "WebFetch", "mcp__gitnexus"],
     "deny": [
       "Bash(git push *)",
       "Bash(* --yes *)",
@@ -39,9 +34,7 @@
       "python3 scripts/teamcity.py *"
     ],
     "network": {
-      "allowedDomains": [
-        "*"
-      ],
+      "allowedDomains": ["*"],
       "allowLocalBinding": true,
       "allowAllUnixSockets": true
     },
@@ -65,7 +58,5 @@
     "teamcity@npomfret": true,
     "task-files@npomfret": true
   },
-  "enabledMcpjsonServers": [
-    "gitnexus"
-  ]
+  "enabledMcpjsonServers": ["gitnexus"]
 }
