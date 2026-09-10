@@ -110,7 +110,6 @@ should not have.** Read a failure that way before reaching for the test.
 - General TypeScript and module-boundary conventions: `.claude/skills/typescript-conventions/`
 - Any feature or bug fix: `.claude/skills/feature-workflow/`
 - Apple API, writes, uploads, sessions, logging, or evidence: `.claude/skills/apple-api-safety/`
-- Claude configuration work: `.claude/skills/claude-config-maintenance/`
 - Detailed architecture and invariants: `.claude/references/architecture.md`
 
 ## Sensitive paths
