@@ -15,3 +15,4 @@ session.json
 /dist
 .DS_Store
 .gitnexus/
+.codex/config.toml
