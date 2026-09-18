@@ -7,15 +7,14 @@ pure data and `asc report --json | jq` is unaffected.
 ASC_LOG=debug|info|warn|error|off   # default info
 ```
 
-No interpolated sentences — the first argument is a stable event slug and everything else
-is a field, so you can filter on `.event` without matching on prose that might get
-reworded later:
+The shape is the `auditing` standard's — a stable event slug first, everything else a
+field. Here that slug is `.event`, which is what the sieves below select on:
 
 ```ts
 log.info('draft.attachment.reserved', { attachmentId, parts: operations.length });
 ```
 
-**Every change to live data is audited**, and audit records are emitted whatever the level
+**Every change to live data is audited**, and audit records are emitted whatever `ASC_LOG`
 is set to — an audit trail you can turn down isn't one. They carry `"audit":true` and a
 `phase` of `start`, `ok` or `error`:
 
@@ -51,9 +50,9 @@ on it, so a payload carrying `{"audit": false}` took a write out of the trail wh
 write still went ahead. `Fields` is exported, so what reaches a record is not only what
 this repo logs.
 
-`start` is written *before* the request leaves, on purpose: if a run dies mid-write, or the
-connection fails so you can't tell whether the change landed, the ambiguity is the thing
-you most want a log of.
+`start` is written *before* the request leaves, for the reason the standard gives: if a run
+dies mid-write, or the connection fails so you can't tell whether the change landed, the
+ambiguity is the thing you most want a log of.
 
 ## Reads that may have come back short
 
