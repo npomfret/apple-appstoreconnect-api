@@ -1098,7 +1098,7 @@ envelope, each wanting its own page rule and its own error dialect. The session 
 obstacle: every request on all three prefixes carries `Cookie`, `X-CSRF-ITC`,
 `X-Connect-Team-ID` and `X-Connect-Team-Type` — the set `gap/http.ts` already sends — and the
 writes add `Origin`, exactly as iris's do. Mapping any of this is the owner decision
-`CLAUDE.md` reserves for a new base, not an implementation detail.
+`AGENTS.md` reserves for a new base, not an implementation detail.
 
 ### What the sixteen reads offer
 
