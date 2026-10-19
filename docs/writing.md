@@ -3,8 +3,9 @@
 Two kinds of write, on two credentials. On the official API, with an API key: a TestFlight
 group's build list, in both directions — below. On the private API, with the browser cookie:
 the Resolution Center — the draft reply to App Review, its attachments, and sending it —
-documented in [replying](replying.md). Apple has no official Resolution Center API — checked
-against OpenAPI 4.4.1 on 2026-08-21, see [evidence and limits](evidence.md) — which is why
+documented in [replying](replying.md) — and creating an app, below. Apple has no official
+Resolution Center API — checked against OpenAPI 4.4.1 on 2026-08-21 — and no official way to
+create an app — checked against 4.5.1 on 2026-10-19; see [evidence and limits](evidence.md) — which is why
 those are on the cookie rather than at Apple's own
 [API reference](https://developer.apple.com/documentation/appstoreconnectapi/), where every
 other write to your App Store data belongs, and where the two below are.
@@ -107,10 +108,40 @@ official API, which asks for a key rather than a scraped cookie. The read side h
 escape hatch, restricted to the private families — see
 [anything not mapped](reading.md#anything-not-mapped).
 
+## Private API: creating an app
+
+```sh
+asc create-app --name "My App" --bundle-id com.example.app --sku MYAPP1 --locale en-GB --app-version 1.0
+```
+
+The **New App** form. Apple's official API reads apps and cannot create one — `/v1/apps` is
+GET-only in specification 4.5.1, checked 2026-10-19 — so this is on the cookie. Every field
+is required and none is defaulted: the App Store name, an explicit bundle ID **already
+registered** to the team (register one at `/v1/bundleIds` on the official API, or in the
+developer portal), the SKU, the primary language, and the first version. The language is
+used for the primary locale and for both localizations created with the app, as in the one
+recording — where all three were the same; nothing recorded shows the form sending them
+apart.
+
+**This client has never sent it.** The request matches the recording, but no app has been
+created with it yet, so the first live run is the test.
+
+It creates **iOS** apps only, because that is the only platform recorded. One request
+creates the app, its first App Store version, that version's localization, the app info and
+its localization — see [evidence](evidence.md#creating-an-app). A name another account
+already holds is answered `409 ENTITY_ERROR.ATTRIBUTE.INVALID.DUPLICATE.DIFFERENT_ACCOUNT`
+and nothing is created.
+
+Nothing in this client removes an app, so every field is printed before the question.
+Users with access to only some apps don't get the new one: the browser follows the create
+with a private grant that this does not send — `visibleApps` on `/v1/users` is the official
+way to give it to them.
+
 ## Confirmations
 
-Every write here prints what it is about to act on and asks. One of them reaches Apple in a
-way this client cannot walk back — `send-reply`. The private others destroy or write over
+Every write here prints what it is about to act on and asks. Two of them reach Apple in a
+way this client cannot walk back — `send-reply`, and `create-app`, which adds a record
+nothing here removes. The private others destroy or write over
 data instead of publishing it, which is the same question in a smaller way: nothing keeps a
 copy of what they take. The two official ones are reversible and ask anyway: one takes a
 build away from testers and the other hands one to them, and both print every build on
@@ -153,7 +184,7 @@ script notices.
 The guard is in the CLI, not the library: `sendDraftMessage()`, `sendDraftReply()` and
 `saveDraftReply()` called from code go straight through, the last of them writing over
 whatever the box held, and so do `pruneBuilds()` and `addBuilds()` with the plan they are
-handed. What is *not* only in the CLI is the check that a
+handed, and `createApp()`. What is *not* only in the CLI is the check that a
 draft is worth sending — an absent or empty one is refused in `findSendableDraft()`, which
 both routes go through.
 

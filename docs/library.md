@@ -104,7 +104,8 @@ empty list is the only good answer. Neither write is sent for an empty plan.
 
 The private exports cover Resolution Center threads,
 messages, rejections, drafts and attachments; unread review-message counts; version
-state-change history; App Privacy; and five Xcode Cloud reads — `post_actions`, compute
+state-change history; App Privacy; creating an iOS app, `createApp(session, app)`, which
+the official API has no `POST` for; and five Xcode Cloud reads — `post_actions`, compute
 usage, the team's Developer Program standing, what the session is permitted to do, and what
 builds against Apple's pre-release macOS and Xcode.
 Other documented capabilities remain available through Apple's
@@ -258,7 +259,8 @@ a product's. There is no counterpart that *sets* any of it: the writes were neve
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
 `sendDraftReply()` called from code go straight to Apple, and neither can be undone.
 `saveDraftReply()` asks nothing either, and replaces whatever text the draft box held.
-`pruneBuilds()` and `addBuilds()` send the plan they are given without asking.
+`pruneBuilds()` and `addBuilds()` send the plan they are given without asking, and
+`createApp()` creates the app it is given — a record nothing here removes.
 `confirm()` from `src/shared/confirm.ts` is there if you want the same guard — it asks on the
 terminal even when stdin is carrying something else, and refuses when there is no terminal
 to ask on. `findSendableDraft()` is the read half of `sendDraftReply()`, so you can show a

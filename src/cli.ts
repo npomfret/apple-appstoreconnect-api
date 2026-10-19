@@ -116,6 +116,12 @@ Private API gaps (uses the browser capture described below, or an account's):
                               served path is refused rather than duplicated
 
 Writes (these change your live App Store Connect data):
+  asc create-app --name <name> --bundle-id <id> --sku <sku> --locale <locale>
+                 --app-version <version>
+                              Create an iOS app record: the New App form, which Apple's
+                              official API cannot do. The bundle ID must already be
+                              registered. Prints every field and asks first; nothing here
+                              removes an app afterwards
   asc save-draft <threadId> <text|-> [--attach file ...]
                               Write the reply to Apple into the thread's draft box, with
                               attachments. "-" reads the text from stdin. This does NOT
@@ -139,7 +145,8 @@ Options:
                               cannot currently distribute. For "prune-builds" and
                               "add-builds": exit nonzero if there is anything to change,
                               without changing it
-  --bundle-id <id>            For the official commands: find the app by bundle ID
+  --bundle-id <id>            For the official commands: find the app by bundle ID. For
+                              "create-app": the new app's bundle ID
   --app <name>                For the official commands: find the app by its exact name
   --group <name|id>           For "prune-builds" and "add-builds": the TestFlight group,
                               by its exact name or its id
@@ -150,6 +157,9 @@ Options:
                               change nothing
   --yes                       Skip the confirmation prompt on the commands that ask
   --attach <file>             For "save-draft": a file to attach. Repeat for several
+  --name, --sku, --locale, --app-version
+                              For "create-app": the App Store name, the SKU, the primary
+                              language (en-GB) and the first version (1.0)
 
 Logging goes to stderr as one JSON object per line, so stdout stays pipeable:
   ASC_LOG=debug|info|warn|error|off   default info
@@ -327,12 +337,17 @@ async function officialAppId(
   return given[0]!();
 }
 
-/** Exactly one `--group`: the name is the whole of what says which group's builds change. */
-function requireGroup(groups: string[], example: string): string {
-  if (groups.length !== 1) {
-    throw new Error(`${example.split(' ')[0]} takes exactly one --group <name|id>. Example: asc ${example}`);
+/**
+ * Exactly one of an option a write cannot go without: `--group` says which group's builds
+ * change, and each of `create-app`'s says what the new record is. Two is refused rather than
+ * the last one winning.
+ */
+function requireOne(values: string[], option: string, example: string): string {
+  const [value] = values;
+  if (values.length !== 1 || value === undefined) {
+    throw new Error(`${example.split(' ')[0]} takes exactly one ${option}. Example: asc ${example}`);
   }
-  return groups[0]!;
+  return value;
 }
 
 /** `--keep` as a count: a whole number of builds, zero included, and a typo reported as one. */
@@ -409,6 +424,10 @@ interface Invocation {
   readonly groups: string[];
   readonly keeps: string[];
   readonly builds: string[];
+  readonly names: string[];
+  readonly skus: string[];
+  readonly locales: string[];
+  readonly appVersions: string[];
   readonly raw: boolean;
   readonly json: boolean;
   readonly check: boolean;
@@ -430,7 +449,11 @@ function parseArgs(argv: string[]): Invocation {
   const { values: submissionIds, rest: afterSubmission } = takeOption(afterThread, '--submission');
   const { values: groups, rest: afterGroup } = takeOption(afterSubmission, '--group');
   const { values: keeps, rest: afterKeep } = takeOption(afterGroup, '--keep');
-  const { values: builds, rest: positional } = takeOption(afterKeep, '--build');
+  const { values: builds, rest: afterBuild } = takeOption(afterKeep, '--build');
+  const { values: names, rest: afterName } = takeOption(afterBuild, '--name');
+  const { values: skus, rest: afterSku } = takeOption(afterName, '--sku');
+  const { values: locales, rest: afterLocale } = takeOption(afterSku, '--locale');
+  const { values: appVersions, rest: positional } = takeOption(afterLocale, '--app-version');
   const flags = new Set(['--raw', '--json', '--check', '--dry-run', '--yes']);
   const args = positional.filter((arg) => !flags.has(arg));
   const [command, ...rest] = args;
@@ -445,6 +468,10 @@ function parseArgs(argv: string[]): Invocation {
     groups,
     keeps,
     builds,
+    names,
+    skus,
+    locales,
+    appVersions,
     raw: positional.includes('--raw'),
     json: positional.includes('--json'),
     check: positional.includes('--check'),
@@ -458,7 +485,7 @@ function parseArgs(argv: string[]): Invocation {
 async function main(invocation: Invocation): Promise<number> {
   const {
     account, bundleIds, appNames, attach, threadIds, submissionIds, groups, keeps, builds,
-    raw, json, check, dryRun, yes, command, rest,
+    names, skus, locales, appVersions, raw, json, check, dryRun, yes, command, rest,
   } = invocation;
 
   // Arguments are ids and file paths — the one secret, a piped-in capture, arrives on
@@ -522,7 +549,7 @@ async function main(invocation: Invocation): Promise<number> {
      * matters comes after: the group is listed again, and an id still there exits nonzero.
      */
     case 'prune-builds': {
-      const group = requireGroup(groups, 'prune-builds --app "My App" --group "Internal" --keep 3');
+      const group = requireOne(groups, '--group <name|id>', 'prune-builds --app "My App" --group "Internal" --keep 3');
       const keep = keepCount(keeps);
       const client = officialClient(officialCredentialsFor(resolution));
       const appId = await officialAppId(client, 'prune-builds', bundleIds, appNames, rest);
@@ -562,7 +589,7 @@ async function main(invocation: Invocation): Promise<number> {
      */
     case 'add-builds': {
       const example = 'add-builds --app "My App" --group "Beta" --build 45';
-      const group = requireGroup(groups, example);
+      const group = requireOne(groups, '--group <name|id>', example);
       if (builds.length === 0) {
         throw new Error(`add-builds needs at least one --build <ref>. Example: asc ${example}`);
       }
@@ -592,6 +619,47 @@ async function main(invocation: Invocation): Promise<number> {
           : `Added ${result.added.length} to group "${plan.group.name}"; it now holds ${result.remaining.length}.`
       );
       return result.notInGroup.length ? 1 : 0;
+    }
+
+    /**
+     * The only private write that adds a record to the account, and nothing here takes one
+     * away, so every field is printed before the question. Each is a flag rather than a
+     * positional so that a SKU and a name can't be swapped by position, and none is
+     * defaulted — not even the version the browser's form pre-fills — since a default here
+     * is a value nobody typed on a record nothing here removes.
+     */
+    case 'create-app': {
+      const example =
+        'create-app --name "My App" --bundle-id com.example.app --sku MYAPP1 --locale en-GB --app-version 1.0';
+      const app: api.NewApp = {
+        name: requireOne(names, '--name <name>', example),
+        bundleId: requireOne(bundleIds, '--bundle-id <bundleId>', example),
+        sku: requireOne(skus, '--sku <sku>', example),
+        locale: requireOne(locales, '--locale <locale>', example),
+        versionString: requireOne(appVersions, '--app-version <version>', example),
+      };
+      if (rest.length) throw new Error(`create-app takes no positional arguments. Example: asc ${example}`);
+      const session = openSession();
+
+      await confirm({
+        question: 'Create this iOS app in App Store Connect? Nothing in this client removes one.',
+        detail: [
+          '',
+          `  name:        ${app.name}`,
+          `  bundle id:   ${app.bundleId}`,
+          `  sku:         ${app.sku}`,
+          `  locale:      ${app.locale}`,
+          `  version:     ${app.versionString}`,
+          `  platform:    IOS`,
+          '',
+        ],
+        yes,
+      });
+
+      const created = await api.createApp(session, app);
+      emit(created, raw);
+      console.error(`Created app ${created.data.id}.`);
+      return 0;
     }
 
     case 'report': {

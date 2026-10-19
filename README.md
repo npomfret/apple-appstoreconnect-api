@@ -138,6 +138,7 @@ was probed rather than recorded, which [docs/evidence.md](docs/evidence.md) says
 | --- | --- |
 | `save-draft`, `delete-draft`, `delete-attachment` | write the reply to App Review into the thread's draft box — [docs/replying.md](docs/replying.md) |
 | `send-reply` | send it — [docs/replying.md](docs/replying.md) |
+| `create-app --name … --bundle-id … --sku … --locale … --app-version …` | create an iOS app record — the New App form, which Apple's official API has no `POST` for. Recorded from the browser, never yet sent by this client — [docs/writing.md](docs/writing.md#private-api-creating-an-app) |
 
 **There is no unconfirmed write**, on either side. Each of these takes something no second
 run puts back, so each prints what it is about to do and asks first — `send-reply` re-reads

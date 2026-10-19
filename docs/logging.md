@@ -30,7 +30,7 @@ node dist/cli.js save-draft <threadId> "..." --attach shot.png 2>&1 >/dev/null |
 ```
 
 Records nest: the semantic action (`draft.attach`, `message.send`,
-`draft.attachment.delete`, `testflight.prune`, `testflight.add`) brackets the transport-level
+`draft.attachment.delete`, `app.create`, `testflight.prune`, `testflight.add`) brackets the transport-level
 entries — `http.write` on the private transport, `official.http.write` on the official one.
 The transport ones are what make coverage complete: every private mutation funnels through
 the single `request` in `src/gap/http.ts`, and every official one through `write()` on the

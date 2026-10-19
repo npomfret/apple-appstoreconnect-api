@@ -646,6 +646,85 @@ export async function findThreadForSubmission(
   return document.data[0];
 }
 
+/** What App Store Connect's New App form asks for, on the one platform it was recorded with. */
+export interface NewApp {
+  /** The name on the App Store. Taken across all of Apple, not only this account. */
+  readonly name: string;
+  /** An explicit bundle ID already registered to the team, as `com.example.app`. */
+  readonly bundleId: string;
+  /** The team's own reference for the app. Unique within the account. */
+  readonly sku: string;
+  /** The primary language, as `en-GB`. The two localizations created with the app use it too. */
+  readonly locale: string;
+  /** The first App Store version, as `1.0`. */
+  readonly versionString: string;
+}
+
+/**
+ * Creates the app record — the **New App** form, and the one write here that adds a record
+ * to the account rather than to a conversation. Nothing in this client removes an app.
+ *
+ * Apple's official API has no way to do this: `/v1/apps` is GET-only in specification
+ * 4.5.1, checked 2026-10-19, as it was in 4.4.1. What it does serve is the bundle ID, at
+ * `/v1/bundleIds`, which is why this takes one already registered rather than reading the
+ * browser's private `ascBundleIds` list to choose from.
+ *
+ * The body is the browser's, recorded 2026-10-19 and matched offline against both recorded
+ * requests with the typed values masked: one compound document that creates the app, its
+ * first iOS version, that version's localization, the app info and its localization
+ * together, one locale in all three places as in the recording, the four records it brings with it named by the `${…}` placeholder
+ * ids the browser itself sends. `IOS` is fixed because it is the only platform recorded; a
+ * macOS or tvOS app is the same form with an unrecorded body. The browser's companion
+ * `userAppPermissions` POST, which grants the new app to limited-access users, is not sent:
+ * it was answered 409 in the recording, so its body is unproven, and
+ * `/v1/users/{id}/relationships/visibleApps` serves that officially.
+ *
+ * A name another account already holds is refused with `409
+ * ENTITY_ERROR.ATTRIBUTE.INVALID.DUPLICATE.DIFFERENT_ACCOUNT`, pointing at the
+ * `appInfoLocalizations` name — also recorded.
+ */
+export function createApp(session: Session, app: NewApp): Promise<Document<Resource>> {
+  const { name, bundleId, sku, locale, versionString } = app;
+  const version = '${store-version-ios}';
+  const versionLocalization = '${new-iosVersionLocalization-id}';
+  const appInfo = '${new-appInfo-id}';
+  const appInfoLocalization = '${new-appInfoLocalization-id}';
+
+  return audited('app.create', { name, bundleId, sku, locale, versionString, platform: 'IOS' }, () =>
+    post<Document<Resource>>(session, 'apps', {
+      data: {
+        type: 'apps',
+        attributes: { sku, primaryLocale: locale, bundleId },
+        relationships: {
+          appStoreVersions: { data: [{ type: 'appStoreVersions', id: version }] },
+          appInfos: { data: [{ type: 'appInfos', id: appInfo }] },
+        },
+      },
+      included: [
+        {
+          type: 'appStoreVersions',
+          id: version,
+          attributes: { platform: 'IOS', versionString },
+          relationships: {
+            appStoreVersionLocalizations: {
+              data: [{ type: 'appStoreVersionLocalizations', id: versionLocalization }],
+            },
+          },
+        },
+        { type: 'appStoreVersionLocalizations', id: versionLocalization, attributes: { locale } },
+        {
+          type: 'appInfos',
+          id: appInfo,
+          relationships: {
+            appInfoLocalizations: { data: [{ type: 'appInfoLocalizations', id: appInfoLocalization }] },
+          },
+        },
+        { type: 'appInfoLocalizations', id: appInfoLocalization, attributes: { locale, name } },
+      ],
+    })
+  );
+}
+
 /**
  * The private resource families this client is for: types iris serves and Apple's official
  * API has no path and no schema for. One list, and the boundary `raw` is held to.

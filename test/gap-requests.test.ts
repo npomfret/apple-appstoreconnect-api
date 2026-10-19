@@ -501,6 +501,94 @@ describe('saving a reply', () => {
 });
 
 /**
+ * The New App form. `/v1/apps` is GET-only in Apple's specification 4.5.1, so creating one
+ * is a gap; the body below is the browser's recorded structure, key order and placeholder
+ * ids included, with every value invented.
+ */
+describe('creating an app', () => {
+  const APP_IN = {
+    name: 'Invented App',
+    bundleId: 'com.example.invented',
+    sku: 'INVENTED1',
+    locale: 'en-GB',
+    versionString: '1.0',
+  };
+
+  test('one POST of the whole compound document, as the browser sends it', async () => {
+    const calls = await sent({ data: { type: 'apps', id: APP } }, () => api.createApp(SESSION, APP_IN));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.method, 'POST');
+    assert.equal(calls[0]!.url, `${BASE}/apps`);
+    assert.equal(calls[0]!.headers['content-type'], 'application/vnd.api+json');
+    assert.equal(
+      calls[0]!.body,
+      '{"data":{"type":"apps","attributes":{"sku":"INVENTED1","primaryLocale":"en-GB","bundleId":"com.example.invented"},' +
+        '"relationships":{"appStoreVersions":{"data":[{"type":"appStoreVersions","id":"${store-version-ios}"}]},' +
+        '"appInfos":{"data":[{"type":"appInfos","id":"${new-appInfo-id}"}]}}},' +
+        '"included":[{"type":"appStoreVersions","id":"${store-version-ios}","attributes":{"platform":"IOS","versionString":"1.0"},' +
+        '"relationships":{"appStoreVersionLocalizations":{"data":[{"type":"appStoreVersionLocalizations","id":"${new-iosVersionLocalization-id}"}]}}},' +
+        '{"type":"appStoreVersionLocalizations","id":"${new-iosVersionLocalization-id}","attributes":{"locale":"en-GB"}},' +
+        '{"type":"appInfos","id":"${new-appInfo-id}","relationships":{"appInfoLocalizations":{"data":[{"type":"appInfoLocalizations","id":"${new-appInfoLocalization-id}"}]}}},' +
+        '{"type":"appInfoLocalizations","id":"${new-appInfoLocalization-id}","attributes":{"locale":"en-GB","name":"Invented App"}}]}'
+    );
+  });
+
+  test('the creation is audited before it goes out, and again when it lands', async () => {
+    const stub = stubFetch(() => ({ body: { data: { type: 'apps', id: APP } } }));
+    try {
+      const records = await withStderr(async (captured) => {
+        await api.createApp(SESSION, APP_IN);
+        return captured.records();
+      });
+
+      // The semantic record brackets the transport one: app.create start, the POST through
+      // request() with its own http.write pair, then app.create ok.
+      assert.deepEqual(
+        records
+          .filter((record) => record['event'] === 'app.create' || record['event'] === 'http.write')
+          .map((record) => `${String(record['event'])}:${String(record['phase'])}`),
+        ['app.create:start', 'http.write:start', 'http.write:ok', 'app.create:ok']
+      );
+      const start = records.find((record) => record['event'] === 'app.create');
+      assert.equal(start?.['bundleId'], APP_IN.bundleId);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  // The recorded refusal: a name another account holds. It is an error, audited as one.
+  test('a duplicate name is refused, and the refusal is in the audit trail', async () => {
+    const stub = stubFetch(() => ({
+      status: 409,
+      body: {
+        errors: [
+          {
+            status: '409',
+            code: 'ENTITY_ERROR.ATTRIBUTE.INVALID.DUPLICATE.DIFFERENT_ACCOUNT',
+            source: { pointer: '/included/3/name' },
+          },
+        ],
+      },
+    }));
+    try {
+      const records = await withStderr(async (captured) => {
+        await assert.rejects(() => api.createApp(SESSION, APP_IN), /409/);
+        return captured.records();
+      });
+
+      assert.deepEqual(
+        records.filter((record) => record['event'] === 'app.create').map((record) => record['phase']),
+        ['start', 'error']
+      );
+      assert.equal(stub.calls.length, 1, 'nothing is retried');
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+/**
  * The one Xcode Cloud read, and the only call here that is not iris.
  *
  * `post_actions` is the field: re-checked 2026-08-21 against specification 4.4.1, where

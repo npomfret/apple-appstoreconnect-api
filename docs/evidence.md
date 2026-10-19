@@ -134,7 +134,7 @@ been implemented on the official side, as with availability.
 
 Everything on it is part of the gap this client is for — Resolution Center threads,
 messages, rejections, drafts and their attachments; unread review-message counts; App Store
-version state-change history; and the App Privacy questionnaire.
+version state-change history; the App Privacy questionnaire; and creating an app.
 
 ## How that is checked, and when
 
@@ -166,7 +166,8 @@ of this page.
 One private write on the retained surface was never recorded: `delete-attachment`, which was
 probed rather than captured, and which destroys live data. Everything else on that side —
 the draft behind `save-draft` and `delete-draft`, and the send behind `send-reply` — was
-copied from the browser doing it. The two official writes, `prune-builds` and `add-builds`,
+copied from the browser doing it, as was `create-app`, which this client has never sent —
+see [creating an app](#creating-an-app). The two official writes, `prune-builds` and `add-builds`,
 rest on Apple's published schema rather than a recording and have never been run by this
 client; see [above](#official-testflight-group-builds).
 
@@ -312,11 +313,58 @@ list is the tested one and an override is not.
   either way round.
 - From one real send: `sendDraftMessage` — the `createFromDraftMessage` POST, its `201`,
   and the thread read back with the new message on it.
+- From creating one app: `createApp` — see [creating an app](#creating-an-app).
 - From one draft reply with an attachment: `createDraftMessage`, `updateDraftMessage`,
   `reserveMessageAttachment` and `completeMessageAttachment` — all four bodies replayed
   offline against the recording and match the browser's byte for byte. Editing an existing
   draft, recorded separately, replays through `updateDraftMessage` and `getDraftMessage`
   with nothing new in it.
+
+### Creating an app
+
+`createApp` — the `create-app` command — is `POST iris/v1/apps`, recorded from the browser's
+**New App** form on 2026-10-19 and read the same day through an extractor emitting methods,
+redacted paths, query keys, statuses, error codes, and the body's key structure with every
+value masked except resource types, the browser's own `${…}` placeholder ids, `platform` and
+the locale; no header value, cookie, CSRF value, name, SKU or bundle ID was read out of it.
+
+**Why it is a gap.** `/v1/apps` is GET-only in Apple's specification **4.5.1** (1,001 paths),
+downloaded 2026-10-19, as it was in 4.4.1, and no schema there is an app create request.
+That is a check of this one capability against 4.5.1, not a re-audit of the whole private
+surface, which still stands on 4.4.1 as [above](#how-that-is-checked-and-when).
+
+**What was recorded.** Two POSTs with the same body shape: the first answered `409
+ENTITY_ERROR.ATTRIBUTE.INVALID.DUPLICATE.DIFFERENT_ACCOUNT` with the pointer
+`/included/3/name` — a name held by another account — and the second, with a different name,
+`201`. The body is one compound document: `apps` with `sku`, `primaryLocale` and `bundleId`
+(a reverse-DNS identifier, not a resource id), related to an `appStoreVersions` and an
+`appInfos`; `included` carries those two plus an `appStoreVersionLocalizations` with `locale`
+and an `appInfoLocalizations` with `locale` and `name`, in that order, each named by a
+placeholder id (`${store-version-ios}`, `${new-iosVersionLocalization-id}`,
+`${new-appInfo-id}`, `${new-appInfoLocalization-id}`). Platform `IOS`; the same locale in
+all three places — one recording, so whether the form ever sends them apart is not known.
+The `201` response is the new `apps` resource with the four created records included.
+
+The body `createApp` sends was compared offline with both recorded bodies on 2026-10-19,
+with the name, SKU, bundle ID and version masked on each side: identical — every key, its
+order, the placeholder ids, `platform` and the locales. The test in
+`test/gap-requests.test.ts` pins that body as a string, with invented values.
+
+**Never run by this client.** The request matches the recording, but no app has been created
+with it, and none will be to prove it: the first live run is the test. macOS, tvOS, visionOS
+and multi-platform apps are the same form with an unrecorded body, and are not offered.
+
+**Seen alongside it and not mapped:**
+
+- `POST iris/v1/userAppPermissions` (`operationType: GRANT`, `userOperationType:
+  ALL_SILOABLE_USERS`, `appAdamId`) — the browser granting the new app to users with limited
+  app access. Answered `409 ENTITY_ERROR.RELATIONSHIP.INVALID` in the recording, so its body
+  is unproven, and `POST /v1/users/{id}/relationships/visibleApps` serves the capability
+  officially.
+- `GET iris/v1/ascBundleIds?limit=2000` — the form's bundle-ID picker; `id`, `name` and
+  `bundleId`, all served officially by `GET /v1/bundleIds`.
+- `GET iris/v1/users` and `userInvitations`, filtered by role — official at `/v1/users` and
+  `/v1/userInvitations`, and personal data besides.
 
 ### The Xcode Cloud read
 
