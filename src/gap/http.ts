@@ -25,9 +25,10 @@ export interface Page {
  * `BASE_URL` was a bare constant until 2026-08-22, under a comment saying a second base
  * "would arrive with its own capture and its own reason to exist". One has: see `CI`.
  *
- * The fields are what the two disagree about, and every one of them is a thing that was
- * observed rather than assumed. Nothing general is here on the chance a third base wants
- * it.
+ * The fields are what the bases disagree about, and every one of them is a thing that was
+ * observed rather than assumed. Nothing general is here on the chance another base wants
+ * it. The third and fourth, `RA` and `PPM`, arrived on 2026-10-27 with four recordings of
+ * the Business pane behind them, and needed no field the first two had not.
  */
 export interface Api {
   /** What to call this API when a message has to say which one refused something. */
@@ -136,6 +137,57 @@ export const CI: Api = {
     const value = entries[0][1];
     return Array.isArray(value) ? { returned: value.length } : undefined;
   },
+};
+
+/**
+ * What the Business pane's two bases have in common, which is everything but the base.
+ *
+ * Recorded across four captures of the Agreements, Tax and Banking page, 2026-08-26 and
+ * 2026-10-27. Every read on both prefixes sends `application/json` as both `Accept` and
+ * `Content-Type` — a GET with a content type, as iris does. The August recording, the one
+ * exported with cookies kept, shows all 34 carrying the cookie, the CSRF header and the team
+ * pair `headersFor` already sends; the October three were exported without the cookie or the
+ * team pair, and still show the CSRF header on every request.
+ *
+ * **Read-only.** Three writes on `ppm/v1` are recorded — the DSA trader declaration, which
+ * carries identity documents behind an `id.apple.com` code check, its validation echo, and a
+ * US W-8BEN tax form — and each is a legal filing rather than an operation for `--yes`.
+ *
+ * **A 403 is not read as an expired session.** None was recorded on either base, so how one
+ * reports a dead session is unknown, and reporting a refusal as "log in again" is the
+ * misdirection iris's rule exists to avoid. A 401 still is one.
+ *
+ * **Nothing here is paged.** None of the mapped reads sends a limit or receives a total.
+ */
+const BUSINESS = {
+  accept: 'application/json',
+  contentType: 'application/json',
+  readOnly: true,
+  expiredOn403: () => false,
+  refusalHint: 'Nothing recorded shows how this base reports a dead session — check "asc status".',
+  pageOf: () => undefined,
+} as const satisfies Omit<Api, 'name' | 'baseUrl'>;
+
+/**
+ * The legacy iTunes Connect resource API, for the one route on it this client reads:
+ * `contentProviders/{team}/agreements`. Its envelope is `{data, messages, constraints}`, with
+ * the payload under `data` and Apple's notices beside it — neither JSON:API nor `/ci/api`.
+ */
+export const RA: Api = {
+  ...BUSINESS,
+  name: 'iTunes Connect (ra)',
+  baseUrl: `${HOST}/WebObjects/iTunesConnect.woa/ra/v1`,
+};
+
+/**
+ * Payments and compliance: `ppm/v1` and `ppm/complianceform/v1`, one base because they are
+ * one service on the browser's side — same media types, same `{accountId, …}` envelope, and
+ * every path scoped by the account id `ppm/v1/accountLookup` hands back.
+ */
+export const PPM: Api = {
+  ...BUSINESS,
+  name: 'Payments and compliance (ppm)',
+  baseUrl: `${HOST}/ppm`,
 };
 
 /** The review centre's base, which is what a path means when nothing says otherwise. */

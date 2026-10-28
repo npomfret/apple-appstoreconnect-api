@@ -192,7 +192,7 @@ reachable as `gap.…`. Everything there returns a JSON:API document, which is w
 `gap` because JSON:API is the format of both of Apple's APIs, not a property of the private
 one.
 
-`src/gap/ci.ts` is the exception and the only non-iris module. `fetchPostActions(session,
+`src/gap/ci.ts` is the first exception, and `src/gap/business.ts` below the second. `fetchPostActions(session,
 productId)` answers whether an Xcode Cloud workflow hands its builds to TestFlight
 automatically; `fetchPlan(session)` and `fetchUsage(session, days)` answer how much build
 compute the team has left and where it went; and `fetchTeam(session)` answers where the team
@@ -255,6 +255,16 @@ from a product that is not opted in. It never follows a second page — the resp
 cursor, so a full page is logged as possibly clipped and left there — and the three levels
 come back as three separate answers, since nothing observed says how a team switch relates to
 a product's. There is no counterpart that *sets* any of it: the writes were never recorded.
+
+`src/gap/business.ts` reads the Business pane: `fetchAgreements(session)`,
+`fetchAccountMessages(session)` and `fetchComplianceRequirements(session)`, each with a
+`format…` beside it. Like `gap/ci.ts` they return plain objects and refuse rather than
+default: a missing `isInEffect`, `configIsLatestVersion`, grace-period flag, status, action
+list or notices list is an error, because each defaulted reads as an answer. Statuses and
+message keys are Apple's localisation keys, passed through as strings. The contracting legal
+entity on each agreement — name, address, phone, sanctions screening — is never carried, so
+it cannot reach a caller. The two `ppm` reads make the browser's `accountLookup` request
+first and use the account id it returns.
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
 `sendDraftReply()` called from code go straight to Apple, and neither can be undone.
@@ -333,16 +343,20 @@ words is the same question as sending them. Worth copying if you build your own.
   `uploadPart()` checks its own destination, since it is outside the one `request()`
   applies: a part goes over https to a host under `object-storage.apple.com` or it is not
   sent, and the refusal names the host without quoting the presigned URL.
-- **Two bases, each with its own media types**, declared as `Api` values in `src/gap/http.ts`
+- **Four bases, each with its own media types**, declared as `Api` values in `src/gap/http.ts`
   rather than assembled by a caller. `IRIS` is `https://appstoreconnect.apple.com/iris/v1`
   and sends `application/vnd.api+json` as both `Accept` and `Content-Type`; `CI` is
   `https://appstoreconnect.apple.com/ci/api`, sends `Accept: */*` and **no `Content-Type` at
-  all**, because Xcode Cloud answers a request claiming to be JSON:API with a `403`. A
+  all**, because Xcode Cloud answers a request claiming to be JSON:API with a `403`. `RA`
+  (`…/WebObjects/iTunesConnect.woa/ra/v1`) and `PPM` (`…/ppm`) carry the Business pane and
+  send `application/json` as both, as the browser does on every recorded read. A
   caller picks a base — `RequestOptions.api`, defaulting to `IRIS` — and does not pick the
   media types. Nor does the capture, though it did until 2026-08-21, when its headers were
   spread over the transport's own and whichever iris request was right-clicked chose the
-  `Content-Type` and `Accept` for every later one. A third base brings a recording showing
+  `Content-Type` and `Accept` for every later one. A fifth base brings a recording showing
   it, which is a conversation rather than an argument.
+- **`RA` and `PPM` are read-only too**, and neither reads a 403 as an expired session: none
+  was recorded, so how they report a dead session is unknown.
 - **`CI` is read-only, and that is enforced in the transport.** `request()` refuses any
   method but `GET` on a base marked `readOnly` before a URL is even built. The `PUT` that
   sets a workflow's `post_actions` is recorded in both directions, so this is not a gap in

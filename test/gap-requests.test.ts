@@ -21,6 +21,7 @@ import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import * as api from '../src/gap/api';
+import * as business from '../src/gap/business';
 import * as ci from '../src/gap/ci';
 import { SESSION, stubFetch, withStderr } from './helpers';
 
@@ -798,6 +799,86 @@ describe('the Xcode Cloud infrastructure-validation reads', () => {
     for (const call of calls) {
       assert.equal(call.headers['content-type'], undefined);
       assert.equal(call.headers['accept'], '*/*');
+    }
+  });
+});
+
+/**
+ * The Business-pane reads, on the two bases added on 2026-10-27. Checked against 4.5.1 the
+ * same day: nothing official describes an agreement, an account warning or a compliance
+ * form, so these sit behind the same fence. The two `ppm` reads each make the lookup the
+ * browser makes first, and use the account id it answers with rather than the team id —
+ * the two were equal in every recording, which is one account's worth of evidence.
+ */
+describe('the Business-pane reads', () => {
+  const ACCOUNT = 'account-0000';
+
+  async function replayed(call: () => Promise<unknown>) {
+    const stub = stubFetch((request) => {
+      if (request.url.includes('/accountLookup/')) {
+        return { body: { accountId: ACCOUNT, teamType: 'ITC', teamId: SESSION.teamId } };
+      }
+      if (request.url.endsWith('/agreements')) return { body: { data: { agreements: [], messages: [] } } };
+      if (request.url.endsWith('/accountMessages')) return { body: { accountId: ACCOUNT, message: [] } };
+      return { body: { accountId: ACCOUNT, requirementData: [] } };
+    });
+    try {
+      await withStderr(() => call());
+      return stub.calls;
+    } finally {
+      stub.restore();
+    }
+  }
+
+  test('agreements are one GET on the ra base, scoped by the session team, with no query', async () => {
+    const calls = await replayed(() => business.fetchAgreements(SESSION));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.method, 'GET');
+    assert.equal(
+      calls[0]!.url,
+      `https://appstoreconnect.apple.com/WebObjects/iTunesConnect.woa/ra/v1/contentProviders/${SESSION.teamId}/agreements`
+    );
+  });
+
+  test('account messages are the lookup, then one GET under the account it named', async () => {
+    const calls = await replayed(() => business.fetchAccountMessages(SESSION));
+
+    assert.deepEqual(
+      calls.map((call) => `${call.method} ${call.url}`),
+      [
+        `GET https://appstoreconnect.apple.com/ppm/v1/accountLookup/teamTypes/ITC/teamIds/${SESSION.teamId}`,
+        `GET https://appstoreconnect.apple.com/ppm/v1/accounts/${ACCOUNT}/accountMessages`,
+      ]
+    );
+  });
+
+  test('compliance requirements are the lookup, then one GET under the account it named', async () => {
+    const calls = await replayed(() => business.fetchComplianceRequirements(SESSION));
+
+    assert.deepEqual(
+      calls.map((call) => `${call.method} ${call.url}`),
+      [
+        `GET https://appstoreconnect.apple.com/ppm/v1/accountLookup/teamTypes/ITC/teamIds/${SESSION.teamId}`,
+        `GET https://appstoreconnect.apple.com/ppm/complianceform/v1/accounts/${ACCOUNT}/requirements`,
+      ]
+    );
+  });
+
+  /** Every recorded Business-pane read sends both, unlike `/ci/api`, which must be sent neither. */
+  test('they ask for and claim plain JSON, and carry the team pair and no Origin', async () => {
+    const calls = [
+      ...(await replayed(() => business.fetchAgreements(SESSION))),
+      ...(await replayed(() => business.fetchAccountMessages(SESSION))),
+      ...(await replayed(() => business.fetchComplianceRequirements(SESSION))),
+    ];
+
+    assert.equal(calls.length, 5);
+    for (const call of calls) {
+      assert.equal(call.headers['accept'], 'application/json');
+      assert.equal(call.headers['content-type'], 'application/json');
+      assert.equal(call.headers['x-connect-team-id'], SESSION.teamId);
+      assert.equal(call.headers['origin'], undefined);
     }
   });
 });

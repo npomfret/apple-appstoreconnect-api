@@ -749,14 +749,15 @@ of the same climb passed this check and were sent with the session cookie until
 
 ## What the transport can express
 
-One host, two bases, four methods. A base carries its own media types, its own rule for
-reading a refusal and its own page shape, because the two disagree about all three; none of
+One host, four bases, four methods. A base carries its own media types, its own rule for
+reading a refusal and its own page shape, because they disagree about all three; none of
 them is an option a caller picks, and each is what the recordings actually show.
 
 | Base | What it sends | On what evidence |
 | --- | --- | --- |
 | `…/iris/v1` — the Resolution Center | `application/vnd.api+json` as both `Accept` and `Content-Type`, on reads and writes alike | every recorded Resolution Center call sends it. The one capture that sent plain `application/json` was the version PATCH, which is `PATCH /v1/appStoreVersions/{id}` officially. **The capture could override this until 2026-08-21** — see the header audit below |
 | `…/ci/api` — Xcode Cloud, read-only | `Accept: */*` and **no `Content-Type` at all** | all 34 `/ci/api` requests recorded from the browser, across the workflow and Usage pages, send exactly this. Sending `application/vnd.api+json` instead is answered **403** — established by hand on 2026-08-21, one header varied at a time on one URL, and the reason every `ci-*` command in this repository was refused for the whole of its life |
+| `…/WebObjects/iTunesConnect.woa/ra/v1` and `…/ppm` — the Business pane, read-only, since 2026-10-27 | `application/json` as both `Accept` and `Content-Type` | every read on both prefixes across four recordings of the Agreements, Tax and Banking page. No 403 was recorded on either, so neither reads one as an expired session |
 
 `GET`, `POST`, `PATCH` and `DELETE`; anything else is refused. No call addressed to iris
 uses `PUT`, and the upload part that does goes to a region under `object-storage.apple.com`
@@ -1133,8 +1134,9 @@ of them the Program License Agreement. That is the finding `gap/ci.ts` recorded 
 arriving from the other direction, and it holds for the whole Business pane: the one
 adjacent official endpoint is `/v1/financeReports`, and nothing here duplicates it.
 
-**None of it is reachable, and the reason is the base rather than the credential.** It
-arrives on two bases this client does not have:
+**Three of the reads are now mapped, on 2026-10-27, as the owner decision `AGENTS.md`
+reserves for a new base** — see *Mapped on 2026-10-27* below. The paragraphs that follow
+are the August assessment as it was made. It arrives on two bases:
 
 | Base | Requests | Envelope |
 | --- | --- | --- |
@@ -1212,6 +1214,53 @@ identification, is not a thing to put behind `--yes`. Every `ppm/v1` record also
 `optimisticLock`, so any write there is a read-modify-write and a stale read is a conflict
 rather than a silent overwrite. Both are recorded for whoever weighs this next, and both are
 further reason the read side is the only part worth wanting.
+
+### Mapped on 2026-10-27
+
+Three more recordings of the same page arrived on 2026-10-27, and were read through
+extractors emitting methods, redacted paths, query keys, statuses, header *names*, the two
+media-type values, and key structure — values only for enum-like keys (statuses, message
+keys, severities, action keys, booleans), never a name, an address or an id. Between them
+they add four reads the August capture did not show — `ppm/v1/userServices/permissions/`
+(`{permissions: string[21]}`), `ppm/v1/regionCountryMap` (a static region-to-country table),
+`ra/pendingFeldsparBindingRequests` (empty) and an `isAppOverride` query on
+`accountMessages` — and one write: `POST ppm/v1/accounts/{id}/vendors/{n}/vendorScopes/{id}/taxForms`,
+filing a **US W-8BEN**, whose body carries a name, residence and mailing addresses and an
+authorised signer, and whose response adds a date of birth. It is a legal tax filing and is
+not mapped, for the reasons the trader declaration below is not.
+
+Re-checked against **4.5.1** (1,001 paths, 1,473 schemas) the same day: `contract`,
+`compliance`, `bank`, `banking`, `legalEntit`, `seller`, `wwdr`, `program` and `membership`
+match no path and no schema; `agreement` still matches only the twelve TestFlight and EULA
+paths; `medical` occurs only as an age-rating field and an app category, and `TRADER_STATUS_*`
+only as territory-availability reasons `official/availability.ts` already reads.
+
+`src/gap/business.ts` maps three reads, on two read-only bases, `RA` and `PPM`:
+
+- **`fetchAgreements`** — `GET ra/v1/contentProviders/{team}/agreements`. Its envelope is not
+  the `{data: {data}}` the other `ra` routes use but `{data: {agreements, messages,
+  contactsRequired, hasEarningData}, messages, constraints}`. The October recordings are
+  what made it worth mapping: the Paid Applications agreement went from
+  `…Status.PendingUserInfo` in August to `…Status.PendingUserInfoNewAgreementAvailable`, with
+  `configIsLatestVersion: false`, a `configValidUntilDate`, `isPreGracePeriod: true` and an
+  `AgreeToTerms` action. Of 35 keys per agreement, thirteen are read — `contractType` only as the name's fallback; the contracting
+  `legalEntity` — name, address, phone, OFAC screening — is never read.
+- **`fetchAccountMessages`** — `GET ppm/v1/accounts/{account}/accountMessages`, without the
+  `isAppOverride` query, which one recording sent and three did not. Severity and message key
+  only; the `params` beside them are not carried.
+- **`fetchComplianceRequirements`** — `GET ppm/complianceform/v1/accounts/{account}/requirements`,
+  grouped per app (`contentId`, the app's Apple id) or per legal entity (with `countries`).
+  `MEDICAL_DEVICE` at `PENDING_COLLECTION` is the only name and status recorded.
+
+The `ppm` account id comes from `GET ppm/v1/accountLookup/teamTypes/ITC/teamIds/{team}`,
+made first as the browser makes it. On all 34 recorded requests to these four routes the
+path's id equals `X-Connect-Team-ID`, and the lookup returns the team id as the account id —
+but that is one account, so the lookup is made rather than skipped.
+
+What is not established: no 403 was recorded on either base, so a 403 is reported as a
+refusal and never as an expired session; no status beyond the three agreement statuses and
+one requirement status has been seen, so all are passed through as strings; and none of the
+three has been sent by this client, which has only ever replayed their shape against a stub.
 
 ## Seen but deliberately not mapped
 

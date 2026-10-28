@@ -68,44 +68,8 @@
  */
 
 import { CI, request } from './http';
+import { record, segment, teamOf, text } from './parse';
 import { Session } from './session';
-
-/**
- * A path segment, checked before it is one.
- *
- * Every id here arrives from a command line or a caller and is interpolated into a path.
- * `apiUrl` would catch a segment that climbs out of the base, since it compares the
- * resolved URL — but it would report it as a path that resolves somewhere odd, which is a
- * confusing way to say "that is not an id". Apple's own are uuids; the pattern is wider
- * than that on purpose, since the format is Apple's to change and this only has to exclude
- * the characters that make a segment stop being one.
- */
-function segment(value: string, what: string): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) {
-    throw new Error(`"${value}" is not a ${what}: it has to be one path segment of letters, digits, ".", "_" or "-"`);
-  }
-  return value;
-}
-
-/**
- * The team every `/ci/api` path is scoped by, taken from the session.
- *
- * Not discovered, and not a flag. On all 34 `/ci/api` requests recorded from the browser
- * the `teams/{id}` path segment is the same value as the `X-Connect-Team-ID` header, which
- * `src/gap/curl.ts` already keeps from the capture and otherwise decodes from the `itctx`
- * cookie. So this costs no request: in particular it does not need `olympus/v1/actors`,
- * which would be a third base and which carries names and email addresses this client has
- * no reason to hold.
- */
-function teamOf(session: Session): string {
-  if (!session.teamId) {
-    throw new Error(
-      'The session has no team id, and every Xcode Cloud path is scoped by one. Capture a ' +
-        'fresh request as cURL — the team id is in the cookie, and in the X-Connect-Team-ID header.'
-    );
-  }
-  return segment(session.teamId, 'team id');
-}
 
 /** The workflows collection as Xcode Cloud sends it: a plain JSON object, not JSON:API. */
 export interface WorkflowsPage {
@@ -177,16 +141,6 @@ export interface WorkflowPostActions {
   disabled: boolean;
   /** Empty means no build from this workflow is handed on automatically. */
   postActions: PostAction[];
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function text(value: unknown): string | undefined {
-  return typeof value === 'string' && value ? value : undefined;
 }
 
 /** A list of ids, keeping only what is actually one. */

@@ -30,6 +30,7 @@ import {
 } from './official/testflight';
 import { capturePathFor, configPath, describeAccounts, officialCredentialsFor, readAccounts, Resolution } from './accounts';
 import * as api from './gap/api';
+import * as business from './gap/business';
 import * as ci from './gap/ci';
 
 const USAGE = `App Store Connect CLI: Apple's official API plus private API gaps.
@@ -111,6 +112,18 @@ Private API gaps (uses the browser capture described below, or an account's):
                               that set it were never recorded, so this reports the switches
                               and cannot throw one. No official schema for any of it
 
+  asc agreements              The team's agreements (Paid and Free Applications): whether
+                              each is in effect, whether a newer version is waiting to be
+                              accepted and until when the current one is valid, grace
+                              periods, and what the page offers to do. Read-only. The
+                              official API has no agreements resource
+  asc account-messages        The warnings App Store Connect shows on the account — banking
+                              not set up, tax information missing, DSA — as Apple's message
+                              keys. Read-only, and no official equivalent
+  asc compliance              The compliance forms Apple wants, per app and for the legal
+                              entity, with their status. Read-only, and no official
+                              equivalent
+
   asc get <path> [k=v ...]    Raw GET, for a query the commands above don't send. Confined
                               to the private families this client is for; an officially
                               served path is refused rather than duplicated
@@ -138,9 +151,10 @@ This reaches Apple and cannot be undone. It shows what it is about to send and a
 Options:
   --raw                       Print the untouched JSON:API document instead of denormalizing it
   --json                      For "report", "history", "privacy", "post-actions",
-                              "usage", "team", "capabilities" and
-                              "infrastructure-validation", plus "availability": emit JSON
-                              instead of the digest
+                              "usage", "team", "capabilities",
+                              "infrastructure-validation", "agreements",
+                              "account-messages" and "compliance", plus "availability":
+                              emit JSON instead of the digest
   --check                     For "availability": exit nonzero if a selected storefront
                               cannot currently distribute. For "prune-builds" and
                               "add-builds": exit nonzero if there is anything to change,
@@ -939,6 +953,32 @@ async function main(invocation: Invocation): Promise<number> {
       const validation = await ci.fetchInfrastructureValidation(session, rest[0]);
       console.log(
         json ? JSON.stringify(validation, null, 2) : ci.formatInfrastructureValidation(validation)
+      );
+      return 0;
+    }
+
+    /**
+     * The Business pane, team-scoped like `asc team` and for the same reason: an agreement
+     * waiting to be accepted, banking not set up, or a form Apple wants is a fact about the
+     * account. Three commands rather than one because they are three reads on two bases and
+     * answer three questions; the two `ppm` ones cost a lookup request each.
+     */
+    case 'agreements': {
+      const agreements = await business.fetchAgreements(openSession());
+      console.log(json ? JSON.stringify(agreements, null, 2) : business.formatAgreements(agreements));
+      return 0;
+    }
+
+    case 'account-messages': {
+      const messages = await business.fetchAccountMessages(openSession());
+      console.log(json ? JSON.stringify(messages, null, 2) : business.formatAccountMessages(messages));
+      return 0;
+    }
+
+    case 'compliance': {
+      const requirements = await business.fetchComplianceRequirements(openSession());
+      console.log(
+        json ? JSON.stringify(requirements, null, 2) : business.formatComplianceRequirements(requirements)
       );
       return 0;
     }

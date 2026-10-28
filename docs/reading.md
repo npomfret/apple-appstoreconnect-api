@@ -460,6 +460,58 @@ data**, and a row Apple sends without one is an error rather than a `no`. Only o
 ever reached — two products, one workflow each, against a page of 20 — and the response
 carries no cursor, so a full page is reported as possibly clipped rather than followed.
 
+## Business: agreements, account warnings and compliance
+
+```sh
+asc agreements
+asc account-messages
+asc compliance
+```
+
+```
+Paid Applications
+  status     ITC.ATB.Agmnt.Status.PendingUserInfoNewAgreementAvailable
+  in effect  no
+  a newer version is waiting to be accepted; this one is valid until 2026-12-01T00:00:00Z
+  Apple reports it in its pre-grace period
+  term       2026-01-01T00:00:00Z to 2027-01-01T00:00:00Z
+  action     ITC.ATB.Agmnt.Action.view.AgreeToTerms
+```
+
+```
+info     PPM.banking.bankingAccount.setup.message
+info     PPM.tax.taxInfo.usTaxMissing.message
+```
+
+```
+app 1000000001     MEDICAL_DEVICE  PENDING_COLLECTION
+legal entity       MEDICAL_DEVICE  PENDING_COLLECTION  in 31 countries
+```
+
+The Agreements, Tax and Banking page, read three ways, all team-scoped and all read-only:
+
+- `agreements` is `GET WebObjects/iTunesConnect.woa/ra/v1/contentProviders/{team}/agreements`.
+  The line worth having is *a newer version is waiting*: Apple's `configIsLatestVersion` is
+  false and `configValidUntilDate` says how long the current one holds. `asc team`'s single
+  `wwdr_pla_needs_signing` boolean has no field for either.
+- `account-messages` is the banner list, `GET ppm/v1/accounts/{account}/accountMessages`.
+- `compliance` is `GET ppm/complianceform/v1/accounts/{account}/requirements`, grouped by the
+  app (its Apple id) or the legal entity it applies to.
+
+The two `ppm` reads first make the lookup the browser makes,
+`GET ppm/v1/accountLookup/teamTypes/ITC/teamIds/{team}`, so each costs two requests.
+
+Statuses, actions and message keys are Apple's **localisation keys**, printed verbatim: the
+prose lives in the page's string table, which is not an API, and nothing here translates or
+compares them. A boolean, a status or a list Apple was expected to send and did not is an
+error rather than a default. Each agreement arrives with the contracting legal entity's
+name, address, phone number and sanctions screening; none of it is read, so none of it is
+printed, even with `--json`.
+
+Apple has no official equivalent: in 4.5.1 `contract`, `compliance`, `bank` and
+`legalEntit` match nothing, and the twelve `agreement` paths are the TestFlight tester
+agreement and the customer EULA.
+
 ## Ids, and the two halves of a metadata rejection
 
 `appId` has no default: it is an argument, and the capture says nothing about it — see the

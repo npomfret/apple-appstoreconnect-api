@@ -129,6 +129,9 @@ is never used for a capability Apple documents officially.
 | `team` | private Developer Program standing: the team name, the membership state, whether the Program License Agreement is waiting for a signature, and the Developer Program team id. The official API has no team resource and never mentions the PLA. Read-only, and team-scoped like `usage` |
 | `capabilities` | private Xcode Cloud permissions: thirteen booleans saying what this session may do — restricted workflows, external deployments, notarization and the rest. The official API serves coarse roles on `/v1/users`, not resolved permissions, and none of the thirteen has an official schema. Read-only, and returns no identity at all |
 | `infrastructure-validation [productId]` | private Xcode Cloud opt-in to building against Apple's pre-release macOS and Xcode: the team switch, each product's, and each workflow's for the one product named. `infrastructure` does not occur in the official specification at all. Read-only — the writes that set it were never recorded, so this reports the switches and cannot throw one |
+| `agreements` | private Business-pane agreements: whether each (Paid, Free Applications) is in effect, whether a newer version is waiting to be accepted and until when the current one holds, grace periods, and what the page offers to do. The official API has no agreements resource. Read-only, team-scoped, and never reads the contracting legal entity |
+| `account-messages` | private Business-pane warnings — banking not set up, tax information missing, DSA — as Apple's message keys. Read-only, team-scoped |
+| `compliance` | private compliance forms Apple wants, per app and for the legal entity, with their status. Read-only, team-scoped |
 | `get` | a raw GET at a path you give it, confined to the private families above — an officially served path is refused rather than duplicated |
 
 **Writing** — all but one copied from a capture of the browser doing it; `delete-attachment`
