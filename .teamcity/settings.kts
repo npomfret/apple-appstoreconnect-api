@@ -21,7 +21,7 @@ val onlyWhatCanChangeABuild = """
 //
 // Each leg owns its directory, by name rather than the VCS-settings hash the two would otherwise
 // share. It is emptied before checkout, so ignored leftovers such as a stale out-tsc/junit.xml
-// cannot reach a build, and set to be removed once the build ends. Nothing here is a cache:
+// cannot reach a build, and removed once the build ends, however it ends. Nothing here is a cache:
 // node_modules comes from `npm ci` on every run, and test results reach TeamCity during the build.
 fun BuildType.checkoutAndToolchain(workspace: String) {
     vcs {
@@ -144,101 +144,6 @@ val verify = BuildType {
     }
 }
 
-// TEMPORARY, removed once the evidence is recorded, and not before ProbeBuildCleanup run 4, which
-// is what shows the timed-out run 3 was cleaned. Each run confirms the exact revision, checks every
-// seed by path, because a clean `git status` cannot see inside .git, then seeds the workspace again.
-// The .git seed is what separates emptying the directory from `git clean` and a reset. Pinned to
-// one agent, or a later run could land on an agent that never saw the seed and prove nothing.
-//   ProbeControl: nothing cleans, so every seed must survive. Without this the other two could pass
-//   only because nothing was ever left to find.
-//   ProbeCleanCheckout: only the emptying before checkout acts, so a survivor shows it failed.
-//   ProbeBuildCleanup: only the removal after a build acts, so a survivor shows it failed. Run 2
-//   fails on purpose and run 3 is stopped by the execution timeout. The sentinel each publishes
-//   shows whether a build's evidence leaves before the directory goes.
-fun workspaceProbe(
-    probeId: String,
-    probeName: String,
-    clean: Boolean,
-    expireHours: String,
-    seedSurvives: Boolean,
-    endsBadly: Boolean,
-) = BuildType {
-    id(probeId)
-    name = probeName
-    maxRunningBuilds = 1
-    artifactRules = "probe-sentinel.txt => evidence"
-    vcs {
-        root(DslContext.settingsRoot)
-        checkoutDir = "appstoreconnect-bot-" + probeId.lowercase()
-        cleanCheckout = clean
-    }
-    params {
-        param("system.teamcity.build.checkoutDir.expireHours", expireHours)
-    }
-    requirements {
-        equals("teamcity.agent.name", "macstudio-1")
-    }
-    val ending = if (endsBadly) {
-        "case %build.counter% in " +
-            "2) echo 'PROBE controlled failure'; exit 1 ;; " +
-            "3) echo 'PROBE waiting for the execution timeout'; sleep 150 ;; " +
-            "esac"
-    } else {
-        ""
-    }
-    steps {
-        script {
-            name = "probe"
-            scriptContent = """
-                set -eu
-                echo "PROBE run=%build.counter% agent=%teamcity.agent.name%"
-                test "$(git rev-parse HEAD)" = "%build.vcs.number%"
-                echo "PROBE exact revision %build.vcs.number%"
-                echo "PROBE workspaces: $(ls -d ../appstoreconnect-bot-* | tr '\n' ' ')"
-                wrong=0
-                for f in .git/probe-sentinel probe-sentinel.txt out-tsc/junit.xml dist/stale.js node_modules/.stale tmp/stale.log; do
-                    if [ -e "${'$'}f" ]; then found=yes; else found=no; fi
-                    echo "PROBE ${'$'}f found=${'$'}found"
-                    if [ %build.counter% -gt 1 ] && [ "$seedSurvives" = "true" ]; then
-                        if [ "${'$'}found" = "no" ]; then wrong=1; fi
-                    elif [ "${'$'}found" = "yes" ]; then
-                        wrong=1
-                    fi
-                done
-                if [ "${'$'}wrong" = "1" ]; then echo "PROBE UNEXPECTED"; exit 3; fi
-                echo "PROBE as expected"
-                mkdir -p out-tsc dist node_modules tmp
-                echo stale > .git/probe-sentinel
-                echo stale > probe-sentinel.txt
-                echo '<testsuites/>' > out-tsc/junit.xml
-                echo stale > dist/stale.js
-                echo stale > node_modules/.stale
-                echo stale > tmp/stale.log
-                echo "PROBE seeded"
-                $ending
-            """.trimIndent()
-        }
-    }
-    triggers {
-        schedule {
-            schedulingPolicy = cron {
-                seconds = "0"
-                minutes = "*/4"
-                hours = "*"
-                dayOfMonth = "*"
-                month = "*"
-                dayOfWeek = "?"
-            }
-            branchFilter = "+:<default>"
-            triggerBuild = always()
-            withPendingChangesOnly = false
-        }
-    }
-    failureConditions {
-        executionTimeoutMin = 1
-    }
-}
-
 project {
     description = "Unofficial App Store Connect client. The suite replaces fetch and reads no " +
         "capture, so CI needs Node and the npm registry and nothing else."
@@ -254,7 +159,4 @@ project {
     buildType(checks)
     buildType(tests)
     buildType(verify)
-    buildType(workspaceProbe("ProbeControl", "Probe: control", false, "1", true, false))
-    buildType(workspaceProbe("ProbeCleanCheckout", "Probe: clean checkout", true, "1", false, false))
-    buildType(workspaceProbe("ProbeBuildCleanup", "Probe: build cleanup", false, "0", false, true))
 }
