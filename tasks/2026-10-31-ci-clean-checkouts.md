@@ -1,6 +1,6 @@
 # CI builds must start from a clean, empty checkout
 
-Project: `apple-appstoreconnect-api`. Requested by Nick on 31 October 2026. Status: open.
+Project: `apple-appstoreconnect-api`. Requested by Nick on 31 October 2026. Status: done.
 
 Ensure every CI build starts from an empty source directory before checking out
 the exact requested revision, unless a specific, justified exception is recorded.
@@ -16,7 +16,7 @@ subproject or template, and `settings` shows no paused build and no build outsid
 the three below. There is no
 `.github/workflows`, and no release or deployment job.
 
-| Build | Checkout before | Checkout configured, verification pending | Outputs |
+| Build | Checkout before | Checkout now | Outputs |
 |---|---|---|---|
 | `Checks` | Agent-side, reused hash directory shared with `Tests`; emptied only by the nightly | `appstoreconnect-bot-checks`, emptied before checkout, removed after the build | `dist/`, `node_modules/`; nothing published |
 | `Tests` | As `Checks` | `appstoreconnect-bot-tests`, emptied before checkout, removed after the build | `out-tsc/` with `junit.xml` parsed into TeamCity during the build; `node_modules/` |
@@ -57,11 +57,11 @@ pressing Stop, and an agent lost mid-build was not tried. Either way the next
 build still empties the directory first, as `ProbeCleanCheckout` shows.
 
 - [x] Inventory every CI build/leg and its checkout and output directories.
-- [ ] Apply clean checkout isolation and explicit cache/artifact handling.
-  Configured and removed from the probes; open until `Checks` and `Tests` run in
-  their named directories.
-- [ ] Verify freshness and cleanup serially; record build IDs and evidence.
-  Probe evidence above; the same real-leg run is outstanding.
+- [x] Apply clean checkout isolation and explicit cache/artifact handling.
+- [x] Verify freshness and cleanup serially; record build IDs and evidence.
+  `Verify` #113 (21795) passed at `a76b47d` with the probes gone: `Checks` #114
+  (21793) and `Tests` #113 (21794, 411 tests) each logged `Clean build enabled` in
+  their named directory on `macstudio-1`.
 - [x] Record each justified exception with its build/path, reason, retained
   state and freshness/isolation controls, or record why no exception is needed.
 
