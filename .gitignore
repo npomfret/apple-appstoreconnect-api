@@ -16,3 +16,4 @@ session.json
 .DS_Store
 .gitnexus/
 .codex/config.toml
+.claude/worktrees/
