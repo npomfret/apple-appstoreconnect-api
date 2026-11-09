@@ -14,6 +14,23 @@ val onlyWhatCanChangeABuild = """
     -:*.md
 """.trimIndent()
 
+// Every step's full console goes to a file in the build temp dir as well as the build log, so a
+// failure can be read as one download. The temp dir is new for each build, so nothing stale from
+// an earlier run can be published. `tee` alone would hide the command's exit status from sh,
+// which has no portable pipefail, so the status travels through a file.
+val evidence = "%system.teamcity.build.tempDir%/evidence"
+
+fun BuildSteps.logged(stepName: String, command: String) {
+    script {
+        name = stepName
+        scriptContent = """
+            mkdir -p "$evidence/logs"
+            { $command; echo $? > "$evidence/$stepName.rc"; } 2>&1 | tee "$evidence/logs/$stepName.log"
+            exit "$(cat "$evidence/$stepName.rc")"
+        """.trimIndent()
+    }
+}
+
 // No agent requirement, per section 8: the three agents are one Mac and report no capability
 // meaning "has Node 22", and a build no agent accepts sits in the queue looking like an
 // outage. The toolchain is asserted in the first step instead, where it fails in seconds and
@@ -31,7 +48,15 @@ fun BuildType.checkoutAndToolchain(workspace: String) {
     }
     params {
         param("system.teamcity.build.checkoutDir.expireHours", "0")
+        // npm writes its debug log here instead of ~/.npm/_logs, where it would outlive the build
+        // on a shared Mac and never reach TeamCity.
+        param("env.npm_config_logs_dir", "$evidence/npm-logs")
     }
+    // Paths outside the checkout, so no build can publish what an earlier one left behind.
+    artifactRules = """
+        $evidence/logs => logs
+        $evidence/npm-logs => logs/npm
+    """.trimIndent()
     steps {
         script {
             name = "toolchain"
@@ -43,12 +68,9 @@ fun BuildType.checkoutAndToolchain(workspace: String) {
                 npm --version
             """.trimIndent()
         }
-        script {
-            name = "install"
-            // `npm ci`, not `npm install`: the lockfile is the pinned input, and ci fails on a
-            // disagreement with package.json rather than quietly rewriting it.
-            scriptContent = "npm ci"
-        }
+        // `npm ci`, not `npm install`: the lockfile is the pinned input, and ci fails on a
+        // disagreement with package.json rather than quietly rewriting it.
+        logged("install", "npm ci")
     }
 }
 
@@ -59,10 +81,7 @@ val checks = BuildType {
         "agent that would otherwise idle."
     checkoutAndToolchain("appstoreconnect-bot-checks")
     steps {
-        script {
-            name = "checks"
-            scriptContent = "npm run verify:checks"
-        }
+        logged("checks", "npm run verify:checks")
     }
     failureConditions {
         executionTimeoutMin = 10
@@ -75,11 +94,10 @@ val tests = BuildType {
     description = "The unit suite and nothing else, so per-test history hangs off a build that " +
         "does not also type check."
     checkoutAndToolchain("appstoreconnect-bot-tests")
+    // The checkout is emptied before every build, so this junit.xml can only be this run's.
+    artifactRules += "\nout-tsc/junit.xml => test-results"
     steps {
-        script {
-            name = "tests"
-            scriptContent = "npm run verify:tests"
-        }
+        logged("tests", "npm run verify:tests")
     }
     features {
         // Generic rather than the typed builder, following super-funmax-music: a wrong parameter
@@ -148,8 +166,8 @@ project {
     description = "Unofficial App Store Connect client. The suite replaces fetch and reads no " +
         "capture, so CI needs Node and the npm registry and nothing else."
 
-    // The server-wide default keeps everything forever. Nothing here publishes artifacts, so
-    // there is only history to bound.
+    // The server-wide default keeps history forever, so bound it here. Artifacts (logs and the
+    // JUnit report) keep whatever retention this project inherits.
     cleanup {
         baseRule {
             history(days = 30)
