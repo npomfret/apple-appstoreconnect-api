@@ -7,7 +7,8 @@
       "WebSearch",
       "WebFetch",
       "mcp__gitnexus",
-      "mcp__webstorm"
+      "mcp__webstorm",
+      "mcp__xcode"
     ],
     "deny": [
       "mcp__webstorm__execute_terminal_command",
@@ -18,6 +19,8 @@
       "mcp__webstorm__apply_patch",
       "mcp__webstorm__create_new_file",
       "mcp__webstorm__reformat_file",
+      "mcp__xcode__RunCodeSnippet",
+      "mcp__xcode__InvokeDebuggerCommand",
       "Bash(git push *)",
       "Bash(* --yes *)",
       "Bash(*--yes)",
