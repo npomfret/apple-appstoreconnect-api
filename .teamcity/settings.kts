@@ -166,10 +166,11 @@ project {
     description = "Unofficial App Store Connect client. The suite replaces fetch and reads no " +
         "capture, so CI needs Node and the npm registry and nothing else."
 
-    // The server-wide default keeps history forever, so bound it here. Artifacts (logs and the
-    // JUnit report) keep whatever retention this project inherits.
+    // The server-wide default keeps everything forever on a disk shared with the public sites.
+    // A week of artifacts (logs and the JUnit report) leaves time to read a failure.
     cleanup {
         baseRule {
+            artifacts(days = 7)
             history(days = 30)
         }
     }
