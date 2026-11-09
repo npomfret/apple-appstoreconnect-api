@@ -42,6 +42,10 @@ const SECRET_FIELDS = [
   'set-cookie',
   'authorization',
   'x-csrf-itc',
+  // The developer portal's anti-forgery pair and its session cookie, since 2026-11-06.
+  'csrf',
+  'csrf_ts',
+  'dsessionid',
   'myacinfo',
   'itctx',
   'dqsid',
@@ -60,8 +64,9 @@ const SENSITIVE = new RegExp(`^(${SECRET_FIELDS.join('|')})$`, 'i');
  * was refused with, and iris quotes parts of the request back inside it — and a string is
  * scrubbed by value, so the field names in it are never looked at.
  *
- * JSON is the only textual form a session secret can arrive in, because the only host this
- * client sends the cookie to speaks `application/vnd.api+json` on every request. The
+ * JSON is the only textual form a session secret can arrive in, because both hosts this
+ * client sends a session cookie to — App Store Connect and the developer portal — answer in
+ * JSON. The
  * storage host that answers in XML is never sent one; what it can quote back is a
  * signature, which is the scrub below.
  */

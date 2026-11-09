@@ -15,5 +15,6 @@ export * from './business';
 export * from './ci';
 export * from './curl';
 export * from './http';
+export * from './portal';
 export * from './report';
 export * from './session';

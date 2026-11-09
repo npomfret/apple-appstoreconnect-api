@@ -47,7 +47,8 @@ library caller that relied on the old behaviour should pass the path, or resolve
 transport, with `get()` for documented reads and `write()` for documented mutations — the
 one place an official write leaves from, and where its `official.http.write` audit record is
 made whatever the log level; `findAppId()` and `findAppIdByName()` in `official/apps.ts`
-resolve an app from a bundle ID or its exact name; `fetchAvailability()`,
+resolve an app from a bundle ID or its exact name, and `findBundleIdResourceId()` in
+`official/bundleIds.ts` resolves a bundle ID's own resource id; `fetchAvailability()`,
 `formatAvailability()` and `availabilityReady()` are the reusable storefront flow:
 
 ```ts
@@ -265,6 +266,17 @@ message keys are Apple's localisation keys, passed through as strings. The contr
 entity on each agreement — name, address, phone, sanctions screening — is never carried, so
 it cannot reach a caller. The two `ppm` reads make the browser's `accountLookup` request
 first and use the account id it returns.
+
+`src/gap/portal.ts` reads the developer portal, on a credential of its own:
+`fetchCapabilityCatalogue(portalSession, { bundleIdResourceId, teamId })` and
+`formatCapabilityCatalogue()`. The session is a `PortalSession` from
+`gap.loadPortalSession(path)` — a "Copy as cURL" of a developer.apple.com `services-account`
+request, refused without its `DSESSIONID` cookie and `csrf` pair — never a `Session`, and
+`accounts.portalAccountFor(resolution)` gives the path and the developer team id from the
+selected account. The bundle ID's resource id comes from the official side:
+`official.findBundleIdResourceId(client, identifier)`. The transport is `gap.portalRead()`,
+which can only read: it sends the portal's `POST` with `X-HTTP-Method-Override: GET`, and
+has no method parameter.
 
 **The confirmation prompts are the CLI's, not the API's.** `sendDraftMessage()` and
 `sendDraftReply()` called from code go straight to Apple, and neither can be undone.

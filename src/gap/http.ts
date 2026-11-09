@@ -1,10 +1,13 @@
-import { Session, timeToExpiry } from './session';
+import { PortalSession, Session, timeToExpiry } from './session';
 import { Document } from '../shared/jsonapi';
 import { audit, log } from '../shared/log';
 import { ApiError } from '../shared/errors';
 import { buildQuery, Query } from '../shared/query';
 
-/** The one host this client will send the session cookie to. */
+/**
+ * The host the App Store Connect session cookie goes to. The developer portal's cookie, a
+ * separate credential, goes only to `PORTAL_HOST` below.
+ */
 const HOST = 'https://appstoreconnect.apple.com';
 
 /** What a collection said about the page it just sent, whatever shape it arrived in. */
@@ -298,11 +301,11 @@ function methodOf(api: Api, given: string | undefined): Method {
  * `#` is not sent at all — `resolutionCenterThreads#` with a filter beside it silently asked
  * for the unfiltered list. The query is `options.query`'s to state.
  */
-function apiUrl(api: Api, path: string): string {
+function apiUrl(baseUrl: string, path: string): string {
   if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('//')) {
     throw new Error(
-      `"${path}" is a URL, and this takes a path relative to ${api.baseUrl}. Sending it would ` +
-        'carry the App Store Connect session cookie to whatever host it names.'
+      `"${path}" is a URL, and this takes a path relative to ${baseUrl}. Sending it would ` +
+        'carry the session cookie to whatever host it names.'
     );
   }
 
@@ -313,12 +316,12 @@ function apiUrl(api: Api, path: string): string {
     );
   }
 
-  const url = new URL(`${api.baseUrl}/${path.replace(/^\/+/, '')}`);
-  if (!url.href.startsWith(`${api.baseUrl}/`)) {
+  const url = new URL(`${baseUrl}/${path.replace(/^\/+/, '')}`);
+  if (!url.href.startsWith(`${baseUrl}/`)) {
     throw new Error(
-      `"${path}" resolves to ${url.href}, which is outside ${api.baseUrl}. Each base here is ` +
-        'reached by the calls mapped onto it, and every request built here goes out with the ' +
-        'App Store Connect session on it.'
+      `"${path}" resolves to ${url.href}, which is outside ${baseUrl}. Each base here is ` +
+        'reached by the calls mapped onto it, and every request built here goes out with a ' +
+        'session on it.'
     );
   }
 
@@ -388,7 +391,7 @@ export async function request<T = unknown>(
 
   const api = options.api ?? IRIS;
   const method = methodOf(api, options.method);
-  const target = `${apiUrl(api, path)}${buildQuery(options.query ?? {})}`;
+  const target = `${apiUrl(api.baseUrl, path)}${buildQuery(options.query ?? {})}`;
 
   // Every mutation in this client funnels through here, so auditing at this one point is
   // what makes the trail complete — the higher-level calls add meaning, not coverage.
@@ -504,6 +507,102 @@ function irisPaging(meta: unknown): { total?: number; limit?: number } {
     total: typeof total === 'number' ? total : undefined,
     limit: typeof limit === 'number' ? limit : undefined,
   };
+}
+
+/**
+ * The developer portal's JSON:API, `developer.apple.com/services-account/v1`: the fifth base
+ * and the second host, mapped on 2026-11-06 as the owner decision `AGENTS.md` reserves for
+ * one, with two browser recordings and an approved live read behind it.
+ *
+ * Not an `Api`, because almost nothing about it is shared with the four above. It takes a
+ * different credential — a `PortalSession`, whose `DSESSIONID` cookie only this host
+ * accepts — and none of the App Store Connect headers: no `x-csrf-itc`, no team pair. What
+ * `apiUrl` checks is the one rule both need, and this reuses it.
+ */
+const PORTAL_HOST = 'https://developer.apple.com';
+export const PORTAL_BASE = `${PORTAL_HOST}/services-account/v1`;
+
+/** One portal read: where it goes, what it filters on, and which developer team it is for. */
+export interface PortalRead {
+  /** Sent in the URL, as the browser sends the catalogue's `filter[capabilityType]`. */
+  readonly query?: Query;
+  /** Sent inside the body as `urlEncodedQueryParams`, as the browser sends the rest. */
+  readonly bodyQuery?: Query;
+  /** The 10-character developer team id, which the portal takes in the body. */
+  readonly teamId: string;
+}
+
+/**
+ * A read from the developer portal, sent the way the browser sends one: as a `POST` carrying
+ * `X-HTTP-Method-Override: GET`, with the query split between the URL and a body of
+ * `{urlEncodedQueryParams, teamId}`.
+ *
+ * **Read-only by construction.** There is no method parameter: the override is always `GET`,
+ * and the body is only ever that pair. The wire method is `POST`, which is why this is a
+ * function of its own rather than an `Api` passed to `request` — `request` decides what
+ * mutates from the method, and a `POST` there is audited as a write. Nothing here changes
+ * anything, so nothing here is audited as one; it is logged as the read it is.
+ *
+ * Every header below is what all the recorded `services-account/v1` reads carried:
+ * `application/json, text/plain, *\/*` as Accept, `application/vnd.api+json` as Content-Type,
+ * `X-Requested-With: XMLHttpRequest`, and `Origin` — which the portal sends on reads too,
+ * unlike iris, because every one of them is a `POST`.
+ *
+ * **No status is read as an expired session.** Neither a 401, a 403 nor a redirect was ever
+ * recorded on this host, so every one is reported as the refusal it is, with the likeliest
+ * cause.
+ */
+export async function portalRead(session: PortalSession, path: string, read: PortalRead): Promise<unknown> {
+  // The type keeps an App Store Connect `Session` out at compile time; this keeps one out of a
+  // plain-JavaScript caller too. A cookie without the portal's own is not this host's to see.
+  if (session.kind !== 'developer-portal' || !/(?:^|;\s*)DSESSIONID=/.test(session.cookie)) {
+    throw new Error(
+      'portalRead takes a developer-portal session — loadPortalSession() — and this one has no ' +
+        'DSESSIONID cookie, so it is not one. Nothing was sent.'
+    );
+  }
+  const target = `${apiUrl(PORTAL_BASE, path)}${buildQuery(read.query ?? {})}`;
+  const body = JSON.stringify({
+    urlEncodedQueryParams: buildQuery(read.bodyQuery ?? {}).replace(/^\?/, ''),
+    teamId: read.teamId,
+  });
+
+  const started = Date.now();
+  const response = await fetch(target, {
+    method: 'POST',
+    headers: {
+      ...session.headers,
+      cookie: session.cookie,
+      accept: 'application/json, text/plain, */*',
+      'content-type': 'application/vnd.api+json',
+      'x-http-method-override': 'GET',
+      'x-requested-with': 'XMLHttpRequest',
+      origin: PORTAL_HOST,
+    },
+    body,
+    // Not followed. Followed, a redirect to a sign-in host would carry the csrf pair there
+    // (fetch drops the cookie on a cross-origin hop, not custom headers), and its HTML would
+    // come back as a confusing "Expected JSON". A 3xx is reported below as the refusal it is.
+    redirect: 'manual',
+  });
+  const text = await response.text();
+  log.debug('http.read', { method: 'GET', url: target, status: response.status, ms: Date.now() - started });
+
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      target,
+      text,
+      'Nothing recorded shows how the developer portal reports a dead session. Re-capture a ' +
+        "services-account request from a bundle ID's edit page, and check the account's portalTeamId."
+    );
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new ApiError(response.status, target, `Expected JSON, got:\n${text.slice(0, 500)}`);
+  }
 }
 
 export function get<T extends Document>(session: Session, path: string, query?: Query): Promise<T> {

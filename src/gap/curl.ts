@@ -1,4 +1,4 @@
-import { Session } from './session';
+import { PortalSession, Session } from './session';
 
 /**
  * Headers worth carrying over from the browser: what says which account, which team and
@@ -313,4 +313,54 @@ export function sessionFromText(text: string): Session {
 /** Accepts either form: a copied curl command, or a plain-text cookie/header list. */
 export function sessionFromCapture(text: string): Session {
   return /^\s*curl\s/m.test(text) ? sessionFromCurl(text) : sessionFromText(text);
+}
+
+/**
+ * What a developer-portal session takes from its capture besides the cookie.
+ *
+ * `csrf` and `csrf_ts` are on all 43 `services-account` requests in the two recordings of
+ * 2026-11-06, and every response hands back a new pair. The browser sends the newest one it
+ * holds, but requests made together share one, and the approved probe of 2026-11-06 was
+ * answered 200 with a pair the browser had already used and replaced — so the captured pair
+ * is sent as it is, and nothing here chains them. `user-agent` and `referer` are what the
+ * browser sent and cost nothing to keep. Nothing that names App Store Connect is kept.
+ */
+const PORTAL_KEEP_HEADERS = ['csrf', 'csrf_ts', 'user-agent', 'referer'] as const;
+
+/**
+ * A developer-portal session, from a "Copy as cURL" of one of its `services-account` reads.
+ *
+ * Curl only, unlike `sessionFromCapture`: the portal checks a header pair as well as the
+ * cookie, and a copied request is the one capture that carries both. `DSESSIONID` is
+ * required because it is the portal's own session cookie — on every one of the 43 recorded
+ * portal requests — and the one thing an App Store Connect capture never has, so its absence
+ * is how a capture copied from the wrong site is told apart.
+ */
+export function portalSessionFromCapture(text: string): Omit<PortalSession, 'capturedAt'> {
+  if (!/^\s*curl\s/m.test(text)) {
+    throw new Error('The developer-portal capture has to be a "Copy as cURL" of a services-account request.');
+  }
+  const parsed = parseCurl(text);
+
+  if (!/(?:^|;\s*)DSESSIONID=/.test(parsed.cookie)) {
+    throw new Error(
+      'The developer-portal capture has no DSESSIONID cookie, so it is not a developer.apple.com ' +
+        'request — an App Store Connect capture never carries one. Copy a services-account request ' +
+        "from a bundle ID's edit page on developer.apple.com."
+    );
+  }
+
+  const headers: Record<string, string> = {};
+  for (const name of PORTAL_KEEP_HEADERS) {
+    const value = parsed.headers[name];
+    if (value) headers[name] = value;
+  }
+  if (!headers['csrf'] || !headers['csrf_ts']) {
+    throw new Error(
+      'The developer-portal capture has no csrf and csrf_ts headers, which every recorded portal ' +
+        'request carries. Copy a services-account request rather than the page itself.'
+    );
+  }
+
+  return { kind: 'developer-portal', cookie: parsed.cookie, headers };
 }

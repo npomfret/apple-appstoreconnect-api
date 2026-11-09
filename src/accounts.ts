@@ -35,6 +35,18 @@ export interface AccountConfig {
   readonly keyId?: string;
   readonly privateKeyPath?: string;
   readonly capturePath?: string;
+  /**
+   * Where the account's developer-portal capture lives — a second browser credential, since
+   * the portal's session cookie is scoped to `developer.apple.com` and an App Store Connect
+   * capture cannot carry it.
+   */
+  readonly portalCapturePath?: string;
+  /**
+   * The 10-character developer team id the portal takes in every request body. Not in the
+   * portal's cookie, and not the App Store Connect team id the other capture decodes, so it
+   * is configured rather than derived. An identifier, not a credential: never printed.
+   */
+  readonly portalTeamId?: string;
 }
 
 export interface AccountsFile {
@@ -124,10 +136,10 @@ export function parseAccounts(text: string, path: string): AccountsFile {
     const where = `${path}: account "${name}"`;
     const block = asObject(value, where);
 
-    const known = ['issuerId', 'keyId', 'privateKeyPath', 'capturePath'];
+    const known = ['issuerId', 'keyId', 'privateKeyPath', 'capturePath', 'portalCapturePath', 'portalTeamId'];
     const unknownKeys = Object.keys(block).filter((key) => !known.includes(key));
     // Refused rather than ignored. An unrecognised key here is a misspelling of one of the
-    // four that matter, and ignoring it means running against the environment instead of
+    // keys that matter, and ignoring it means running against the environment instead of
     // the account named on the command line, without saying so.
     if (unknownKeys.length) {
       fail(`${where}: unrecognised ${unknownKeys.length > 1 ? 'keys' : 'key'} ${unknownKeys.join(', ')}. Expected ${known.join(', ')}.`);
@@ -135,11 +147,15 @@ export function parseAccounts(text: string, path: string): AccountsFile {
 
     const privateKeyPath = optionalString(block, 'privateKeyPath', where);
     const capturePath = optionalString(block, 'capturePath', where);
+    const portalCapturePath = optionalString(block, 'portalCapturePath', where);
+    const portalTeamId = optionalString(block, 'portalTeamId', where);
     accounts[name] = {
       issuerId: optionalString(block, 'issuerId', where),
       keyId: optionalString(block, 'keyId', where),
       ...(privateKeyPath ? { privateKeyPath: expandUser(privateKeyPath) } : {}),
       ...(capturePath ? { capturePath: expandUser(capturePath) } : {}),
+      ...(portalCapturePath ? { portalCapturePath: expandUser(portalCapturePath) } : {}),
+      ...(portalTeamId ? { portalTeamId } : {}),
     };
   }
 
@@ -276,6 +292,40 @@ export function capturePathFor(resolution: Resolution): string {
   return absolute(selected?.config.capturePath ?? defaultCapturePath);
 }
 
+/** What a developer-portal command needs from its account. */
+export interface PortalAccount {
+  readonly capturePath: string;
+  readonly teamId: string;
+}
+
+/**
+ * The developer-portal capture and team for this run: `--account`, or the default account.
+ *
+ * Configured only. There is no environment variable and no built-in path, because there was
+ * no single-account setup to stay compatible with and a default capture would be a guess at
+ * whose cookie to read. A selected account missing either field is an error naming the
+ * account and the field.
+ */
+export function portalAccountFor(resolution: Resolution): PortalAccount {
+  const selected = selectAccount(resolution.file, resolution.account);
+  if (!selected) {
+    fail(
+      `The developer-portal commands need an account with portalCapturePath and portalTeamId in ` +
+        `${configPath()}; name it with --account or make it the default.`
+    );
+  }
+
+  const { portalCapturePath, portalTeamId } = selected.config;
+  const missing = [portalCapturePath ? undefined : 'portalCapturePath', portalTeamId ? undefined : 'portalTeamId'].filter(
+    (key): key is string => key !== undefined
+  );
+  if (!portalCapturePath || !portalTeamId) {
+    fail(`Account "${selected.name}" has no ${missing.join(' and no ')} in ${configPath()}, which the developer-portal commands need.`);
+  }
+
+  return { capturePath: absolute(portalCapturePath), teamId: portalTeamId };
+}
+
 function absolute(path: string): string {
   return isAbsolute(path) ? path : resolve(path);
 }
@@ -302,7 +352,14 @@ export function describeAccounts(file: AccountsFile | undefined, path: string): 
     lines.push(
       `  ${name}${selected?.name === name ? '  (default)' : ''}`,
       `    official API:  ${official ? `yes, key at ${config.privateKeyPath}` : 'not configured'}`,
-      `    capture:       ${config.capturePath ?? 'not configured'}`
+      `    capture:       ${config.capturePath ?? 'not configured'}`,
+      `    portal:        ${
+        config.portalCapturePath && config.portalTeamId
+          ? `capture at ${config.portalCapturePath}`
+          : config.portalCapturePath || config.portalTeamId
+            ? `incomplete — needs both portalCapturePath and portalTeamId`
+            : 'not configured'
+      }`
     );
   }
 

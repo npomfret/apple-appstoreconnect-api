@@ -11,7 +11,7 @@ smallest diff.
 
 The private side is gap-only: no private implementation of an officially served
 capability remains, `asc get` is confined to the private families and reaches iris only,
-there is no raw write, and the transport speaks one host, four methods, and four bases —
+there is no raw write, and the transport speaks two hosts, four methods, and five bases —
 `iris/v1`; a **read-only** `/ci/api` carrying the five Xcode Cloud capabilities in none
 of 4.4.1's schemas — a workflow's `post_actions`, compute usage against the plan, the
 team's Developer Program standing including whether the PLA needs signing, the thirteen
@@ -19,9 +19,12 @@ booleans saying what the session is permitted to do, and the infrastructure-vali
 opt-in to building against pre-release macOS and Xcode; and, since 2026-10-27, a
 **read-only** `WebObjects/iTunesConnect.woa/ra/v1` and a **read-only** `/ppm` carrying the
 three Business-pane reads in none of 4.5.1's schemas — the state of each agreement, the
-warnings shown on the account, and the compliance forms Apple wants. Keep it that way. A
-fifth base, or a write on any but the first, is an owner decision with a recording behind
-it, not an implementation detail.
+warnings shown on the account, and the compliance forms Apple wants. Since 2026-11-06 there
+is one more host and base: a **read-only** `developer.apple.com/services-account/v1`, on a
+separate developer-portal capture that no other host is sent, carrying the one read in none
+of 4.5.1's schemas — the catalogue of capabilities and services a bundle ID can have. Keep
+it that way. Another base, or a write on any but the first, is an owner decision with a
+recording behind it, not an implementation detail.
 
 The rule for deciding is that **duplication is a property of a call, not of a resource**. A
 private read of an officially-available resource is retained only when it carries a field

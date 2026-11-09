@@ -1,5 +1,5 @@
 import { readFileSync } from 'fs';
-import { CURL_PATH, describeSession, loadSession, Session } from './gap/session';
+import { CURL_PATH, describeSession, loadPortalSession, loadSession, Session } from './gap/session';
 import { Cancelled, confirm } from './shared/confirm';
 import { denormalize, denormalizeAll, Denormalized, Document } from './shared/jsonapi';
 import {
@@ -14,6 +14,7 @@ import {
 import { Query } from './shared/query';
 import { log } from './shared/log';
 import { findAppId, findAppIdByName } from './official/apps';
+import { findBundleIdResourceId } from './official/bundleIds';
 import { availabilityReady, fetchAvailability, formatAvailability } from './official/availability';
 import { OfficialClient, officialClient } from './official/client';
 import {
@@ -28,10 +29,19 @@ import {
   pruneBuilds,
   pruneReady,
 } from './official/testflight';
-import { capturePathFor, configPath, describeAccounts, officialCredentialsFor, readAccounts, Resolution } from './accounts';
+import {
+  capturePathFor,
+  configPath,
+  describeAccounts,
+  officialCredentialsFor,
+  portalAccountFor,
+  readAccounts,
+  Resolution,
+} from './accounts';
 import * as api from './gap/api';
 import * as business from './gap/business';
 import * as ci from './gap/ci';
+import * as portal from './gap/portal';
 
 const USAGE = `App Store Connect CLI: Apple's official API plus private API gaps.
 
@@ -124,6 +134,15 @@ Private API gaps (uses the browser capture described below, or an account's):
                               entity, with their status. Read-only, and no official
                               equivalent
 
+  asc portal-capabilities --bundle-id <bundleId>
+                              The developer portal's catalogue of capabilities and services
+                              for a bundle ID: what each writes into a profile, on which
+                              platforms, and whether it is enabled or must be requested —
+                              221 entries when recorded, WeatherKit among them. Read-only.
+                              The official API has only a fixed list of 28 capability types.
+                              Needs both credentials: the API key to find the bundle ID, and
+                              the account's developer-portal capture (see below)
+
   asc get <path> [k=v ...]    Raw GET, for a query the commands above don't send. Confined
                               to the private families this client is for; an officially
                               served path is refused rather than duplicated
@@ -153,14 +172,15 @@ Options:
   --json                      For "report", "history", "privacy", "post-actions",
                               "usage", "team", "capabilities",
                               "infrastructure-validation", "agreements",
-                              "account-messages" and "compliance", plus "availability":
-                              emit JSON instead of the digest
+                              "account-messages", "compliance" and "portal-capabilities",
+                              plus "availability": emit JSON instead of the digest
   --check                     For "availability": exit nonzero if a selected storefront
                               cannot currently distribute. For "prune-builds" and
                               "add-builds": exit nonzero if there is anything to change,
                               without changing it
   --bundle-id <id>            For the official commands: find the app by bundle ID. For
-                              "create-app": the new app's bundle ID
+                              "create-app": the new app's bundle ID. For
+                              "portal-capabilities": the bundle ID to ask about
   --app <name>                For the official commands: find the app by its exact name
   --group <name|id>           For "prune-builds" and "add-builds": the TestFlight group,
                               by its exact name or its id
@@ -191,6 +211,12 @@ lives at ${configPath()} (override with ASC_CONFIG) and holds paths, never keys:
                          "capturePath": "~/.config/asc/acme.curl.txt"}}}
 
 With no accounts file, the environment variables work exactly as they always have.
+
+The developer-portal commands need two more fields on the account, and read them from
+nowhere else: "portalCapturePath", a "Copy as cURL" of any services-account request made
+from a bundle ID's edit page on developer.apple.com — a separate capture, since that
+site's session cookie never reaches App Store Connect — and "portalTeamId", the
+10-character developer team id.
 
 The session is read from ${CURL_PATH} unless something above says otherwise, fresh on every
 command. There is no login step: log in with your passkey, open dev tools, right-click any
@@ -980,6 +1006,31 @@ async function main(invocation: Invocation): Promise<number> {
       console.log(
         json ? JSON.stringify(requirements, null, 2) : business.formatComplianceRequirements(requirements)
       );
+      return 0;
+    }
+
+    /**
+     * The developer portal's capability catalogue, for one bundle ID. Two credentials, each on
+     * its own host: the official API turns the identifier into the bundle ID's resource id,
+     * then the portal capture reads the catalogue for it — composed here, which is the only
+     * place the two may meet. The bundle ID is taken by identifier because that is what a
+     * person knows; the portal is sent a resource id as `filter[bundleId]`, which is what it was
+     * recorded sending. Whether that filter changes the answer is not established.
+     */
+    case 'portal-capabilities': {
+      const example = 'portal-capabilities --bundle-id com.example.app';
+      const identifier = requireOne(bundleIds, '--bundle-id <bundleId>', example);
+      if (rest.length) throw new Error(`portal-capabilities takes no positional arguments. Example: asc ${example}`);
+      const portalAccount = portalAccountFor(resolution);
+      const portalSession = loadPortalSession(portalAccount.capturePath);
+
+      const client = officialClient(officialCredentialsFor(resolution));
+      const bundleIdResourceId = await findBundleIdResourceId(client, identifier);
+      const catalogue = await portal.fetchCapabilityCatalogue(portalSession, {
+        bundleIdResourceId,
+        teamId: portalAccount.teamId,
+      });
+      console.log(json ? JSON.stringify(catalogue, null, 2) : portal.formatCapabilityCatalogue(catalogue));
       return 0;
     }
 

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 
-import { sessionFromCapture } from './curl';
+import { portalSessionFromCapture, sessionFromCapture } from './curl';
 
 export interface Session {
   cookie: string;
@@ -75,6 +75,43 @@ export function loadSession(path = CURL_PATH): Session {
   // Parsing happens on every command, so "now" would say nothing. The file's mtime is
   // when you actually pasted the cookie, which is what you want to see in `asc status`.
   return { ...session, capturedAt: statSync(path).mtime.toISOString() };
+}
+
+/**
+ * A developer-portal session: the `developer.apple.com` cookie jar and the anti-forgery pair
+ * the portal checks, from a capture of its own.
+ *
+ * Separate from `Session` because it is a separate credential. The portal's session cookie,
+ * `DSESSIONID`, is scoped to `developer.apple.com`, so an App Store Connect capture cannot
+ * carry it, and nothing in this type is ever sent to `appstoreconnect.apple.com` — the
+ * transport in `http.ts` that takes one has a host of its own.
+ */
+export interface PortalSession {
+  /**
+   * What makes this a different type from `Session` rather than a subset of it: without it a
+   * `Session`, which has a cookie and headers too, would type-check as one and could be
+   * handed to `portalRead` — the App Store Connect cookie sent to developer.apple.com.
+   */
+  readonly kind: 'developer-portal';
+  readonly cookie: string;
+  /** `csrf`, `csrf_ts`, and the `user-agent` and `referer` where the capture had them. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** When the capture file was last written — its mtime, not when it was parsed. */
+  readonly capturedAt: string;
+}
+
+/** Reads a developer-portal capture. The path is always given: there is no default one. */
+export function loadPortalSession(path: string): PortalSession {
+  if (!existsSync(path)) {
+    throw new Error(
+      `No developer-portal capture at ${path}. Open a bundle ID's edit page on ` +
+        'developer.apple.com, copy one of its services-account/v1 requests as cURL, and save it there.'
+    );
+  }
+  return {
+    ...portalSessionFromCapture(readFileSync(path, 'utf8')),
+    capturedAt: statSync(path).mtime.toISOString(),
+  };
 }
 
 /** Milliseconds until the session expires, or undefined if Apple didn't tell us. */

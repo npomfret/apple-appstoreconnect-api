@@ -9,8 +9,9 @@ history and Xcode Cloud gaps.
 Official requests and private requests have separate transports and credentials. The
 official transport sends a JWT only to `api.appstoreconnect.apple.com`; its two writes, both
 to a TestFlight group's build list, are audited and confirmed the way the private ones are.
-The private transport sends a browser cookie only to `appstoreconnect.apple.com`, and its
-raw `asc get` remains confined to gap families.
+The private transport sends the App Store Connect cookie only to `appstoreconnect.apple.com`,
+and its raw `asc get` remains confined to gap families. One read goes to the developer portal
+instead, on a separate developer.apple.com capture that only that host is sent.
 
 That separation is the shape of the source, not a convention: `src/official/` holds the
 documented API and the wrappers over it, `src/gap/` holds only what Apple serves nowhere
@@ -132,6 +133,7 @@ is never used for a capability Apple documents officially.
 | `agreements` | private Business-pane agreements: whether each (Paid, Free Applications) is in effect, whether a newer version is waiting to be accepted and until when the current one holds, grace periods, and what the page offers to do. The official API has no agreements resource. Read-only, team-scoped, and never reads the contracting legal entity |
 | `account-messages` | private Business-pane warnings — banking not set up, tax information missing, DSA — as Apple's message keys. Read-only, team-scoped |
 | `compliance` | private compliance forms Apple wants, per app and for the legal entity, with their status. Read-only, team-scoped |
+| `portal-capabilities --bundle-id <bundleId>` | the developer portal's catalogue of capabilities and services for a bundle ID — 221 when recorded, WeatherKit among them — with entitlements, platforms, and whether each is enabled or requested. The official API has only a fixed list of 28. Read-only, and needs both the API key and a separate developer.apple.com capture on the account — [docs/reading.md](docs/reading.md#developer-portal-what-capabilities-a-bundle-id-can-have) |
 | `get` | a raw GET at a path you give it, confined to the private families above — an officially served path is refused rather than duplicated |
 
 **Writing** — all but one copied from a capture of the browser doing it; `delete-attachment`

@@ -40,6 +40,10 @@ Every field is optional. An account with no `privateKeyPath` cannot run `asc ava
 and says so, naming the account and the missing key; one with no `capturePath` cannot run a
 private command. Neither falls back to another account's credentials.
 
+Two more fields, `portalCapturePath` and `portalTeamId`, are for the developer-portal command
+— see [Developer portal](#developer-portal-what-capabilities-a-bundle-id-can-have). They are
+read from the selected account only: no environment variable and no built-in path.
+
 Both credentials resolve in the same order:
 
 | | official API | private capture |
@@ -511,6 +515,62 @@ printed, even with `--json`.
 Apple has no official equivalent: in 4.5.1 `contract`, `compliance`, `bank` and
 `legalEntit` match nothing, and the twelve `agreement` paths are the TestFlight tester
 agreement and the customer EULA.
+
+## Developer portal: what capabilities a bundle ID can have
+
+```sh
+asc portal-capabilities --bundle-id com.example.app
+asc --account acme --json portal-capabilities --bundle-id com.example.app
+```
+
+```
+WEATHERKIT                               capability WeatherKit
+    platforms IOS, VISION_OS, TV_OS, WATCH_OS, MAC_OS; entitlements com.apple.developer.weatherkit
+WEATHER_KIT                              service    WeatherKit
+    platforms IOS, VISION_OS, TV_OS, WATCH_OS
+```
+
+The developer portal's catalogue of every capability and service a bundle ID can be given —
+221 entries when recorded on 2026-11-06 — with what each writes into a profile, the
+platforms and distribution types it applies to, and whether it is simply enabled or has to be
+requested, opted into, or approved for distribution. Apple's official API has `CapabilityType`,
+a fixed list of 28, and nothing that lists what exists: WeatherKit, MusicKit and ShazamKit are
+not on it. Read-only.
+
+It needs **both credentials**, on their own hosts. The API key finds the bundle ID's resource
+id from its identifier (`GET /v1/bundleIds?filter[identifier]=…`, official). The portal read
+is `POST developer.apple.com/services-account/v1/capabilities` with
+`X-HTTP-Method-Override: GET` — how the portal sends every read — carrying the bundle ID, the
+platforms `IOS,MACOS` and the developer team id, exactly as the browser was recorded sending
+them.
+
+The portal capture is **a second capture**, set on the account and nowhere else:
+
+```json
+"acme": {
+  "…": "…",
+  "portalCapturePath": "~/.config/asc/acme.portal.curl.txt",
+  "portalTeamId": "ABCDE12345"
+}
+```
+
+- `portalCapturePath`: on developer.apple.com, open a bundle ID's edit page (Certificates,
+  Identifiers & Profiles → Identifiers → any identifier), then in dev tools → Network →
+  Fetch/XHR right-click any `services-account/v1/…` request → **Copy as cURL**, and save it
+  there. The portal's session cookie, `DSESSIONID`, is scoped to developer.apple.com, so an
+  App Store Connect capture cannot stand in for it, and a capture without one is refused.
+- `portalTeamId`: the 10-character developer team id, which the portal takes in every request
+  body. It is in neither capture's cookie. `asc accounts` never prints it.
+
+The portal hands back a new anti-forgery pair (`csrf`, `csrf_ts`) on every response, and the
+browser sends the newest. This client sends the captured pair as it is: the approved probe of
+2026-11-06 was answered with a pair the browser had already used and replaced, one minute
+after it was copied. How long a captured pair keeps working is not established — when a
+command is refused, copy a fresh one. No refusal from this host has been recorded, so none is
+reported as an expired session.
+
+Rows Apple sent without a distribution-type or entitlement list carry none, rather than an
+empty one; a flag every recorded row carries is refused if missing, not defaulted.
 
 ## Ids, and the two halves of a metadata rejection
 

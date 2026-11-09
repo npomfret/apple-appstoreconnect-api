@@ -54,6 +54,8 @@ export interface Call {
   method: string;
   headers: Record<string, string>;
   body?: string;
+  /** The redirect mode asked for, where the caller set one. */
+  redirect?: RequestInit['redirect'];
 }
 
 /** What the stub should answer with. Defaults to an empty JSON:API collection, 200. */
@@ -92,6 +94,7 @@ export function stubFetch(reply: (call: Call) => Reply = () => ({})): Stub {
       method: init?.method ?? 'GET',
       headers: asHeaders(init?.headers),
       body: typeof init?.body === 'string' ? init.body : undefined,
+      ...(init?.redirect ? { redirect: init.redirect } : {}),
     };
     calls.push(call);
 

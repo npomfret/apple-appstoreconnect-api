@@ -1262,6 +1262,234 @@ refusal and never as an expired session; no status beyond the three agreement st
 one requirement status has been seen, so all are passed through as strings; and none of the
 three has been sent by this client, which has only ever replayed their shape against a stub.
 
+## Developer portal: the capability catalogue and service usage
+
+Recorded from the browser on **2026-11-06** — the Identifiers page of the developer portal,
+enabling WeatherKit on an existing bundle ID — and read the same day through an extractor
+emitting methods, redacted paths, query and form key names, statuses, header *names* and
+response key structure; values only for enum-like fields (capability ids, types, units,
+platforms), booleans and counts, never a team id, an identifier, a name or a date. A second
+recording made the same day, of the Profiles page, repeats the usage read below with the
+same shape.
+
+**Both reads are a gap. The catalogue is mapped since 2026-11-06; the usage read is not.**
+Every call is on `developer.apple.com/services-account/v1`, a host and base this client did
+not have, on the portal's own cookie session rather than App Store Connect's. Mapping the
+catalogue was the owner decision `AGENTS.md` reserves for a new base. Checked against **4.5.1** (1,001 paths,
+1,473 schemas) the same day: `capabilit` matches only the `bundleIdCapabilities` paths and
+the `BundleIdCapability*`, `CapabilityOption`, `CapabilitySetting` and `CapabilityType`
+schemas; `weather`, `MUSIC_KIT`, `SHAZAM`, `serviceUsage`, `tierName`, `dailyUsage`,
+`entitlementKeys` and `includeRequestable` occur nowhere in the specification; and the only
+`usage` paths are the TestFlight `metrics/beta*Usages`. Official `/v1/subscriptions` exists,
+but it is the auto-renewable subscription create on another host — a name clash, not an
+equivalent.
+
+The portal's transport differs from iris in ways a client would have to follow exactly:
+every read is a `POST` of `application/vnd.api+json`, a JSON:API listing carries its query
+as a body of `{urlEncodedQueryParams, teamId}` and an `X-HTTP-Method-Override: GET` header,
+and the session headers are `Cookie`, `csrf` and `csrf_ts` — not the `X-CSRF-ITC` set
+`gap/http.ts` sends.
+
+### The capability catalogue
+
+`POST services-account/v1/capabilities?filter[capabilityType]=capability,service&filter[includeRequestable]=true`,
+with `filter[bundleId]` and `filter[platform]` (`IOS,MACOS`) in `urlEncodedQueryParams`,
+returned **221** rows of type `capabilities`. `meta.paging` said `{total: 0, limit: 0}`, so
+the rows came back in one response and the paging block cannot be trusted to describe them.
+
+- Ids are upper-snake strings that are also the `capability` relationship id on a bundle
+  ID capability. 218 are `capabilityType: capability` and 3 are `service`: `MUSIC_KIT`,
+  `SHAZAM_KIT` and `WEATHER_KIT`.
+- WeatherKit appears twice — `WEATHERKIT` as a capability with entitlement key
+  `com.apple.developer.weatherkit`, `WEATHER_KIT` as a service — and the enable recorded
+  beside this read sent both. Apple's official `CapabilityType` has 28 values and neither.
+  All five of the official ids checked (`ICLOUD`, `PUSH_NOTIFICATIONS`, `APP_GROUPS`,
+  `APPLE_ID_AUTH`, `MAPS`) are in the catalogue under the same spelling.
+- Per row: `name`, `description`, `documentationURL`, `imageUrl`, `sfSymbolIcon`;
+  `entitlements[]` (each a `key`, `name`, `valueType` of `ARRAY`, `BOOLEAN` or `STRING`,
+  `relevance` — only `profile-entitlement` seen — `profileKey`, `supportsWildcard`,
+  `isRequiredInPlist`, `values`) and `entitlementKeys[]`; `supportedSDKs[]` (`IOS`,
+  `MAC_OS`, `TV_OS`, `WATCH_OS`, `VISION_OS`) and `distributionTypes[]` (`DEVELOPMENT`,
+  `AD_HOC`, `STORE`, `DEVELOPER_ID`), each a `name` and `displayValue`, and absent on some
+  rows; and twelve booleans. Of the 221: `optional` 220, `editable` and `isPublic` 132,
+  `canRequestFromPortal` 93, `associatedToRequestForms` 70, `developmentOnly` 13,
+  `distributionApprovalRequired` 12, `supportsWildcard` 8, `enabledByDefault` 1, and
+  `optInRequired`, `hasExistingFeatureRequest` and `displaySupportedSDKs` none.
+- `referenceType` and `requestedCustomCapabilities` were `null` on every row, so their
+  shape is not established.
+
+What it would answer that nothing official does: which capabilities exist beyond the 28,
+which a team can request rather than simply enable, which entitlements each writes into a
+profile, and on which platforms and distribution types each applies. Whether the
+`filter[bundleId]` changes the answer, and how, is not established: one bundle ID was
+recorded.
+
+**Mapped on 2026-11-06**, as the owner decision `AGENTS.md` reserves for a new base, after one
+approved live read the same day — see *The probe* and *What is mapped* below.
+
+### The service usage read
+
+`POST services-account/v1/subscriptions`, a JSON:API body of type `subscriptions` with
+`serviceTypeId: "weatherkitUsage"`, `granularity: "day"`, a `teamId`, and
+`dailyUsageStartDate`/`dailyUsageEndDate` as `YYYY-MM-DDTHH:MM:SS` one day apart ending on
+the day of capture. No URL query and no method override. Calling it a read is an inference,
+not a recording: the portal sent it unprompted on loading both the Identifiers and the
+Profiles pages, and its response describes a resource rather than confirming a change.
+
+The response is a single `subscriptions` resource with a UUID id: `serviceTypeId` echoed,
+`tierName` (`Apple Developer Program`), `usageUnit` and `serviceUsage.unit` (both
+`request`), `serviceUsage.currentUsage` and `.available` (numbers), `dailyUsage[]` and
+`usageByIdentifier[]`.
+
+What the recording does not establish:
+
+- **The rows.** `currentUsage` was 0 and both arrays were empty on both recordings, because
+  the account has not called WeatherKit. The envelope is proven; a `dailyUsage` or
+  `usageByIdentifier` row is not, and a client for them would start from a probe.
+- **Other services.** `weatherkitUsage` is the only `serviceTypeId` seen. That `MUSIC_KIT`
+  and `SHAZAM_KIT` have usage on the same route is a guess.
+- **Other granularities and ranges.** Only `day`, over one day, was sent.
+- **Errors.** Every response was a 200, so what an expired session or a refused team looks
+  like on this base is unrecorded.
+
+### The probe
+
+The portal's anti-forgery pair rotates: every one of the 43 recorded portal responses carries
+a new `csrf`/`csrf_ts`, and the browser sends the newest it holds — except that requests made
+together share one, so a pair is not strictly single-use. The first pair a page sends matches
+no recorded response header, the HTML page's included, so where the browser gets it is not
+established. Whether a pair copied out of the browser still works
+when replayed later, outside that chain, could not be read off a recording, so it was asked
+once, with the owner's approval.
+
+On 2026-11-06 a "Copy as cURL" of a `services-account/v1/bundleIds` read made on a bundle ID's
+edit page supplied the cookie, the `csrf` pair, the team id from its body and the bundle ID
+resource id from its Referer; the catalogue request was built from them in exactly its
+recorded form — URL, query split, headers and body keys — and sent once, by a script that
+refused to send anything else and printed only shapes. It was answered **200**,
+`application/json`, top-level `data`, `links`, `meta`, **221** rows of type `capabilities`,
+with a fresh `csrf` pair in the response headers. The capture was **one minute** old, and the
+browser had already used and replaced its pair.
+
+So a captured pair is accepted at least once, after the browser has moved on from it, at one
+minute. Not established: how long a captured pair lasts, whether a pair is accepted twice,
+and whether the portal checks it at all on a read — the probe sent it, and nothing was varied.
+
+### What is mapped
+
+- **Transport** — `portalRead` in `src/gap/http.ts`, on `PORTAL_BASE` =
+  `https://developer.apple.com/services-account/v1`. Read-only by construction: the
+  method-override is always `GET` and there is no method parameter. Sends the cookie, the
+  captured `csrf` pair, the captured `user-agent` and `referer`, and the recorded `Accept`,
+  `Content-Type: application/vnd.api+json`, `X-Requested-With: XMLHttpRequest` and
+  `Origin: https://developer.apple.com`. None of the App Store Connect headers. A session
+  without `DSESSIONID` is refused before anything is sent, and a redirect is not followed.
+  Every refusal, a 3xx included, is an `ApiError`, never a `SessionExpiredError`, since none
+  was recorded.
+- **Session** — `PortalSession`, from `portalSessionFromCapture` in `src/gap/curl.ts`: a curl
+  only, refused without `DSESSIONID` (on all 43 recorded portal requests, and never in an App
+  Store Connect capture) or without the `csrf` pair. `csrf`, `csrf_ts` and `DSESSIONID` are
+  added to the log scrub's field names.
+- **Read** — `fetchCapabilityCatalogue` in `src/gap/portal.ts`. Of the per-row attributes it
+  keeps the id, name, `capabilityType`, description, platform names, distribution-type names,
+  entitlement keys, documentation URL and the nine flags present on all 221 recorded rows. The
+  two lists absent on five rows stay absent rather than empty.
+- **Configuration** — the account's `portalCapturePath` and `portalTeamId`, from the selected
+  account only. The developer team id is in neither capture's cookie: on the recorded requests
+  it is in the body and nowhere in the cookie, URL or Referer.
+- **The bundle ID's resource id** comes from official `GET /v1/bundleIds?filter[identifier]`
+  (`src/official/bundleIds.ts`), matched exactly. On the first live run (below) the portal
+  **did not reject** the official resource id as `filter[bundleId]`, and the catalogue had the
+  same 221 rows as the probe, which used the id from an edit page's Referer. That shows the
+  id was not refused, not that it was used: whether the filter changes the answer is not
+  established. That it is the *same* id the portal uses still rests on both being
+  10-character ids of a resource Apple calls `bundleIds` on both hosts.
+
+### The first live run
+
+On **2026-11-09** `asc portal-capabilities --bundle-id <one universal bundle ID>` ran twice,
+first as the digest and then with `--json`, on a capture of a `services-account/v1/bundleIds`
+read that was under two minutes old. Both runs succeeded. The official lookup found exactly one
+match, and the catalogue came back with **221** rows (218 `capability`, 3 `service`; 89 not
+editable, 93 `canRequestFromPortal`), the same count as the probe's. Neither the transport nor
+the parser needed a change.
+
+- **A captured pair is accepted at least twice.** Both runs sent the same `csrf`/`csrf_ts`,
+  and the client does not take the rotated pair from a response. How long a pair lasts is
+  still not established.
+- **Not every portal request carries a usable pair.** A "Copy as cURL" of the legacy
+  `services-account/{v}/account/listTeams.action` has `DSESSIONID`, but its `csrf` and
+  `csrf_ts` headers are empty. `portalSessionFromCapture` refused it before anything was
+  sent, which is the intended behaviour. Copy a `services-account/v1/…` request.
+
+### The rename recording
+
+`developer.apple.com - rename.har`, recorded 2026-11-09 renaming a bundle ID on its edit page,
+was read through the same extractor. It has three portal calls, all 200, and **none is a gap**:
+
+- **`PATCH services-account/v1/bundleIds/{id}`** is the rename. The portal sends the whole
+  resource back: `identifier`, `name`, `seedId`, `teamId`, `wildcard`, `permissions`, and the
+  `bundleIdCapabilities` relationship with its data inline. Official `PATCH /v1/bundleIds/{id}`
+  (4.5.1, `BundleIdUpdateRequest`) takes `name`, so renaming is official ground. Re-sending
+  the capability list is how the portal's page works, not a capability of its own.
+- **`POST(GET) services-account/v1/bundleIds`** (`limit`, `sort`, `filter[platform]`) is the
+  list that official `GET /v1/bundleIds` serves.
+- **`POST services-account/v1/subscriptions`** is the service usage read recorded above, with
+  the same request and response shape.
+
+### The Profiles page: regeneration and certificate type limits
+
+The second recording (`developer.apple.com - certs.har`, despite its name) is the Profiles
+page, regenerating one App Store provisioning profile; it creates and revokes no
+certificate. Read the same day through the same extractor, plus equality checks between
+records — whether a value changed, never the value. Twenty-five portal requests, all 200.
+Mostly this is official ground: the profile list (`fields[profiles]` of `name`, `platform`,
+`platformName`, `profileTypeLabel`, `expirationDate`, `profileState`) and the single
+profile with `include=bundleId,certificates,devices,bundleId.bundleIdCapabilities,bundleId.bundleIdCapabilities.macBundleId`
+are official `GET /v1/profiles` and `GET /v1/profiles/{id}`. The portal's extra profile
+fields — `profileTypeLabel`, `platformName`, `bundlePlatform` (`UNIVERSAL`), `templateName`,
+`supportedPlatforms`, `configuration`, `profileVersion` — are display and plumbing, and not
+a reason for a private read on their own.
+
+Three calls are not official. **None is mapped.** All three are on the legacy
+`services-account/{v}/account/ios/…/*.action` base: form-encoded `POST`s with `csrf` and
+`csrf_ts`, answered in the `{creationTimestamp, resultCode, userLocale, protocolVersion,
+requestUrl, responseId, isAdmin, isMember, isAgent, …}` envelope, unlike any this client
+reads today.
+
+- **`regenProvisioningProfile.action`** is a write. Its form keys are `appIdId`,
+  `provisioningProfileId`, `distributionType` (`store`), `subPlatform` and
+  `isExcludeAudiences` (both empty), `returnFullObjects` (`false`), `provisioningProfileName`,
+  `certificateIds` (one), `deviceIds` (empty) and `teamId`. Comparing the profile before and
+  after: the **resource id, `createdDate`, `expirationDate`, `profileVersion` and certificate
+  are unchanged**; `uuid` and `profileContent` are new; and `profileState` went from
+  `INVALID` to `ACTIVE`. The response carries the new profile inline as `encodedProfile`,
+  its `UUID` matching the later official read. Official profiles have `GET`, `POST` and
+  `DELETE` and no `PATCH`, so the official route is delete and create, which issues a new
+  resource id (and presumably a new expiry — not checked). Revalidating in place, keeping the id and the expiry, is
+  what has no official equivalent. Why the profile was `INVALID` is not established — that
+  the WeatherKit enable recorded earlier the same day invalidated it is a plausible guess,
+  not a finding. Recorded once, for one App Store profile, with no devices.
+- **`listCertRequests.action`** (form keys `pageSize` — 500 — `pageNumber`,
+  `certificateStatus`, `sort`, `types`, `teamId`) lists certificates, which official
+  `/v1/certificates` already serves. What it adds is per-type policy in
+  `certificateType`: `maxActive` (2), `daysOverlap` (364), `permissionType`,
+  `distributionMethod`, `ownerType`, `typeEnum` (`DISTRIBUTION`) — and per-row `canRevoke` and
+  `canDownload`. The official `Certificate` has no field for any of them. One row, so one
+  certificate type's limits are recorded. Rows also carry `ownerName` and requester
+  fields, which are personal data and would need the redaction rule applied to output.
+- **`listProfileTemplates.action`** (`distributionType` `store`) returned
+  `templates: null`. The route is proven; nothing about a template is.
+
+The remaining portal calls are page plumbing and duplicates: `getProvisioningProfile.action`
+is the legacy form of the official profile read, plus a `features` map whose keys are partly
+names (`push`, `iCloud`, `homeKit`) and partly opaque ten-character codes; `profileList.json`
+is the profile-type picker (`limited`, `adhoc`, `store`, `direct` across `ios` and `mac`)
+where the official `ProfileType` has 14 values; and `checkPermissions`, `listTeams.action`,
+`viewDeveloper.action`, `navList.json` and `getMediaIdCapabilities.json` are access, team and
+navigation checks, the team and developer ones carrying personal data. The usage read
+recurs with the shape recorded above.
+
 ## Seen but deliberately not mapped
 
 From the Xcode Cloud tab: the pickers behind the workflow editor —

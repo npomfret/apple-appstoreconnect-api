@@ -10,5 +10,6 @@
 
 export * from './apps';
 export * from './availability';
+export * from './bundleIds';
 export * from './client';
 export * from './testflight';

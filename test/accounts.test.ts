@@ -25,6 +25,7 @@ import {
   describeAccounts,
   officialCredentialsFor,
   parseAccounts,
+  portalAccountFor,
   selectAccount,
 } from '../src/accounts';
 
@@ -47,6 +48,14 @@ const FILE: AccountsFile = {
     },
     readonly: { capturePath: '/captures/readonly.txt' },
     keyonly: { issuerId: 'i', keyId: 'k', privateKeyPath: '/keys/only.p8' },
+    portal: {
+      issuerId: 'issuer-portal',
+      keyId: 'key-portal',
+      privateKeyPath: '/keys/portal.p8',
+      portalCapturePath: '/captures/portal.txt',
+      portalTeamId: 'TEAMPORTAL',
+    },
+    halfportal: { portalCapturePath: '/captures/half.txt' },
   },
 };
 
@@ -127,7 +136,7 @@ describe('which account a command is about', () => {
   });
 
   test('naming an account that is not there lists the ones that are', () => {
-    assert.throws(() => selectAccount(FILE, 'ghost'), /"acme", "beta", "readonly", "keyonly"/);
+    assert.throws(() => selectAccount(FILE, 'ghost'), /"acme", "beta", "readonly", "keyonly", "portal", "halfportal"/);
   });
 
   test('naming an account with no file at all says so', () => {
@@ -198,6 +207,37 @@ describe('the capture path: the same order, for the other credential', () => {
   });
 });
 
+describe('the developer-portal capture and team: configured, and nowhere else', () => {
+  test('a well-formed file carries both, with ~ expanded in the path', () => {
+    const file = parseAccounts(
+      JSON.stringify({ accounts: { a: { portalCapturePath: '~/portal.txt', portalTeamId: ' TEAM000000 ' } } }),
+      '/cfg.json'
+    );
+    assert.equal(file.accounts['a']!.portalCapturePath, join(homedir(), 'portal.txt'));
+    assert.equal(file.accounts['a']!.portalTeamId, 'TEAM000000');
+  });
+
+  test('--account names it', () => {
+    assert.deepEqual(portalAccountFor(resolution({ account: 'portal', file: FILE })), {
+      capturePath: '/captures/portal.txt',
+      teamId: 'TEAMPORTAL',
+    });
+  });
+
+  test('the default account is used when it has both, and is an error when it has neither', () => {
+    assert.equal(portalAccountFor(resolution({ file: { ...FILE, defaultAccount: 'portal' } })).teamId, 'TEAMPORTAL');
+    assert.throws(() => portalAccountFor(resolution({ file: FILE })), /"acme" has no portalCapturePath and no portalTeamId/);
+  });
+
+  test('an account with only one of the two says which is missing', () => {
+    assert.throws(() => portalAccountFor(resolution({ account: 'halfportal', file: FILE })), /"halfportal" has no portalTeamId/);
+  });
+
+  test('the environment does not supply one, and neither does the built-in capture', () => {
+    assert.throws(() => portalAccountFor(resolution({ env: ENV })), /need an account with portalCapturePath and portalTeamId/);
+  });
+});
+
 describe('what `asc accounts` prints', () => {
   const printed = describeAccounts(FILE, '/cfg.json');
 
@@ -209,12 +249,14 @@ describe('what `asc accounts` prints', () => {
   test('says what each one is equipped for', () => {
     assert.match(printed, /official API: {2}yes, key at \/keys\/acme\.p8/);
     assert.match(printed, /official API: {2}not configured/);
+    assert.match(printed, /portal: {8}capture at \/captures\/portal\.txt/);
+    assert.match(printed, /portal: {8}incomplete/);
   });
 
   test('prints no identifiers', () => {
     // Paths are printed because a path is what fixes a misconfigured account. The issuer
     // and key ids identify the account to Apple and answer a question nobody asked here.
-    for (const identifier of ['issuer-acme', 'key-acme', 'issuer-beta', 'key-beta']) {
+    for (const identifier of ['issuer-acme', 'key-acme', 'issuer-beta', 'key-beta', 'TEAMPORTAL']) {
       assert.equal(printed.includes(identifier), false, `printed ${identifier}`);
     }
   });

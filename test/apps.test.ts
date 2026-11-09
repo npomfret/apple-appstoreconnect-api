@@ -4,6 +4,7 @@ import { strict as assert } from 'node:assert';
 import { describe, test } from 'node:test';
 
 import { findAppId, findAppIdByName } from '../src/official/apps';
+import { findBundleIdResourceId } from '../src/official/bundleIds';
 import { OfficialClient } from '../src/official/client';
 import { Query } from '../src/shared/query';
 
@@ -76,6 +77,41 @@ describe('app lookup', () => {
     const { client, calls } = clientFor([]);
     await assert.rejects(() => findAppIdByName(client, ' '), /non-empty name/);
     await assert.rejects(() => findAppId(client, ''), /non-empty bundle ID/);
+    assert.deepEqual(calls, []);
+  });
+});
+
+describe('bundle ID resource lookup', () => {
+  function bundle(id: string, identifier: string): object {
+    return { type: 'bundleIds', id, attributes: { identifier } };
+  }
+
+  test('resolves an identifier with the documented filter, matched exactly', async () => {
+    const { client, calls } = clientFor([
+      { data: [bundle('BUNDLEWIDG', 'com.example.app.widget'), bundle('BUNDLE0000', 'com.example.app')] },
+    ]);
+    assert.equal(await findBundleIdResourceId(client, ' com.example.app '), 'BUNDLE0000');
+    assert.deepEqual(calls, [
+      {
+        path: '/v1/bundleIds',
+        query: { 'filter[identifier]': 'com.example.app', 'fields[bundleIds]': ['identifier'], limit: 200 },
+      },
+    ]);
+  });
+
+  test('does not guess when none or several match', async () => {
+    const none = clientFor([{ data: [bundle('BUNDLEWIDG', 'com.example.app.widget')] }]);
+    await assert.rejects(
+      () => findBundleIdResourceId(none.client, 'com.example.app'),
+      /No bundle ID is registered as "com\.example\.app"; Apple offered com\.example\.app\.widget\./
+    );
+    const twice = clientFor([{ data: [bundle('BUNDLEAAAA', 'com.example.app'), bundle('BUNDLEBBBB', 'com.example.app')] }]);
+    await assert.rejects(() => findBundleIdResourceId(twice.client, 'com.example.app'), /BUNDLEAAAA, BUNDLEBBBB/);
+  });
+
+  test('refuses an empty identifier before any request', async () => {
+    const { client, calls } = clientFor([]);
+    await assert.rejects(() => findBundleIdResourceId(client, ' '), /non-empty bundle ID/);
     assert.deepEqual(calls, []);
   });
 });
