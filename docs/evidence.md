@@ -1320,9 +1320,9 @@ the rows came back in one response and the paging block cannot be trusted to des
 
 What it would answer that nothing official does: which capabilities exist beyond the 28,
 which a team can request rather than simply enable, which entitlements each writes into a
-profile, and on which platforms and distribution types each applies. Whether the
-`filter[bundleId]` changes the answer, and how, is not established: one bundle ID was
-recorded.
+profile, and on which platforms and distribution types each applies. One bundle ID was
+recorded; the second live run (below) found that `filter[bundleId]` did not change the
+answer between two bundle IDs.
 
 **Mapped on 2026-11-06**, as the owner decision `AGENTS.md` reserves for a new base, after one
 approved live read the same day — see *The probe* and *What is mapped* below.
@@ -1401,8 +1401,8 @@ and whether the portal checks it at all on a read — the probe sent it, and not
   (`src/official/bundleIds.ts`), matched exactly. On the first live run (below) the portal
   **did not reject** the official resource id as `filter[bundleId]`, and the catalogue had the
   same 221 rows as the probe, which used the id from an edit page's Referer. That shows the
-  id was not refused, not that it was used: whether the filter changes the answer is not
-  established. That it is the *same* id the portal uses still rests on both being
+  id was not refused, not that it was used — and on the second live run the answer did not
+  differ between two bundle IDs. That it is the *same* id the portal uses still rests on both being
   10-character ids of a resource Apple calls `bundleIds` on both hosts.
 
 ### The first live run
@@ -1421,6 +1421,25 @@ the parser needed a change.
   `services-account/{v}/account/listTeams.action` has `DSESSIONID`, but its `csrf` and
   `csrf_ts` headers are empty. `portalSessionFromCapture` refused it before anything was
   sent, which is the intended behaviour. Copy a `services-account/v1/…` request.
+
+### The second live run
+
+Also on **2026-11-09**, on the same capture, then about 22 minutes old, `--json` was run
+for a second bundle ID on the same account: one whose official `platform` is `IOS`, where
+the first was `UNIVERSAL`. It succeeded, and the client's `--json` output was
+**byte-identical** (`cmp`) to the first run's: the same 221 rows, each compared by id, every
+field the client keeps equal. The raw responses were not compared, so a per-bundle-ID
+difference in a field the client drops would not show.
+
+- **The answer did not differ between these two bundle IDs.** That is not proof the portal
+  ignores `filter[bundleId]`; two ids may simply give the same rows. Both runs sent the same
+  fixed `filter[platform]` of `IOS,MACOS`, which covers both bundle IDs' platforms but would
+  hide a difference that depends on platform.
+- **An inference, not an observation:** none of the fields the client keeps is per bundle
+  ID, such as whether a capability is enabled, so the answer reads as the team's catalogue
+  rather than a bundle ID's state. Whether the filter matters for a wildcard or another
+  platform is not established, and the request still sends it as recorded.
+- **A captured pair is accepted at least three times**, and still at about 22 minutes old.
 
 ### The rename recording
 

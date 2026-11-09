@@ -1015,7 +1015,7 @@ async function main(invocation: Invocation): Promise<number> {
      * then the portal capture reads the catalogue for it — composed here, which is the only
      * place the two may meet. The bundle ID is taken by identifier because that is what a
      * person knows; the portal is sent a resource id as `filter[bundleId]`, which is what it was
-     * recorded sending. Whether that filter changes the answer is not established.
+     * recorded sending. On 2026-11-09 the client's output did not differ between two bundle IDs.
      */
     case 'portal-capabilities': {
       const example = 'portal-capabilities --bundle-id com.example.app';
