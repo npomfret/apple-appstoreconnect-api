@@ -2,6 +2,7 @@
 paths:
   - "src/gap/api.ts"
   - "src/gap/http.ts"
+  - "src/official/client.ts"
   - "src/gap/session.ts"
   - "src/gap/curl.ts"
   - "src/shared/log.ts"

@@ -1,5 +1,5 @@
 ---
-description: Use for any non-trivial feature, bug fix, refactor, CLI behaviour change, or library API change. Enforces audit → readiness refactor → implementation → evidence-based verification. Do not use for a typo-only documentation edit.
+description: Use for any non-trivial feature, bug fix, refactor, CLI behaviour change, or library API change.  Do not use for a typo-only documentation edit.
 user-invocable: true
 ---
 

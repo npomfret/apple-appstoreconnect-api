@@ -21,7 +21,6 @@
       "mcp__webstorm__reformat_file",
       "mcp__xcode__RunCodeSnippet",
       "mcp__xcode__InvokeDebuggerCommand",
-      "Bash(git push *)",
       "Bash(* --yes *)",
       "Bash(*--yes)",
       "Read(session.json)",
@@ -53,5 +52,14 @@
     "typesafe@typesafe-ai": true,
     "scripting@npomfret": true
   },
-  "enabledMcpjsonServers": ["gitnexus", "webstorm"]
+  "enabledMcpjsonServers": ["gitnexus", "webstorm"],
+  "extraKnownMarketplaces": {
+    "npomfret": {
+      "source": {
+        "source": "github",
+        "repo": "npomfret/agent-standards"
+      },
+      "autoUpdate": true
+    }
+  }
 }

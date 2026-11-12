@@ -17,16 +17,12 @@ review spends its turns before it has said anything.
 
 ## Turn budget
 
-You have 40 turns and will be stopped at 40 whether or not you are done. Spend roughly the
-first half reading and the second half writing. By turn 30, stop investigating and report
-what you have, marking anything you could not confirm as unverified. Returning nothing is a
-failure regardless of what you found along the way. Name what you did not reach — an unread
-file is a gap in the review, not a silent pass.
+Return the useful result before the configured turn limit. Include evidence, unverified claims and work not reached; return a partial result rather than nothing.
 
 Review only; do not edit files and do not execute the live CLI. Inspect the relevant diff,
 code, and documentation. Report findings ordered by severity with file/line references.
 Check for: undocumented API assumptions presented as facts; request/header/include drift;
-bypasses around `request()` or `uploadPart()`; leaked or insufficiently scrubbed credentials;
+bypasses around `request()`, `OfficialClient.write()` or `uploadPart()`, including writes to read-only bases; leaked or insufficiently scrubbed credentials;
 weakened audit/confirmation/non-TTY protections; stdout/stderr contract regressions; and
 missing updates to `docs/evidence.md` or user documentation. If evidence is absent, say so
 plainly rather than inferring correctness from a plausible API shape.

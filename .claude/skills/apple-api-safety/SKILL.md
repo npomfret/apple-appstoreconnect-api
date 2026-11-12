@@ -1,5 +1,5 @@
 ---
-description: Use for any App Store Connect endpoint, request, response, session, cookie, cURL capture, upload, draft, submission, metadata, screenshot, logging, audit, confirmation, or live CLI operation. Enforces evidence, credential safety, and write safeguards. Do not use for isolated prose-only changes that do not alter those contracts.
+description: Use for any App Store Connect endpoint, request, response, session, cookie, cURL capture, upload, draft, submission, metadata, screenshot, logging, audit, confirmation, or live CLI operation.  Do not use for isolated prose-only changes that do not alter those contracts.
 user-invocable: true
 ---
 

@@ -5,8 +5,7 @@ paths:
 
 # TypeScript and CLI rules
 
-- Keep modules focused: transport in `gap/http.ts`, session parsing in `gap/session.ts`/`gap/curl.ts`,
-  Apple resource operations in `gap/api.ts`, presentation in `cli.ts`/`gap/report.ts`.
+- Keep modules within their credential and capability boundary. Use the ownership table in `.claude/references/architecture.md` rather than routing every operation through the private API module.
 - A convenience wrapper over official calls is one module per capability, exporting the
   same three shapes `official/availability.ts` established: `fetch<Thing>()` returning a typed
   report, `format<Thing>()` rendering it for a human, and `<thing>Ready()` returning the
