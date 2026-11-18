@@ -1,0 +1,8 @@
+{
+  "name": "browser",
+  "description": "Lets Playwright run unprompted against the project's reviewed local and deployed URLs, with output kept in .playwright-mcp/",
+  "version": "1.0.1",
+  "author": {
+    "name": "npomfret"
+  }
+}

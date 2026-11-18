@@ -25,6 +25,36 @@
       "link": false,
       "executable": false
     },
+    ".codex/agent-standards/plugins/browser/.claude-plugin/plugin.json": {
+      "source": "plugin:browser@npomfret/.claude-plugin/plugin.json",
+      "sha256": "19b4d2832b0a7c4a25ef9551d07739d0a0ea093c79f4aadef98de8f6542e0941",
+      "link": false,
+      "executable": false
+    },
+    ".codex/agent-standards/plugins/browser/hooks/hooks.json": {
+      "source": "plugin:browser@npomfret/hooks/hooks.json",
+      "sha256": "2cd407161d9c38472c8eaf9f62c5e55c5b3f6550ddb1f4b8f159ec39ef78b903",
+      "link": false,
+      "executable": false
+    },
+    ".codex/agent-standards/plugins/browser/scripts/guard.py": {
+      "source": "plugin:browser@npomfret/scripts/guard.py",
+      "sha256": "6624866262eea19b08bee4676b98d3d839593349daa4f865dc4561310aaf5afb",
+      "link": false,
+      "executable": false
+    },
+    ".codex/agent-standards/plugins/playwright/.claude-plugin/plugin.json": {
+      "source": "plugin:playwright@claude-plugins-official/.claude-plugin/plugin.json",
+      "sha256": "f2d7c0f611b93287ebb07454255d0cccf3a343d7095b7f8f763ff21d1995c096",
+      "link": false,
+      "executable": false
+    },
+    ".codex/agent-standards/plugins/playwright/.mcp.json": {
+      "source": "plugin:playwright@claude-plugins-official/.mcp.json",
+      "sha256": "b6fd7e9ccee1682af353854195516826da6970026b68c86ad800ff4d931d3250",
+      "link": false,
+      "executable": false
+    },
     ".codex/agent-standards/plugins/scripting/.claude-plugin/plugin.json": {
       "source": "plugin:scripting@npomfret/.claude-plugin/plugin.json",
       "sha256": "1a34c4acc68a0861ce2faffcee3c9bd20e2e130898276fbc928f3fa636b12798",
@@ -135,7 +165,7 @@
     },
     ".codex/agent-standards/runtime.json": {
       "source": "project and enabled-plugin configuration",
-      "sha256": "fcef7ea1b8f3a9f56b50bfd4471d2b579bc2fb4f5133646499adcaca0ee842ca",
+      "sha256": "7ac13ca8b8ec53992a2ec3cbd954964ce567863becf902a151db44c23fd2fcaa",
       "link": false,
       "executable": false
     },
@@ -147,7 +177,7 @@
     },
     ".codex/hooks.json": {
       "source": "templates/codex-hooks.py",
-      "sha256": "4971ce61d35f36291e78da68c0055e7f25519e016afa27fbeba080141cdaa517",
+      "sha256": "9441e5928824b27618a7495691a63025e9470713e7da9d0eabeaf93f1a4d375f",
       "link": false,
       "executable": false
     },

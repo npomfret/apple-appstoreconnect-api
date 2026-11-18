@@ -1,0 +1,17 @@
+{
+  "description": "Approve Playwright MCP calls to this project's reviewed local and deployed URLs, with output under .playwright-mcp/; ask about or refuse the rest.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__plugin_playwright_playwright__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
