@@ -225,7 +225,7 @@
     },
     "AGENTS.override.md": {
       "source": "AGENTS.md and unconditional .claude/rules",
-      "sha256": "6e7bccb2096c37d4a0586a9ee7e27943e3b736003713a91774ec6a3382930307",
+      "sha256": "52ee80853ace6af918d31ee1a76f9e78ae9511cf1cf568acf887c3e2689611ea",
       "link": false,
       "executable": false
     }
