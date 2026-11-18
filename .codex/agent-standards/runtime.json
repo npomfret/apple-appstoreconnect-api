@@ -1,0 +1,92 @@
+{
+  "plugins": {
+    "auditing@npomfret": ".codex/agent-standards/plugins/auditing",
+    "scripting@npomfret": ".codex/agent-standards/plugins/scripting",
+    "task-files@npomfret": ".codex/agent-standards/plugins/task-files",
+    "teamcity@npomfret": ".codex/agent-standards/plugins/teamcity",
+    "typesafe@typesafe-ai": ".codex/agent-standards/plugins/typesafe",
+    "webstorm@npomfret": ".codex/agent-standards/plugins/webstorm"
+  },
+  "hooks": {
+    "auditing@npomfret": {
+      "PostToolUse": [
+        {
+          "matcher": "Read|Edit|Write|MultiEdit",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/nudge.py\"",
+              "timeout": 10
+            }
+          ]
+        }
+      ],
+      "SessionStart": [
+        {
+          "matcher": "compact",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/nudge.py\" --forget",
+              "timeout": 10
+            }
+          ]
+        }
+      ]
+    },
+    "scripting@npomfret": {
+      "PostToolUse": [
+        {
+          "matcher": "Edit|Write|MultiEdit",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/lint_shell.py\" --hook",
+              "timeout": 30
+            }
+          ]
+        }
+      ]
+    },
+    "webstorm@npomfret": {
+      "SessionStart": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/session_context.py\"",
+              "timeout": 10
+            }
+          ]
+        }
+      ]
+    },
+    "project": {}
+  },
+  "rules": [
+    {
+      "source": ".claude/rules/apple-api-boundaries.md",
+      "paths": [
+        "src/gap/api.ts",
+        "src/gap/http.ts",
+        "src/official/client.ts",
+        "src/gap/session.ts",
+        "src/gap/curl.ts",
+        "src/shared/log.ts",
+        "src/shared/errors.ts",
+        "src/shared/confirm.ts",
+        "src/accounts.ts",
+        "src/cli.ts",
+        "docs/**/*.md"
+      ],
+      "body": "# Apple API, credentials, and audit boundaries\n\n- Do not change an endpoint, include list, filter, fieldset, headers, content type, or\n  JSON:API envelope without a browser capture or explicitly approved probe. Record the\n  evidence level in `docs/evidence.md` and in nearby code comments.\n- All private mutations go through `request()` so `http.write` auditing stays complete, and\n  all official mutations through `OfficialClient.write()` for `official.http.write`.\n  Presigned upload parts may use `uploadPart()` only; never send cookies to storage hosts.\n- Emit audit `start` before a mutation and preserve audit `ok`/`error` outcomes. Scrub\n  cookies, CSRF values, signed query strings, credentials, and response secrets from logs.\n- Irreversible, destructive, or overwriting operations must retain CLI confirmation,\n  clear previews, non-TTY refusal, and explicit `--yes` opt-in.\n- Update `README.md` and the relevant document under `docs/` when command behaviour,\n  evidence, safety, output, or operational assumptions change.\n"
+    },
+    {
+      "source": ".claude/rules/typescript.md",
+      "paths": [
+        "src/**/*.ts"
+      ],
+      "body": "# TypeScript and CLI rules\n\n- Keep modules within their credential and capability boundary. Use the ownership table in `.claude/references/architecture.md` rather than routing every operation through the private API module.\n- A convenience wrapper over official calls is one module per capability, exporting the\n  same three shapes `official/availability.ts` established: `fetch<Thing>()` returning a typed\n  report, `format<Thing>()` rendering it for a human, and `<thing>Ready()` returning the\n  boolean behind `--check`. The wrapper owns the multi-call sequence and the parsing; the\n  command in `cli.ts` owns only argument validation and which of the three to print.\n  Wrapping several official calls into one answer is the point \u2014 a wrapper that forwards\n  a single call unchanged is not worth the module.\n- Represent finite remote states with literal unions where known. Prefer `readonly` inputs\n  where callers do not need mutation.\n- Parse and validate external data at a boundary before relying on it. Do not make\n  undocumented response fields look more certain than the evidence supports.\n- Keep CLI output machine-friendly: data to stdout, diagnostics/prompts/logs to stderr;\n  preserve `--json` and `--raw` contracts.\n- Use named exported functions and interfaces for the library surface. Keep one-off\n  presentation helpers private to their owning module.\n"
+    }
+  ]
+}
