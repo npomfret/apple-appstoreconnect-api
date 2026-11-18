@@ -97,42 +97,6 @@
       "link": false,
       "executable": false
     },
-    ".codex/agent-standards/plugins/typesafe/.claude-plugin/marketplace.json": {
-      "source": "plugin:typesafe@typesafe-ai/.claude-plugin/marketplace.json",
-      "sha256": "7040ea575b7549d7db06cce21ebe479471930953eaede01d8cd9ed81511abd11",
-      "link": false,
-      "executable": false
-    },
-    ".codex/agent-standards/plugins/typesafe/.claude-plugin/plugin.json": {
-      "source": "plugin:typesafe@typesafe-ai/.claude-plugin/plugin.json",
-      "sha256": "3d4e3433dc040fde349deaf773a4a4b070b3aa5ce34b3f321b170d2409a9fa5a",
-      "link": false,
-      "executable": false
-    },
-    ".codex/agent-standards/plugins/typesafe/LICENSE": {
-      "source": "plugin:typesafe@typesafe-ai/LICENSE",
-      "sha256": "835f233f1d6ed84a9b9a351aba0689b47644a4137d6316911fc7957bde523b02",
-      "link": false,
-      "executable": false
-    },
-    ".codex/agent-standards/plugins/typesafe/README.md": {
-      "source": "plugin:typesafe@typesafe-ai/README.md",
-      "sha256": "799ce1dc39dc1cb98977f930610bf693a26d1a78e5912b860014447d97390282",
-      "link": false,
-      "executable": false
-    },
-    ".codex/agent-standards/plugins/typesafe/skills/typesafe-ai/LICENSE": {
-      "source": "plugin:typesafe@typesafe-ai/skills/typesafe-ai/LICENSE",
-      "sha256": "835f233f1d6ed84a9b9a351aba0689b47644a4137d6316911fc7957bde523b02",
-      "link": false,
-      "executable": false
-    },
-    ".codex/agent-standards/plugins/typesafe/skills/typesafe-ai/SKILL.md": {
-      "source": "plugin:typesafe@typesafe-ai/skills/typesafe-ai/SKILL.md",
-      "sha256": "9891385feaa8377113a1c432e5eb712915828c3b5ada31daa619e2c626b076a8",
-      "link": false,
-      "executable": false
-    },
     ".codex/agent-standards/plugins/webstorm/.claude-plugin/plugin.json": {
       "source": "plugin:webstorm@npomfret/.claude-plugin/plugin.json",
       "sha256": "491c89ac8f3dcd282fb2834575470a51a354d09141fdef1bfe29a729832d7db3",
@@ -171,7 +135,7 @@
     },
     ".codex/agent-standards/runtime.json": {
       "source": "project and enabled-plugin configuration",
-      "sha256": "a001796e68738502f5b7908bb20638f8b5ec66d374621beb78a19ced1f6078b5",
+      "sha256": "fcef7ea1b8f3a9f56b50bfd4471d2b579bc2fb4f5133646499adcaca0ee842ca",
       "link": false,
       "executable": false
     },
@@ -183,7 +147,7 @@
     },
     ".codex/hooks.json": {
       "source": "templates/codex-hooks.py",
-      "sha256": "01bb4fad564b26b6ca9eb7b61671f72684415f76a6b093fe472c1a8508e5cd41",
+      "sha256": "4971ce61d35f36291e78da68c0055e7f25519e016afa27fbeba080141cdaa517",
       "link": false,
       "executable": false
     },
@@ -211,22 +175,10 @@
       "link": true,
       "executable": false
     },
-    ".codex/skills/typesafe-ai": {
-      "source": "plugin:typesafe@typesafe-ai/skills/typesafe-ai/SKILL.md",
-      "sha256": "f9c985d8a897cb445bcd442d888462de945e8a0eeebad2044d34a61d7e45b8f1",
-      "link": true,
-      "executable": false
-    },
     ".codex/skills/typescript-conventions": {
       "source": ".claude/skills/typescript-conventions/SKILL.md",
       "sha256": "f3ce30d35cf5e43a2116ee652b671ba36ec0ad979bd8ed192895f5c5042f0fb3",
       "link": true,
-      "executable": false
-    },
-    "AGENTS.override.md": {
-      "source": "AGENTS.md and unconditional .claude/rules",
-      "sha256": "52ee80853ace6af918d31ee1a76f9e78ae9511cf1cf568acf887c3e2689611ea",
-      "link": false,
       "executable": false
     }
   }
