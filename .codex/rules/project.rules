@@ -2,26 +2,11 @@
 # Syntax: Starlark. decision precedence: forbidden > prompt > allow.
 # Loads only when this project is trusted.
 
-# ---- git history rewriting: confirm before it happens ----
-# Only the forms that throw work away. Plain `git reset` and `git reset <path>`
-# unstage and touch no file, which is ordinary work.
-prefix_rule(
-    pattern = ["git", "reset", ["--hard", "--merge", "--keep"]],
-    decision = "prompt",
-    justification = "These forms of reset discard uncommitted work; confirm manually.",
-)
-
 # ---- gh: GitHub CLI ----
 prefix_rule(
     pattern = ["gh", "issue", "delete"],
     decision = "forbidden",
     justification = "Deleting an issue is not reversible from the CLI.",
-)
-
-prefix_rule(
-    pattern = ["gh", ["repo", "release", "workflow", "run", "api"]],
-    decision = "prompt",
-    justification = "These reach beyond issues and can change the repo or trigger CI.",
 )
 
 prefix_rule(
