@@ -207,7 +207,7 @@
     },
     ".codex/agent-standards/plugins/workflow/.claude-plugin/plugin.json": {
       "source": "plugin:workflow@npomfret/.claude-plugin/plugin.json",
-      "sha256": "d2ffea53be1886c0ae4a9ef92fecb39ef2179a5763f1dcd0bd9b896345a4d17d",
+      "sha256": "5a3e43e5562698562ce7115b831c5ace74fe3afb93f67056bef6c476c807165c",
       "link": false,
       "executable": false
     },
@@ -219,7 +219,7 @@
     },
     ".codex/agent-standards/plugins/workflow/skills/git-delivery/SKILL.md": {
       "source": "plugin:workflow@npomfret/skills/git-delivery/SKILL.md",
-      "sha256": "bc99ce906c1e8dcae57415b372b46d77525b03dd0cb2eec9cbf82f1e39e063fa",
+      "sha256": "44ae644ed203969afbd5822402bc17a6e30b6ea3f93e63db1a757034510048ee",
       "link": false,
       "executable": false
     },
@@ -237,13 +237,13 @@
     },
     ".codex/agent-standards/project-skills/apple-api-safety/SKILL.md": {
       "source": ".claude/skills/apple-api-safety/SKILL.md",
-      "sha256": "b0c64761b1ec0263de8d9682ba3f606fb3de7267b0cdf906a79fdd35d143ab4a",
+      "sha256": "371996f04a505f1465e08d048acf963ae8042ecbe900f102f28dba114258e67a",
       "link": false,
       "executable": false
     },
     ".codex/agent-standards/project-skills/feature-workflow/SKILL.md": {
       "source": ".claude/skills/feature-workflow/SKILL.md",
-      "sha256": "7c55d0400ef6f2d11b6332002629f43d71f04478dbecd7f4a6979efe957d255e",
+      "sha256": "d2a7d6771e1d8eee1e1f1dda313bb89d253f336076780e8dd011447b753bedd4",
       "link": false,
       "executable": false
     },
@@ -279,7 +279,7 @@
     },
     ".codex/hooks.json": {
       "source": "templates/codex-hooks.py",
-      "sha256": "0bf15f6d22e9baa1220c2ae2f652430af74e7429e6f616badfb51f42027f34f0",
+      "sha256": "0e1f478c866a04ae9e2ad893f2b8d9dd45da2e6abe9444e3a318df614c8ff1a8",
       "link": false,
       "executable": false
     },
