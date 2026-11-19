@@ -76,6 +76,12 @@
         "repo": "npomfret/agent-standards"
       },
       "autoUpdate": true
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
     }
   }
 }
