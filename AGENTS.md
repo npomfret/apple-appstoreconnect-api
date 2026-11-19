@@ -138,6 +138,9 @@ should not have.** Read a failure that way before reaching for the test.
 Before starting work, read [Scope](.agents/agent-standards/guidance/scope.md), [Running commands](.agents/agent-standards/guidance/commands.md), [Git](.agents/agent-standards/guidance/git.md), [Review before commit](.agents/agent-standards/guidance/review.md).
 Before code changes: [State and dependencies](.agents/agent-standards/guidance/dependencies.md); Before tests or timeout changes: [Test timeouts](.agents/agent-standards/guidance/test-timeouts.md).
 Keep the shared checkout on its default branch. Use detached worktrees. Agents commit, fast-forward land and push their verified, reviewed work.
+- Be concise: lead with the outcome; give only the detail needed to act or decide.
+- Do the work properly and verify it; never trade correctness for speed or cost.
+- When options exist, recommend the best technical solution first, even if costlier; state cheaper alternatives separately with their trade-offs.
 Also read these always-on project rules before work: [global](.claude/rules/global.md).
 In Codex, use native skills and specialists for equivalent Claude invocations; referenced `.claude/` files remain canonical project knowledge.
 
