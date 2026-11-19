@@ -7,6 +7,9 @@ Center surface with a browser-derived live session. It can change or publish rea
 Correctness, evidence, auditability, and credential safety are more important than the
 smallest diff.
 
+Tech: TypeScript on Node >=22, no runtime dependencies, tests on `node:test`. Lifecycle: not
+evidenced (status unknown); it can change real App Store data, so treat every write as live.
+
 ## The boundary
 
 The private side is gap-only: no private implementation of an officially served
@@ -30,9 +33,8 @@ The rule for deciding is that **duplication is a property of a call, not of a re
 private read of an officially-available resource is retained only when it carries a field
 the official specification has no schema for, and is then narrowed to exactly that field.
 So do not delete a private read because its *resource* is official, and do not keep one
-because the resource has a private *route*: check the fields. Last audited against Apple's
-OpenAPI specification **4.4.1** (generated 2026-07-15, 966 paths, 1,393 schemas) on
-2026-08-22. `docs/evidence.md` records what was checked, how, and when.
+because the resource has a private *route*: check the fields. `docs/evidence.md` records which Apple
+OpenAPI specification version was checked, what was checked, how, and when.
 
 The two authentication systems are separate security boundaries. The official API uses a
 short-lived JWT signed by a `.p8`; the private API uses a pasted browser cookie. Never use a
@@ -69,8 +71,6 @@ caller to.
 - If Apple exposes the underlying capability officially, implement it only against the
   official API, never the private route. Keep official operations reusable across apps and
   require every account, key, team, app and bundle identifier as input or configuration.
-- Before a non-trivial change: inspect callers, implementations, analogous functions,
-  tests and user-facing CLI/docs. Refactor only where the requested change needs it, then verify.
 - Do not add a dependency, new API convention, abstraction, command shape, request body,
   include list, or endpoint without explaining the evidence and getting approval.
 - Treat the private Apple API as unstable. Browser-captured requests are evidence; guesses
@@ -85,8 +85,6 @@ caller to.
   records. Never weaken a confirmation or make `--yes` the default.
 - Preserve stdout as data and stderr for logs/prompts. Logs are structured events with
   fields, and must not contain credentials or signed query strings.
-- Prefer precise TypeScript types and fail-fast errors. Do not use `any`, silent catches,
-  speculative compatibility branches, or duplicate helper logic to evade a design problem.
 - For broad, risky, or externally observable changes, state the plan before editing.
 
 ## Canonical commands
@@ -95,6 +93,7 @@ caller to.
 - Type check: `npm run typecheck`
 - Test: `npm test`
 - Build: `npm run build`
+- Full gate (typecheck, build, tests): `npm run verify`
 - Live CLI: `npm run asc -- <command>` (requires the credentials documented for that command)
 - Apple's current OpenAPI specification and documentation index, for the "does Apple serve
   this officially?" check: `npm run spec:fetch` → `tmp/openapi/openapi.json` and `index.json`
@@ -104,8 +103,8 @@ and every fixture is invented. It covers the pure boundaries only — the transp
 about where a request may go and what counts as a write, redaction, JSON:API expansion,
 capture parsing, date ordering, and the import graph that keeps `official/` and `gap/` out
 of each other — and says nothing about remote semantics. A green suite is
-not evidence that a call Apple has never been sent works. Report the verification that
-actually ran, and never make a live write to prove a change.
+not evidence that a call Apple has never been sent works. Never make a live write to
+prove a change.
 
 `test/gap-*.test.ts` is the fence around the capabilities Apple has no official equivalent
 for: the request each one makes, and what this client reads back. **A test in those files
