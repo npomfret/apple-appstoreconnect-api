@@ -12,8 +12,8 @@ user-invocable: true
 3. Decide whether the area needs reshaping first. Prefer the clean design that makes the
    new behaviour ordinary; do not bolt it onto an unready structure.
 4. If the design requires a new dependency, endpoint, request convention, public command,
-   abstraction, or unproven Apple behaviour, stop and seek approval with the evidence and
-   safer alternatives.
+   abstraction, or unproven Apple behaviour, prefer the safest option, and say why in your
+   report with the evidence and the alternatives you rejected.
 5. Implement the coherent change. Delete superseded code and keep docs/evidence aligned.
 6. Verify proportionately: type check at minimum for TypeScript changes, build before
    handoff where possible, plus targeted tests or a dry-run/mock only when they are real.
