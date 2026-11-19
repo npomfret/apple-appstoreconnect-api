@@ -19,8 +19,9 @@ there is no raw write, and the transport speaks two hosts, four methods, and fiv
 `/ppm`, and `developer.apple.com/services-account/v1`, on a separate developer-portal
 capture that no other host is sent), each carrying only reads that no official schema
 covers. `docs/evidence.md` ("The private boundary inventory") records what each base
-carries and when it was added. Keep it that way. Another base, or a write on any but the
-first, is an owner decision with a recording behind it, not an implementation detail.
+carries and when it was added. Keep it that way. Using another base, or writing to any but the
+first, needs a captured recording as evidence first; prefer the safest path and record the
+decision in your report.
 
 The rule for deciding is that **duplication is a property of a call, not of a resource**. A
 private read of an officially-available resource is retained only when it carries a field
@@ -65,7 +66,7 @@ caller to.
   official API, never the private route. Keep official operations reusable across apps and
   require every account, key, team, app and bundle identifier as input or configuration.
 - Do not add a dependency, new API convention, abstraction, command shape, request body,
-  include list, or endpoint without explaining the evidence and getting approval.
+  include list, or endpoint without recording the evidence in the task file or your report.
 - Treat the private Apple API as unstable. Browser-captured requests are evidence; guesses
   must be labelled in code, docs, and CLI behaviour. Never present an uncaptured write as proven.
 - A browser recording under `tmp/` is evidence and may be read as evidence. What it must
