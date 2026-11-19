@@ -59,7 +59,12 @@
     "apple-hig@npomfret": false,
     "typescript-lsp@claude-plugins-official": false,
     "playwright@claude-plugins-official": true,
-    "browser@npomfret": true
+    "browser@npomfret": true,
+    "coding@npomfret": true,
+    "http@npomfret": true,
+    "testing@npomfret": true,
+    "ui@npomfret": false,
+    "workflow@npomfret": true
   },
   "enabledMcpjsonServers": ["gitnexus", "webstorm"],
   "extraKnownMarketplaces": {
