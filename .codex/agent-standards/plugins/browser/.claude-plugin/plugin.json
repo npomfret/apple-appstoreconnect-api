@@ -1,7 +1,7 @@
 {
   "name": "browser",
-  "description": "Lets Playwright run unprompted against the project's reviewed local and deployed URLs, with output kept in .playwright-mcp/",
-  "version": "1.0.1",
+  "description": "Empty shell enabled with Playwright; the permission guard hook was removed",
+  "version": "1.0.2",
   "author": {
     "name": "npomfret"
   }

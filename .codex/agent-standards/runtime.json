@@ -39,20 +39,6 @@
         }
       ]
     },
-    "browser@npomfret": {
-      "PreToolUse": [
-        {
-          "matcher": "mcp__plugin_playwright_playwright__.*",
-          "hooks": [
-            {
-              "type": "command",
-              "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.py\"",
-              "timeout": 10
-            }
-          ]
-        }
-      ]
-    },
     "webstorm@npomfret": {
       "SessionStart": [
         {
