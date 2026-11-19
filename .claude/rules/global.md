@@ -8,7 +8,7 @@
   existing abstraction or keep logic local.
 - Keep public exports intentional. `src/index.ts` is the library contract; new exports,
   commands, and output shapes require documentation in the same change.
-- Use `unknown` at untrusted boundaries and narrow it. Avoid `any`, casts that hide type
+- Use `unknown` at untrusted boundaries and narrow it. Avoid casts that hide type
   errors, non-null assertions, and catch-and-continue behaviour.
 - Make the smallest *coherent* change, then remove superseded paths and dead code.
 - Run `npm run typecheck` after TypeScript changes and `npm run build` before handoff when
