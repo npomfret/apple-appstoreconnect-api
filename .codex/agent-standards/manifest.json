@@ -255,13 +255,13 @@
     },
     ".codex/hooks.json": {
       "source": "templates/codex-hooks.py",
-      "sha256": "506f5757341b4170937ca1f2466d4aca578c0e511f1c13a99279f223ff1ef8af",
+      "sha256": "e22c2da6f186b80a86a74dcef21cfd3f5cf274d1f4c1a41d44dad67e9ef92259",
       "link": false,
       "executable": false
     },
     ".codex/hooks/agent_standards.py": {
       "source": "templates/codex-hooks.py",
-      "sha256": "8e68033b340cf77ed5d105e610a0b8d5afbfb30752a04a67222f6f5abb74c8f3",
+      "sha256": "b5a9d53b58deb3ee7268151ef2ec8bca2c4c691385e42ae6a1e0c7f8d112c3d7",
       "link": false,
       "executable": false
     },
