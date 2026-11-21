@@ -140,13 +140,15 @@ val verify = BuildType {
             triggerRules = onlyWhatCanChangeABuild
             perCheckinTriggering = true
         }
-        // 02:00, an hour no other project uses -- 00:00, 03:30, 03:45 and 04:00 are taken, and
-        // there are only three agents. A green build proves the code passed against that day's
-        // world only: nothing here is vendored, so `npm ci` reaches the registry on every run,
-        // and the toolchain is whatever is installed on a Mac three projects share.
+        // Midnight Europe/London, the same time as every project on the server (agent-standards);
+        // builds start as agents and shared locks free up. A green build proves the code passed
+        // against that day's world only: nothing here is vendored, so `npm ci` reaches the registry
+        // on every run, and the toolchain is whatever is installed on a Mac three projects share.
         schedule {
             schedulingPolicy = daily {
-                hour = 2
+                hour = 0
+                minute = 0
+                timezone = "Europe/London"
             }
             branchFilter = "+:<default>"
             // The point is to build an unchanged repo, so this must not wait for a change.
