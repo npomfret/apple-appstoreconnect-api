@@ -13,6 +13,12 @@ paths:
   command in `cli.ts` owns only argument validation and which of the three to print.
   Wrapping several official calls into one answer is the point — a wrapper that forwards
   a single call unchanged is not worth the module.
+- Keep JSON:API relationship expansion in `src/shared/jsonapi.ts`; do not reimplement joins in
+  callers.
+- Every request goes through the transport wrappers (`src/gap/http.ts` on the private side,
+  `OfficialClient` in `src/official/client.ts` on the official side), never a raw `fetch`.
+- Keep API functions resource-oriented and keep presentation/report formatting separate from
+  them.
 - Represent finite remote states with literal unions where known. Prefer `readonly` inputs
   where callers do not need mutation.
 - Parse and validate external data at a boundary before relying on it. Do not make

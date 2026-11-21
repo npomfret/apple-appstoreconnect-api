@@ -107,9 +107,8 @@ should not have.** Read a failure that way before reaching for the test.
 
 ## Routing
 
-The project skills in `.claude/skills/` (`typescript-conventions`, `feature-workflow`,
-`apple-api-safety`) load from their descriptions. Detailed architecture and invariants:
-`.claude/references/architecture.md`.
+The `apple-api-safety` project skill loads from its description. Detailed architecture and
+invariants: `.claude/references/architecture.md`.
 
 ## Sensitive paths
 
