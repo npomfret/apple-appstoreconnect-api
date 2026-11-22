@@ -140,13 +140,13 @@ val verify = BuildType {
             triggerRules = onlyWhatCanChangeABuild
             perCheckinTriggering = true
         }
-        // Midnight Europe/London, the same time as every project on the server (agent-standards);
+        // 22:00 Europe/London, the same time as every project on the server (agent-standards);
         // builds start as agents and shared locks free up. A green build proves the code passed
         // against that day's world only: nothing here is vendored, so `npm ci` reaches the registry
         // on every run, and the toolchain is whatever is installed on a Mac three projects share.
         schedule {
             schedulingPolicy = daily {
-                hour = 0
+                hour = 22
                 minute = 0
                 timezone = "Europe/London"
             }
