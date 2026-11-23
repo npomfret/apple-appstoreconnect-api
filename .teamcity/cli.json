@@ -2,6 +2,7 @@
   "project": "AppStoreConnectBot",
   "composite": "Verify",
   "buildTypes": [
+    "Compile",
     "Checks",
     "Tests",
     "Verify"

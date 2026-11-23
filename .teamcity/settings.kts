@@ -74,6 +74,18 @@ fun BuildType.checkoutAndToolchain(workspace: String) {
     }
 }
 
+val compile = BuildType {
+    id("Compile")
+    name = "Compile"
+    description = "Production library and CLI plus every TypeScript test source; runs no tests."
+    checkoutAndToolchain("appstoreconnect-bot-compile")
+    
+    steps {
+        logged("compile", "npm run build && npx --no-install tsc -p tsconfig.test.json")
+    }
+    failureConditions { executionTimeoutMin = 10 }
+}
+
 val checks = BuildType {
     id("Checks")
     name = "Checks"
@@ -129,6 +141,7 @@ val verify = BuildType {
         showDependenciesChanges = true
     }
     dependencies {
+        snapshot(compile) { onDependencyFailure = FailureAction.ADD_PROBLEM }
         snapshot(checks) { onDependencyFailure = FailureAction.ADD_PROBLEM }
         snapshot(tests) { onDependencyFailure = FailureAction.ADD_PROBLEM }
     }
@@ -177,6 +190,7 @@ project {
         }
     }
 
+    buildType(compile)
     buildType(checks)
     buildType(tests)
     buildType(verify)
